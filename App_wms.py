@@ -13,7 +13,7 @@ URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
 st.set_page_config(page_title="WMS Master Pro", layout="centered")
 
-# --- MOTOR DE UBICACIÓN (Lógica idéntica a tu función sugerir_ubicacion de PC) ---
+# --- MOTOR DE UBICACIÓN (Tu lógica idéntica de PC) ---
 def motor_sugerencia_pc(conn):
     try:
         cursor = conn.cursor()
@@ -52,7 +52,7 @@ def init_db():
 conn, cursor = init_db()
 
 # --- INTERFAZ ---
-st.title("📦 WMS PROFESIONAL MÓVIL")
+st.title("🚀 WMS PROFESIONAL MÓVIL")
 st.info("Sincronizado con: LOGISTICA.EXE")
 
 if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
@@ -69,10 +69,8 @@ tab1, tab2, tab3 = st.tabs(["📥 MOVIMIENTOS", "📤 DESPACHO", "📊 PLANILLA"
 # --- TAB 1: MOVIMIENTOS ---
 with tab1:
     st.subheader("Entrada de Mercadería")
-    # Buscador que ya te funcionaba bien
     bus_m = st.text_input("🔍 Buscar en Maestra (Nombre o Código)", key="input_mov")
     try:
-        # Usamos parámetros ? para evitar errores de sintaxis
         query_m = "SELECT cod_int, nombre FROM maestra WHERE cod_int LIKE ? OR nombre LIKE ? OR barras LIKE ?"
         maestra_df = pd.read_sql(query_m, conn, params=(f'%{bus_m}%', f'%{bus_m}%', f'%{bus_m}%'))
         cod_sel = st.selectbox("Confirmar Producto", options=[""] + maestra_df['cod_int'].tolist())
@@ -99,22 +97,18 @@ with tab1:
                 st.success(f"Cargado en {f_ubi}")
                 st.rerun()
 
-# --- TAB 2: DESPACHO (SOLUCIONADO) ---
+# --- TAB 2: DESPACHO (IGUALADO A MOVIMIENTOS) ---
 with tab2:
     st.subheader("Salida de Mercadería")
-    # Ahora el buscador de Despacho es igual de potente que el de Movimientos
-    bus = st.text_input("🔍 Buscar por Nombre, Cod o Barras (Despacho)", key="input_des")
+    bus = st.text_input("🔍 Buscar por Nombre o Código (Despacho)", key="input_des")
     if bus:
-        # CORRECCIÓN: Buscamos coincidencias parciales en nombre y código dentro de inventario
+        # AHORA BUSCA IGUAL QUE EN MOVIMIENTOS: por coincidencia parcial en Código o Nombre
         query_d = "SELECT rowid, * FROM inventario WHERE (cod_int LIKE ? OR nombre LIKE ?) AND cantidad > 0"
         res = pd.read_sql(query_d, conn, params=(f'%{bus}%', f'%{bus}%'))
         
-        if res.empty:
-            st.warning("No se encontraron lotes con ese nombre o código.")
-            
         for i, r in res.iterrows():
             with st.expander(f"📦 {r['nombre']} | Stock: {r['cantidad']}"):
-                # Los 4 micro-detalles exactos que pediste
+                # Los 4 micro-detalles íntegros
                 st.write(f"**Vence:** {r['fecha']} | **Ubi:** {r['ubicacion']} | **Depo:** {r['deposito']}")
                 baja = st.number_input("Cantidad a sacar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
                 if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
