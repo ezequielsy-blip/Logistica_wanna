@@ -13,34 +13,28 @@ URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
 st.set_page_config(page_title="WMS Master Pro", layout="centered")
 
-# --- LÓGICA DE UBICACIÓN 99 -> ABCD ---
+# --- LÓGICA DE UBICACIÓN (PC MODE: 99 -> ABCD) ---
 def calcular_proxima_ubicacion(conn):
     try:
         df = pd.read_sql("SELECT ubicacion FROM inventario", conn)
         if df.empty: return "1"
-        
         ubis = df['ubicacion'].astype(str).tolist()
         numeros = [int(u) for u in ubis if u.isdigit()]
-        
         if not numeros:
             letras = [u for u in ubis if u.isalpha() and len(u)==1]
             if letras:
                 ultima = max(letras)
                 return chr(ord(ultima) + 1) if ultima < 'z' else "a1"
             return "1"
-        
         max_num = max(numeros)
-        if max_num < 99:
-            return str(max_num + 1)
+        if max_num < 99: return str(max_num + 1)
         else:
             letras = [u for u in ubis if u.isalpha() and len(u)==1]
             if not letras: return "a"
             ultima = max(letras)
             return chr(ord(ultima) + 1) if ultima < 'z' else "a1"
-    except:
-        return "1"
+    except: return "1"
 
-# --- CONEXIÓN DB ---
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     cursor = conn.cursor()
@@ -53,7 +47,6 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- INTERFAZ ---
 st.title("🚀 SISTEMA LOGISTICA & STOCK")
 
 if st.button("🔄 SINCRONIZAR TODO (DRIVE)"):
@@ -61,7 +54,7 @@ if st.button("🔄 SINCRONIZAR TODO (DRIVE)"):
         if os.path.exists(DB_NAME): os.remove(DB_NAME)
         r = requests.get(URL_DIRECTA, timeout=10)
         with open(DB_NAME, 'wb') as f: f.write(r.content)
-        st.success("✅ BASE DE DATOS SINCRONIZADA")
+        st.success("✅ BASE DE DATOS ACTUALIZADA")
         st.rerun()
     except Exception as e: st.error(f"Error: {e}")
 
@@ -83,7 +76,7 @@ with tab1:
         with c1: f_can = st.number_input("Cantidad", min_value=0.0, step=1.0)
         with c2: f_dep = st.selectbox("Depósito", ["DEPO1", "DEPO2"])
         c3, c4 = st.columns(2)
-        with c3: f_venc_raw = st.text_input("Vencimiento (MMAA)", max_chars=4)
+        with c3: f_venc_raw = st.text_input("Vencimiento (MMAA)", max_chars=4, help="Ej: 1226")
         with c4: f_ubi = st.text_input("Ubicación Sugerida", value=ubi_sug)
         
         if st.form_submit_button("💾 REGISTRAR ENTRADA"):
@@ -93,27 +86,54 @@ with tab1:
                 cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?)", 
                              (f_cod, f_can, f_ubi, f_dep, f_venc, datetime.now().strftime('%d/%m/%Y')))
                 conn.commit()
-                st.success("Registrado correctamente")
+                st.success(f"Guardado con vencimiento {f_venc}")
                 st.rerun()
 
 with tab2:
     st.subheader("Salidas (Réplica APP_STOCK.py)")
-    bus = st.text_input("🔍 Buscar por Nombre o Código")
+    bus = st.text_input("🔍 Buscar por Nombre o Código", key="search_salida")
     if bus:
-        query = f"SELECT i.rowid, i.cod_int, m.nombre, i.cantidad, i.ubicacion, i.deposito FROM inventario i JOIN maestra m ON i.cod_int = m.cod_int WHERE (i.cod_int LIKE '%{bus}%' OR m.nombre LIKE '%{bus}%') AND i.cantidad > 0"
+        # Traemos todos los campos necesarios para mostrar los detalles solicitados
+        query = f"""
+            SELECT i.rowid, i.cod_int, m.nombre, i.cantidad, i.ubicacion, i.deposito, i.vencimiento 
+            FROM inventario i 
+            JOIN maestra m ON i.cod_int = m.cod_int 
+            WHERE (i.cod_int LIKE '%{bus}%' OR m.nombre LIKE '%{bus}%') 
+            AND i.cantidad > 0
+        """
         res = pd.read_sql(query, conn)
         for i, r in res.iterrows():
+            # Título del expander con nombre y stock total
             with st.expander(f"📦 {r['nombre']} - Stock: {r['cantidad']}"):
-                st.write(f"Ubi: {r['ubicacion']} | Depo: {r['deposito']}")
-                baja = st.number_input("Cantidad a retirar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
-                if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
+                # Mostramos los micro-detalles solicitados
+                st.markdown(f"""
+                **Detalles del Lote:**
+                * 📅 **Vencimiento:** {r['vencimiento']}
+                * 📍 **Ubicación:** {r['ubicacion']}
+                * 🏢 **Depósito:** {r['deposito']}
+                * 🔢 **Stock Disponible:** {r['cantidad']}
+                """)
+                
+                baja = st.number_input(f"Cantidad a retirar ({r['nombre']})", 
+                                       min_value=1.0, 
+                                       max_value=float(r['cantidad']), 
+                                       key=f"val_{r['rowid']}")
+                
+                if st.button("CONFIRMAR SALIDA", key=f"btn_{r['rowid']}"):
                     cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
                     conn.commit()
+                    st.success(f"Salida confirmada: {baja} unidades de {r['nombre']}")
                     st.rerun()
 
 with tab3:
-    st.subheader("Planilla General")
+    st.subheader("Planilla General (Excel Total)")
     try:
-        df_full = pd.read_sql("SELECT i.cod_int as Cód, m.nombre as Producto, i.cantidad as Stock, i.deposito as Depo, i.ubicacion as Ubi, i.vencimiento as Vence FROM inventario i JOIN maestra m ON i.cod_int = m.cod_int WHERE i.cantidad > 0", conn)
+        df_full = pd.read_sql("""
+            SELECT i.cod_int as [Cód], m.nombre as [Producto], i.cantidad as [Stock], 
+            i.deposito as [Depo], i.ubicacion as [Ubi], i.vencimiento as [Vence] 
+            FROM inventario i 
+            JOIN maestra m ON i.cod_int = m.cod_int 
+            WHERE i.cantidad > 0
+        """, conn)
         st.dataframe(df_full, use_container_width=True, hide_index=True)
-    except: st.info("Sincroniza para ver los datos.")
+    except: st.info("Sincroniza para cargar la planilla.")
