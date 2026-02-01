@@ -5,7 +5,7 @@ from datetime import datetime
 import requests
 import os
 import re
-# NUEVAS LIBRERIAS PARA EL BOTON DE SUBIDA
+# Librerías necesarias para la subida (asegurate de tener el archivo requirements.txt en GitHub)
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
@@ -15,7 +15,7 @@ FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
 DB_NAME = 'inventario_wms.db'
 URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
-# --- TU LLAVE JSON (Integrada para la subida) ---
+# --- TU LLAVE JSON PARA SUBIDA ---
 CREDS_DICT = {
     "type": "service_account",
     "project_id": "fifth-liberty-486120-q0",
@@ -27,7 +27,7 @@ CREDS_DICT = {
 
 st.set_page_config(page_title="WMS Master Pro", layout="wide")
 
-# --- FUNCION SUBIR A DRIVE ---
+# --- FUNCIÓN PARA SUBIR A DRIVE ---
 def subir_a_drive():
     try:
         scopes = ['https://www.googleapis.com/auth/drive.file']
@@ -35,7 +35,7 @@ def subir_a_drive():
         service = build('drive', 'v3', credentials=creds)
         media = MediaFileUpload(DB_NAME, mimetype='application/octet-stream')
         service.files().update(fileId=FILE_ID, media_body=media).execute()
-        st.success("✅ CAMBIOS SUBIDOS A DRIVE EXITOSAMENTE")
+        st.success("✅ CAMBIOS GUARDADOS EN DRIVE")
     except Exception as e:
         st.error(f"❌ ERROR AL SUBIR: {e}")
 
@@ -77,4 +77,97 @@ def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute('CREATE TABLE IF NOT EXISTS maestra (cod_int TEXT PRIMARY KEY, nombre TEXT, barras TEXT)')
-    cursor.execute('''CREATE
+    cursor.execute('''CREATE TABLE IF NOT EXISTS inventario 
+                      (cod_int TEXT, cantidad REAL, nombre TEXT, barras TEXT, 
+                       fecha TEXT, ubicacion TEXT, deposito TEXT)''')
+    conn.commit()
+    return conn, cursor
+
+conn, cursor = init_db()
+
+# --- INTERFAZ ---
+st.title("📦 GESTIÓN DE STOCK: LOGISTICA")
+
+if st.button("🔄 ACTUALIZAR PANTALLA"):
+    st.rerun()
+
+# Sincronización Protegida (Solo Admin)
+if es_autorizado:
+    col_sync1, col_sync2 = st.columns(2)
+    with col_sync1:
+        if st.button("📥 CLONAR DATOS DESDE DRIVE", use_container_width=True):
+            try:
+                if os.path.exists(DB_NAME): os.remove(DB_NAME)
+                r = requests.get(URL_DIRECTA, timeout=10)
+                with open(DB_NAME, 'wb') as f: f.write(r.content)
+                st.success("✅ BASE DE DATOS ACTUALIZADA")
+                st.rerun()
+            except Exception as e: st.error(f"Error: {e}")
+    with col_sync2:
+        if st.button("📤 SUBIR CAMBIOS A DRIVE", use_container_width=True):
+            subir_a_drive()
+
+tab1, tab2, tab3 = st.tabs(["📥 ENTRADAS", "📤 DESPACHO / CONSULTA", "📊 PLANILLA GENERAL"])
+
+# --- TAB 1: MOVIMIENTOS ---
+with tab1:
+    if not es_autorizado:
+        st.warning("⚠️ Esta pestaña es solo para ingresos. Ingrese clave para operar.")
+    else:
+        st.subheader("Ingreso de Mercadería")
+        bus_m = st.text_input("🔍 Buscar en Maestra", key="bus_m")
+        try:
+            query_m = "SELECT * FROM maestra WHERE cod_int LIKE ? OR nombre LIKE ? OR barras LIKE ?"
+            maestra_df = pd.read_sql(query_m, conn, params=(f'%{bus_m}%', f'%{bus_m}%', f'%{bus_m}%'))
+            opciones = maestra_df.apply(lambda x: f"{x['cod_int']} | {x['nombre']}", axis=1).tolist()
+            seleccion = st.selectbox("Producto:", options=[""] + opciones)
+            if seleccion:
+                item = maestra_df[maestra_df['cod_int'] == seleccion.split(" | ")[0]].iloc[0]
+                cod_sel, nom_sel, bar_sel = item['cod_int'], item['nombre'], item['barras']
+            else: cod_sel, nom_sel, bar_sel = "", "", ""
+        except: cod_sel, nom_sel, bar_sel = "", "", ""
+
+        with st.form("form_entrada", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                f_cod = st.text_input("Código Interno", value=cod_sel)
+                f_nom = st.text_input("Descripción", value=nom_sel)
+                f_can = st.number_input("Cantidad", min_value=0.0)
+            with col2:
+                f_dep = st.selectbox("Depósito", ["depo1", "depo2"])
+                f_ubi = st.text_input("Ubicación", value=motor_sugerencia_pc(conn))
+                f_venc_raw = st.text_input("Vencimiento (MMAA)", max_chars=4)
+            if st.form_submit_button("⚡ REGISTRAR"):
+                if f_cod and len(f_venc_raw) == 4:
+                    f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
+                    cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?,?)", 
+                                 (f_cod, f_can, f_nom, bar_sel, f_venc, f_ubi, f_dep))
+                    conn.commit()
+                    st.success("Guardado correctamente.")
+                    st.rerun()
+
+# --- TAB 2: DESPACHO ---
+with tab2:
+    st.subheader("Buscador de Stock")
+    bus_d = st.text_input("🔍 Buscar Nombre, Código o Barras", key="bus_d")
+    if bus_d:
+        query_d = "SELECT rowid, * FROM inventario WHERE (cod_int LIKE ? OR nombre LIKE ? OR barras LIKE ?) AND cantidad > 0"
+        res = pd.read_sql(query_d, conn, params=(f'%{bus_d}%', f'%{bus_d}%', f'%{bus_d}%'))
+        for i, r in res.iterrows():
+            with st.expander(f"📦 {r['nombre']} - Cantidad: {r['cantidad']}"):
+                st.write(f"**Cód:** {r['cod_int']} | **Ubi:** {r['ubicacion']} | **Vence:** {r['fecha']}")
+                st.write(f"**Depósito:** {r['deposito']} | **Barras:** {r['barras']}")
+                if es_autorizado:
+                    baja = st.number_input("Retirar", min_value=1.0, max_value=float(r['cantidad']), key=f"d_{r['rowid']}")
+                    if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
+                        cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
+                        conn.commit()
+                        st.rerun()
+                else:
+                    st.caption("🔒 Solo lectura: Ingrese clave de Admin para retirar.")
+
+# --- TAB 3: PLANILLA ---
+with tab3:
+    st.subheader("Auditoría de Inventario")
+    df_ver = pd.read_sql("SELECT * FROM inventario", conn)
+    st.dataframe(df_ver, use_container_width=True, hide_index=True)
