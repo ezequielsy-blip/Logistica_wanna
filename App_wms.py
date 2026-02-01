@@ -4,19 +4,19 @@ import pandas as pd
 from datetime import datetime
 import requests
 import os
+import re
 
-# --- CONFIGURACIÓN DRIVE (Tus datos originales) ---
+# --- CONFIGURACIÓN DRIVE ---
 FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
 DB_NAME = 'inventario_wms.db'
 URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
 st.set_page_config(page_title="WMS Master Pro", layout="wide")
 
-# --- SISTEMA DE LLAVE (Con tu nueva clave) ---
+# --- SISTEMA DE LLAVE (Clave: 70797474) ---
 with st.sidebar:
     st.title("🔒 SEGURIDAD")
     clave = st.text_input("Clave de Administrador", type="password")
-    # Aplicamos tu nueva clave solicitada
     es_autorizado = (clave == "70797474")
     
     if es_autorizado:
@@ -62,7 +62,11 @@ conn, cursor = init_db()
 # --- INTERFAZ ---
 st.title("📦 GESTIÓN DE STOCK: LOGISTICA")
 
-# Sincronización Protegida
+# BOTÓN DE ACTUALIZAR PARA CUALQUIER USUARIO
+if st.button("🔄 ACTUALIZAR PANTALLA"):
+    st.rerun()
+
+# Sincronización Protegida (Solo Admin)
 if es_autorizado:
     if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
         try:
