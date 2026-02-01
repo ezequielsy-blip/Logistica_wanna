@@ -1,7 +1,6 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import datetime
 import requests
 import os
 import streamlit.components.v1 as components
@@ -13,25 +12,35 @@ URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
 st.set_page_config(page_title="WMS Master Pro", layout="centered")
 
-# --- COMPONENTE SCANNER JS (INYECTA EL CÓDIGO AUTOMÁTICAMENTE) ---
-def scanner_component(key):
-    # Este componente abre la cámara y devuelve el código detectado al buscador
-    code = components.html(
-        """
-        <div id="reader" style="width:100%;"></div>
+# --- LÓGICA DE COMUNICACIÓN SCANNER -> PYTHON ---
+# Inicializamos el estado del buscador si no existe
+if "scan_result" not in st.session_state:
+    st.session_state.scan_result = ""
+
+# Componente JS que envía el código detectado a Streamlit
+def scanner_ui(key_id):
+    components.html(
+        f"""
+        <div id="reader-{key_id}" style="width:100%;"></div>
         <script src="https://unpkg.com/html5-qrcode"></script>
         <script>
-            function onScanSuccess(decodedText, decodedResult) {
-                window.parent.postMessage({type: 'barcode', value: decodedText, key: '""" + key + """'}, '*');
-                html5QrcodeScanner.clear();
-            }
-            let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+            function onScanSuccess(decodedText) {{
+                // Enviar el resultado al componente de Streamlit
+                window.parent.postMessage({{
+                    type: 'streamlit:setComponentValue',
+                    value: decodedText
+                }}, '*');
+                // Vibración corta para confirmar escaneo
+                if (navigator.vibrate) navigator.vibrate(100);
+            }}
+            let html5QrcodeScanner = new Html5QrcodeScanner(
+                "reader-{key_id}", {{ fps: 15, qrbox: 250 }});
             html5QrcodeScanner.render(onScanSuccess);
         </script>
-        """, height=350)
-    return code
+        """, height=380
+    )
 
-# --- MOTOR DE UBICACIÓN (Lógica idéntica a tu LOGISTICA.exe: 99-01A...) ---
+# --- MOTOR DE UBICACIÓN (Tu lógica de PC exacta) ---
 def motor_sugerencia_pc(conn):
     try:
         cursor = conn.cursor()
@@ -66,8 +75,8 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- TÍTULO Y SINCRONIZACIÓN ---
-st.title("🚀 WMS PROFESIONAL MÓVIL")
+# --- INTERFAZ PRINCIPAL ---
+st.title("📦 WMS PROFESIONAL MÓVIL")
 
 if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
     try:
@@ -80,16 +89,17 @@ if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
 
 tab1, tab2, tab3 = st.tabs(["📥 MOVIMIENTOS", "📤 DESPACHO", "📊 PLANILLA"])
 
-# --- TAB 1: MOVIMIENTOS (ENTRADA) ---
+# --- TAB 1: MOVIMIENTOS ---
 with tab1:
-    st.subheader("Carga (Réplica LOGISTICA)")
-    if st.checkbox("📷 Activar Scanner (Entrada)"):
-        scanner_component("mov")
-    
-    bus_entrada = st.text_input("🔍 Buscar por Nombre, Cod o Scan", key="txt_mov")
+    st.subheader("Entrada de Mercadería")
+    with st.expander("📷 ABRIR ESCÁNER DE ENTRADA"):
+        val_scan_mov = scanner_ui("mov_scan")
+        if val_scan_mov: st.session_state.scan_result = val_scan_mov
+
+    bus_mov = st.text_input("🔍 Buscar (Nombre o Código)", value=st.session_state.scan_result, key="input_mov")
     
     try:
-        query_m = f"SELECT cod_int, nombre FROM maestra WHERE cod_int LIKE '%{bus_entrada}%' OR nombre LIKE '%{bus_entrada}%' OR barras LIKE '%{bus_entrada}%'"
+        query_m = f"SELECT cod_int, nombre FROM maestra WHERE cod_int LIKE '%{bus_mov}%' OR nombre LIKE '%{bus_mov}%' OR barras LIKE '%{bus_mov}%'"
         maestra_df = pd.read_sql(query_m, conn)
         cod_sel = st.selectbox("Confirmar Producto", options=[""] + maestra_df['cod_int'].tolist())
         nom_auto = maestra_df[maestra_df['cod_int'] == cod_sel]['nombre'].values[0] if cod_sel != "" else ""
@@ -101,57 +111,55 @@ with tab1:
         f_nom = st.text_input("Nombre", value=nom_auto)
         c1, c2 = st.columns(2)
         with c1: f_can = st.number_input("Cantidad", min_value=0.0)
-        with c2: f_dep = st.selectbox("Depósito", ["DEPO 1", "DEPO 2"])
+        with c2: f_dep = st.selectbox("Depósito", ["depo1", "depo2"])
         c3, c4 = st.columns(2)
-        with c3: f_venc_raw = st.text_input("Vencimiento (MMAA)", max_chars=4)
+        with c3: f_venc_raw = st.text_input("Vencimiento (MMAA)", max_chars=4, help="Se guardará como MM/AA")
         with c4: f_ubi = st.text_input("Ubicación", value=ubi_sug)
         
-        if st.form_submit_button("⚡ REGISTRAR MOVIMIENTO"):
+        if st.form_submit_button("⚡ REGISTRAR EN APP_STOCK"):
             if f_cod and len(f_venc_raw) == 4:
                 f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
                 cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?,?)", 
                              (f_cod, f_can, f_nom, "", f_venc, f_ubi, f_dep))
                 conn.commit()
+                st.session_state.scan_result = "" # Limpiamos para el próximo
                 st.success(f"Cargado en {f_ubi}")
                 st.rerun()
 
-# --- TAB 2: DESPACHO (SALIDA CON MICRO-DETALLES) ---
+# --- TAB 2: DESPACHO ---
 with tab2:
-    st.subheader("Salida (Réplica APP_STOCK)")
-    if st.checkbox("📷 Activar Scanner (Despacho)"):
-        scanner_component("des")
+    st.subheader("Salida de Mercadería")
+    with st.expander("📷 ABRIR ESCÁNER DE DESPACHO"):
+        val_scan_des = scanner_ui("des_scan")
+        if val_scan_des: st.session_state.scan_result = val_scan_des
 
-    bus = st.text_input("🔎 Escribe Nombre, Código o Scan", key="bus_despacho")
+    bus_des = st.text_input("🔎 Filtro (Escribe o Escanea)", value=st.session_state.scan_result, key="input_des")
     
-    if bus:
-        query = f"""
-            SELECT rowid, cod_int, nombre, cantidad, ubicacion, fecha, deposito 
-            FROM inventario 
-            WHERE (cod_int LIKE '%{bus}%' OR nombre LIKE '%{bus}%' OR barras LIKE '%{bus}%') 
-            AND cantidad > 0
-        """
+    if bus_des:
+        query = f"SELECT rowid, * FROM inventario WHERE (cod_int LIKE '%{bus_des}%' OR nombre LIKE '%{bus_des}%' OR barras LIKE '%{bus_des}%') AND cantidad > 0"
         res = pd.read_sql(query, conn)
         for i, r in res.iterrows():
             with st.expander(f"📦 {r['nombre']} (Cod: {r['cod_int']})"):
-                # MICRO-DETALLES EXACTOS SOLICITADOS
+                # MICRO-DETALLES SOLICITADOS
                 st.markdown(f"""
-                **DATOS DEL LOTE:**
+                ---
+                **INFORMACIÓN DEL LOTE:**
                 * 🔢 **CANTIDAD:** {r['cantidad']}
-                * 📅 **FECHA (Vence):** {r['fecha']}
+                * 📅 **VENCIMIENTO:** {r['fecha']}
                 * 📍 **UBICACIÓN:** {r['ubicacion']}
                 * 🏢 **DEPÓSITO:** {r['deposito']}
+                ---
                 """)
-                
                 baja = st.number_input(f"Cantidad a retirar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
                 if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
                     cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
                     conn.commit()
-                    st.success("Salida confirmada")
+                    st.session_state.scan_result = ""
                     st.rerun()
 
 # --- TAB 3: PLANILLA ---
 with tab3:
-    st.subheader("Excel Total")
+    st.subheader("Planilla General")
     tabla_ver = st.radio("Ver tabla:", ["inventario", "maestra"], horizontal=True)
     try:
         df_full = pd.read_sql(f"SELECT * FROM {tabla_ver}", conn)
