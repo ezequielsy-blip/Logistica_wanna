@@ -14,8 +14,8 @@ URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
 st.set_page_config(page_title="WMS Master Pro", layout="centered")
 
-# --- NUEVO: COMPONENTE DE ESCANEO AUTOMÁTICO ---
-def lector_camara(key_id):
+# --- NUEVO: COMPONENTE SCANNER (Inyecta el código en el buscador) ---
+def componente_scanner(key_id):
     return components.html(
         f"""
         <div id="reader-{key_id}" style="width:100%;"></div>
@@ -28,7 +28,7 @@ def lector_camara(key_id):
                 }}, '*');
             }}
             let html5QrcodeScanner = new Html5QrcodeScanner(
-                "reader-{key_id}", {{ fps: 10, qrbox: 250 }});
+                "reader-{key_id}", {{ fps: 15, qrbox: 250 }});
             html5QrcodeScanner.render(onScanSuccess);
         </script>
         """, height=350
@@ -91,81 +91,12 @@ tab1, tab2, tab3 = st.tabs(["📥 MOVIMIENTOS", "📤 DESPACHO", "📊 PLANILLA"
 # --- TAB 1: MOVIMIENTOS ---
 with tab1:
     st.subheader("Entrada de Mercadería")
+    with st.expander("📷 ABRIR ESCÁNER (MAESTRA)"):
+        res_mov = componente_scanner("scan_mov")
     
-    # Nuevo: Opción de cámara para buscar en Maestra
-    exp_cam1 = st.expander("📷 Lector de Barras (Entrada)")
-    with exp_cam1:
-        scan_mov = lector_camara("mov")
-    
-    # Buscador por nombre o código (se llena con la cámara)
-    bus_m = st.text_input("🔍 Buscar en Maestra (Nombre o Código)", value=scan_mov if scan_mov else "")
+    # Buscador por nombre o código
+    bus_m = st.text_input("🔍 Buscar Producto", value=res_mov if res_mov else "")
     
     try:
-        # Búsqueda real por nombre o código en la tabla Maestra
-        q_m = f"SELECT cod_int, nombre FROM maestra WHERE cod_int LIKE '%{bus_m}%' OR nombre LIKE '%{bus_m}%' OR barras LIKE '%{bus_m}%'"
-        maestra_df = pd.read_sql(q_m, conn)
-        
-        cod_sel = st.selectbox("Confirmar Producto", options=[""] + maestra_df['cod_int'].tolist())
-        nom_auto = maestra_df[maestra_df['cod_int'] == cod_sel]['nombre'].values[0] if cod_sel != "" else ""
-        ubi_sug = motor_sugerencia_pc(conn)
-    except: cod_sel, nom_auto, ubi_sug = "", "", "99-01A"
-
-    with st.form("form_mov", clear_on_submit=True):
-        f_cod = st.text_input("Cod Int", value=cod_sel)
-        f_nom = st.text_input("Nombre", value=nom_auto)
-        c1, c2 = st.columns(2)
-        with c1: f_can = st.number_input("Cantidad", min_value=0.0)
-        with c2: f_dep = st.selectbox("Depósito", ["depo1", "depo2"])
-        c3, c4 = st.columns(2)
-        with c3: f_venc_raw = st.text_input("Vencimiento (MM/AA)", placeholder="Ej: 1226", max_chars=4)
-        with c4: f_ubi = st.text_input("Ubicación", value=ubi_sug)
-        
-        if st.form_submit_button("⚡ REGISTRAR MOVIMIENTO"):
-            if f_cod and len(f_venc_raw) == 4:
-                f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
-                cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?,?)", 
-                             (f_cod, f_can, f_nom, "", f_venc, f_ubi, f_dep))
-                conn.commit()
-                st.success(f"Cargado en {f_ubi}")
-                st.rerun()
-
-# --- TAB 2: DESPACHO ---
-with tab2:
-    st.subheader("Salida de Mercadería")
-    
-    # Nuevo: Opción de cámara para buscar en Inventario
-    exp_cam2 = st.expander("📷 Lector de Barras (Despacho)")
-    with exp_cam2:
-        scan_des = lector_camara("des")
-
-    bus = st.text_input("🔍 Buscar por Nombre, Cod o Barras", value=scan_des if scan_des else "")
-    
-    if bus:
-        # Tu consulta original pero corregida para buscar también por barras
-        query = f"""
-            SELECT rowid, cod_int, nombre, cantidad, ubicacion, fecha, deposito 
-            FROM inventario 
-            WHERE (cod_int LIKE '%{bus}%' OR nombre LIKE '%{bus}%' OR barras LIKE '%{bus}%') 
-            AND cantidad > 0
-        """
-        res = pd.read_sql(query, conn)
-        for i, r in res.iterrows():
-            # Mostramos los 4 detalles: Cantidad, Fecha, Ubi y Depo
-            with st.expander(f"📦 {r['nombre']} | Stock: {r['cantidad']}"):
-                st.write(f"**Vence:** {r['fecha']} | **Ubi:** {r['ubicacion']} | **Depo:** {r['deposito']}")
-                
-                baja = st.number_input("Cantidad a sacar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
-                if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
-                    cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
-                    conn.commit()
-                    st.success("Salida realizada")
-                    st.rerun()
-
-# --- TAB 3: PLANILLA ---
-with tab3:
-    st.subheader("Planilla General")
-    tabla_ver = st.radio("Ver tabla:", ["inventario", "maestra"], horizontal=True)
-    try:
-        df_full = pd.read_sql(f"SELECT * FROM {tabla_ver}", conn)
-        st.dataframe(df_full, use_container_width=True, hide_index=True)
-    except: st.info("Sincroniza para ver la planilla.")
+        # Búsqueda flexible por nombre o código
+        query_maestra = f"SELECT cod_int, nombre FROM maestra WHERE cod_int LIKE '%{bus_m}%' OR nombre LIKE '%{bus_m}%' OR barras
