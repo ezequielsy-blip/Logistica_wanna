@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 import requests
 import os
+import streamlit.components.v1 as components
 
 # --- CONFIGURACIÓN DRIVE ---
 FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
@@ -21,6 +22,28 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# --- SCRIPT PARA BARRA AUTOMÁTICA (JS) ---
+components.html(
+    """
+    <script>
+    const inputs = window.parent.document.querySelectorAll('input');
+    inputs.forEach(input => {
+        if (input.placeholder === "MM/AA") {
+            input.addEventListener('input', function(e) {
+                let val = e.target.value.replace(/[^0-9]/g, '');
+                if (val.length > 2) {
+                    e.target.value = val.substring(0, 2) + '/' + val.substring(2, 4);
+                } else {
+                    e.target.value = val;
+                }
+            });
+        }
+    });
+    </script>
+    """,
+    height=0,
+)
+
 # --- BASE DE DATOS ---
 def conectar_y_preparar():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
@@ -29,7 +52,6 @@ def conectar_y_preparar():
     cursor.execute("""CREATE TABLE IF NOT EXISTS inventario (
                         cod_int TEXT, cantidad REAL, ubicacion TEXT, 
                         deposito TEXT, vencimiento TEXT, fecha_registro TEXT)""")
-    # Actualizar columnas si faltan
     cursor.execute("PRAGMA table_info(inventario)")
     columnas = [info[1] for info in cursor.fetchall()]
     if 'deposito' not in columnas: cursor.execute("ALTER TABLE inventario ADD COLUMN deposito TEXT DEFAULT 'DEPO1'")
@@ -68,14 +90,12 @@ with tab1:
         with c2: f_dep = st.selectbox("Depósito", options=["DEPO1", "DEPO2"])
         
         c3, c4 = st.columns(2)
-        # Lógica MM/AA: Escribes 4 números y el sistema le pone la barra al guardar
-        with c3: f_venc_raw = st.text_input("Vencimiento (MMAA)", placeholder="Ej: 1226", max_chars=4)
+        # El placeholder "MM/AA" activa el script de la barra automática
+        with c3: f_venc = st.text_input("Vencimiento", placeholder="MM/AA", max_chars=5)
         with c4: f_ubi = st.text_input("Ubicación")
         
         if st.form_submit_button("💾 GUARDAR ENTRADA"):
-            if f_cod and f_nom and len(f_venc_raw) == 4:
-                # Ponemos la barra automáticamente antes de guardar
-                f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
+            if f_cod and f_nom and len(f_venc) == 5:
                 cursor.execute("INSERT OR IGNORE INTO maestra VALUES (?,?)", (f_cod, f_nom))
                 cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?)", 
                              (f_cod, f_can, f_ubi, f_dep, f_venc, datetime.now().strftime('%d/%m/%Y')))
@@ -83,7 +103,7 @@ with tab1:
                 st.success(f"Guardado: {f_nom} ({f_venc})")
                 st.rerun()
             else:
-                st.error("Por favor completa Código, Nombre y Vencimiento (4 dígitos)")
+                st.error("Completar Código, Nombre y Vencimiento (MM/AA)")
 
 with tab2:
     st.subheader("Despacho / Salidas")
