@@ -12,15 +12,7 @@ FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
 DB_NAME = 'inventario_wms.db'
 URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
-# --- TUS CREDENCIALES JSON (Ya integradas) ---
-INFO_JSON = {
-    "type": "service_account",
-    "project_id": "fifth-liberty-486120-q0",
-    "private_key": st.secrets.get("private_key", "REEMPLAZAR_SI_NO_USA_SECRETS"), 
-    "client_email": "app-stock@fifth-liberty-486120-q0.iam.gserviceaccount.com",
-    "token_uri": "https://oauth2.googleapis.com/token",
-}
-# Nota: Para máxima seguridad en la web, usé el diccionario que pasaste.
+# --- TUS CREDENCIALES JSON ---
 CREDS_DICT = {
     "type": "service_account",
     "project_id": "fifth-liberty-486120-q0",
@@ -32,27 +24,27 @@ CREDS_DICT = {
 
 st.set_page_config(page_title="LOGISTICA WMS", layout="wide")
 
-# --- FUNCION SUBIR A DRIVE ---
+# --- MOTOR DE SUBIDA ---
 def subir_a_drive():
     try:
         scopes = ['https://www.googleapis.com/auth/drive.file']
         creds = service_account.Credentials.from_service_account_info(CREDS_DICT, scopes=scopes)
         service = build('drive', 'v3', credentials=creds)
-        
-        media = MediaFileUpload(DB_NAME, mimetype='application/octet-stream', resumable=True)
+        media = MediaFileUpload(DB_NAME, mimetype='application/octet-stream')
         service.files().update(fileId=FILE_ID, media_body=media).execute()
         return True
     except Exception as e:
-        st.error(f"Error de subida: {e}")
+        st.error(f"Error al subir: {e}")
         return False
 
-# --- LOGICA DE BASE DE DATOS Y UBICACIÓN 99 ---
+# --- BASE DE DATOS ---
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     return conn, conn.cursor()
 
 conn, cursor = init_db()
 
+# --- UBICACIÓN 99 (Tu lógica intacta) ---
 def motor_sugerencia_pc(conn):
     try:
         cursor = conn.cursor()
@@ -71,70 +63,67 @@ def motor_sugerencia_pc(conn):
             return f"99-{str(num+1).zfill(2)}A"
     except: return "99-01A"
 
-# --- INTERFAZ ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.title("🔒 ACCESO")
-    clave = st.text_input("Admin Key", type="password")
+    clave = st.text_input("Clave Admin", type="password")
     es_admin = (clave == "70797474")
     if es_admin: st.success("MODO EDICIÓN")
 
-st.title("📦 LOGISTICA - SISTEMA MÓVIL")
+st.title("📦 GESTIÓN LOGISTICA")
 
-if st.button("🔄 REFRESCAR PANTALLA"): st.rerun()
+if st.button("🔄 ACTUALIZAR PANTALLA"): st.rerun()
 
 if es_admin:
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("📥 BAJAR DE DRIVE (Clonar)", use_container_width=True):
+        if st.button("📥 CLONAR DRIVE (PC -> Celular)", use_container_width=True):
             r = requests.get(URL_DIRECTA)
             with open(DB_NAME, 'wb') as f: f.write(r.content)
-            st.success("Sincronizado con PC")
+            st.success("Sincronizado")
             st.rerun()
     with c2:
-        if st.button("📤 SUBIR A DRIVE (Guardar)", use_container_width=True):
-            if subir_a_drive(): st.success("¡Datos guardados en la nube!")
+        if st.button("📤 SUBIR DRIVE (Celular -> PC)", use_container_width=True):
+            if subir_a_drive(): st.success("¡Cambios guardados en la Nube!")
 
 t1, t2, t3 = st.tabs(["📥 ENTRADAS", "📤 DESPACHO", "📊 STOCK"])
 
-# --- ENTRADAS ---
+# --- TAB ENTRADAS ---
 with t1:
-    if not es_admin: st.warning("Solo lectura")
+    if not es_admin: st.warning("Modo consulta solamente.")
     else:
-        # Búsqueda en maestra para dropdown
         maestra = pd.read_sql("SELECT * FROM maestra", conn)
         opc = maestra.apply(lambda x: f"{x['cod_int']} | {x['nombre']}", axis=1).tolist()
-        sel = st.selectbox("Buscar producto:", [""] + opc)
-        
+        sel = st.selectbox("Seleccionar producto:", [""] + opc)
         with st.form("ingreso"):
-            cod = sel.split(" | ")[0] if sel else ""
-            f_cod = st.text_input("Código", value=cod)
+            f_cod = st.text_input("Código", value=sel.split(" | ")[0] if sel else "")
             f_can = st.number_input("Cantidad", min_value=0.0)
             f_dep = st.selectbox("Depósito", ["depo1", "depo2"])
-            f_ubi = st.text_input("Ubicación Sugerida", value=motor_sugerencia_pc(conn))
+            f_ubi = st.text_input("Ubicación", value=motor_sugerencia_pc(conn))
             f_venc = st.text_input("Vencimiento (MMAA)", max_chars=4)
             if st.form_submit_button("REGISTRAR"):
-                if len(f_venc)==4:
+                if len(f_venc) == 4:
                     v = f"{f_venc[:2]}/{f_venc[2:]}"
-                    nom = maestra[maestra['cod_int']==f_cod]['nombre'].values[0]
+                    nom = maestra[maestra['cod_int'] == f_cod]['nombre'].values[0]
                     cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?,?)", 
                                  (f_cod, f_can, nom, "", v, f_ubi, f_dep))
                     conn.commit()
-                    st.success("Registrado localmente")
+                    st.success("Guardado localmente. Recordá SUBIR a Drive.")
 
-# --- DESPACHO ---
+# --- TAB DESPACHO ---
 with t2:
-    bus = st.text_input("🔍 Buscar para retirar")
+    bus = st.text_input("🔍 Buscar stock")
     if bus:
         res = pd.read_sql(f"SELECT rowid, * FROM inventario WHERE nombre LIKE '%{bus}%' AND cantidad > 0", conn)
         for i, r in res.iterrows():
-            with st.expander(f"{r['nombre']} ({r['cantidad']}) - {r['ubicacion']}"):
+            with st.expander(f"{r['nombre']} ({r['cantidad']})"):
                 if es_admin:
-                    sacar = st.number_input("Cant.", 1.0, float(r['cantidad']), key=f"s_{r['rowid']}")
-                    if st.button("RETIRAR", key=f"b_{r['rowid']}"):
+                    sacar = st.number_input("Cantidad a retirar", 1.0, float(r['cantidad']), key=f"s_{r['rowid']}")
+                    if st.button("CONFIRMAR RETIRO", key=f"b_{r['rowid']}"):
                         cursor.execute("UPDATE inventario SET cantidad=cantidad-? WHERE rowid=?", (sacar, r['rowid']))
                         conn.commit()
                         st.rerun()
 
-# --- PLANILLA ---
+# --- TAB STOCK ---
 with t3:
     st.dataframe(pd.read_sql("SELECT * FROM inventario", conn), use_container_width=True)
