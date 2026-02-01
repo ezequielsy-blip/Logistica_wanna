@@ -41,10 +41,14 @@ if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
     try:
         if os.path.exists(DB_NAME): os.remove(DB_NAME)
         r = requests.get(URL_DIRECTA)
-        with open(DB_NAME, 'wb') as f: f.write(r.content)
-        st.success("✅ Datos clonados")
-        st.rerun()
-    except: st.error("Error al sincronizar")
+        if r.status_code == 200:
+            with open(DB_NAME, 'wb') as f: f.write(r.content)
+            st.success("✅ Datos clonados")
+            st.rerun()
+        else:
+            st.error(f"Error de Drive: Código {r.status_code}")
+    except Exception as e: 
+        st.error(f"Error de conexión: {e}")
 
 tab1, tab2, tab3 = st.tabs(["📥 LOGISTICA", "📤 APP_STOCK", "📊 EXCEL TOTAL"])
 
@@ -70,13 +74,13 @@ with tab1:
             if f_cod and f_nom and len(f_venc_raw) == 4:
                 f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
                 cursor.execute("INSERT OR IGNORE INTO maestra VALUES (?,?)", (f_cod, f_nom))
-                cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?)", 
+                cursor.execute("INSERT INTO inventario (cod_int, cantidad, ubicacion, deposito, vencimiento, fecha_registro) VALUES (?,?,?,?,?,?)", 
                              (f_cod, f_can, f_ubi, f_dep, f_venc, datetime.now().strftime('%d/%m/%Y')))
                 conn.commit()
                 st.success(f"Guardado: {f_nom} ({f_venc})")
                 st.rerun()
             else:
-                st.error("Por favor completa Código, Nombre y Vencimiento (4 dígitos)")
+                st.error("Completar Código, Nombre y 4 números de Vencimiento")
 
 with tab2:
     st.subheader("Despacho / Salidas")
@@ -96,7 +100,6 @@ with tab2:
 with tab3:
     st.subheader("Stock Consolidado")
     try:
-        # Se asegura la lectura de la tabla
         df_full = pd.read_sql("SELECT i.cod_int as [Cód], m.nombre as [Producto], i.cantidad as [Stock], i.deposito as [Depósito], i.ubicacion as [Ubicación], i.vencimiento as [Vencimiento] FROM inventario i JOIN maestra m ON i.cod_int = m.cod_int WHERE i.cantidad > 0", conn)
         st.dataframe(df_full, use_container_width=True, hide_index=True)
     except:
