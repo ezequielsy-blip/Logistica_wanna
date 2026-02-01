@@ -13,7 +13,7 @@ URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
 st.set_page_config(page_title="WMS Master Pro", layout="centered")
 
-# --- MOTOR DE UBICACIÓN (Tu lógica 99 secuencia ABCD +1) ---
+# --- MOTOR DE UBICACIÓN (Lógica idéntica a tu función sugerir_ubicacion de PC) ---
 def motor_sugerencia_pc(conn):
     try:
         cursor = conn.cursor()
@@ -30,9 +30,12 @@ def motor_sugerencia_pc(conn):
         num_actual = int(num_str) if num_str else 1
         if letra_actual in ciclo:
             idx = ciclo.index(letra_actual)
-            if idx < 3: nueva_letra = ciclo[idx+1]; nuevo_num = num_actual
-            else: nueva_letra = 'A'; nuevo_num = num_actual + 1
-        else: nueva_letra = 'A'; nuevo_num = num_actual + 1
+            if idx < 3:
+                nueva_letra = ciclo[idx+1]; nuevo_num = num_actual
+            else:
+                nueva_letra = 'A'; nuevo_num = num_actual + 1
+        else:
+            nueva_letra = 'A'; nuevo_num = num_actual + 1
         return f"99-{str(nuevo_num).zfill(2)}{nueva_letra}"
     except: return "99-01A"
 
@@ -66,12 +69,13 @@ tab1, tab2, tab3 = st.tabs(["📥 MOVIMIENTOS", "📤 DESPACHO", "📊 PLANILLA"
 # --- TAB 1: MOVIMIENTOS ---
 with tab1:
     st.subheader("Entrada de Mercadería")
-    bus_m = st.text_input("🔍 Buscar en Maestra", key="in_mov")
+    # Buscador que ya te funcionaba bien
+    bus_m = st.text_input("🔍 Buscar en Maestra (Nombre o Código)", key="input_mov")
     try:
-        # Buscador elástico (LIKE) con parámetros seguros
-        query_m = "SELECT cod_int, nombre FROM maestra WHERE (cod_int LIKE ? OR nombre LIKE ? OR barras LIKE ?)"
+        # Usamos parámetros ? para evitar errores de sintaxis
+        query_m = "SELECT cod_int, nombre FROM maestra WHERE cod_int LIKE ? OR nombre LIKE ? OR barras LIKE ?"
         maestra_df = pd.read_sql(query_m, conn, params=(f'%{bus_m}%', f'%{bus_m}%', f'%{bus_m}%'))
-        cod_sel = st.selectbox("Producto", options=[""] + maestra_df['cod_int'].tolist())
+        cod_sel = st.selectbox("Confirmar Producto", options=[""] + maestra_df['cod_int'].tolist())
         nom_auto = maestra_df[maestra_df['cod_int'] == cod_sel]['nombre'].values[0] if cod_sel != "" else ""
         ubi_sug = motor_sugerencia_pc(conn)
     except: cod_sel, nom_auto, ubi_sug = "", "", "99-01A"
@@ -86,7 +90,7 @@ with tab1:
         with c3: f_venc_raw = st.text_input("Vencimiento (MMAA)", max_chars=4)
         with c4: f_ubi = st.text_input("Ubicación", value=ubi_sug)
         
-        if st.form_submit_button("⚡ REGISTRAR"):
+        if st.form_submit_button("⚡ REGISTRAR MOVIMIENTO"):
             if f_cod and len(f_venc_raw) == 4:
                 f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
                 cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?,?)", 
@@ -95,32 +99,34 @@ with tab1:
                 st.success(f"Cargado en {f_ubi}")
                 st.rerun()
 
-# --- TAB 2: DESPACHO (IGUALADO A MOVIMIENTOS) ---
+# --- TAB 2: DESPACHO (SOLUCIONADO) ---
 with tab2:
     st.subheader("Salida de Mercadería")
-    bus_d = st.text_input("🔍 Buscar para Despacho", key="in_des")
-    if bus_d:
-        # AHORA BUSCA IGUAL QUE EN MOVIMIENTOS (LIKE %...%)
+    # Ahora el buscador de Despacho es igual de potente que el de Movimientos
+    bus = st.text_input("🔍 Buscar por Nombre, Cod o Barras (Despacho)", key="input_des")
+    if bus:
+        # CORRECCIÓN: Buscamos coincidencias parciales en nombre y código dentro de inventario
         query_d = "SELECT rowid, * FROM inventario WHERE (cod_int LIKE ? OR nombre LIKE ?) AND cantidad > 0"
-        res = pd.read_sql(query_d, conn, params=(f'%{bus_d}%', f'%{bus_d}%'))
+        res = pd.read_sql(query_d, conn, params=(f'%{bus}%', f'%{bus}%'))
         
-        if not res.empty:
-            for i, r in res.iterrows():
-                with st.expander(f"📦 {r['nombre']} | Stock: {r['cantidad']}"):
-                    st.write(f"**Vence:** {r['fecha']} | **Ubi:** {r['ubicacion']} | **Depo:** {r['deposito']}")
-                    baja = st.number_input("Cantidad", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
-                    if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
-                        cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
-                        conn.commit()
-                        st.rerun()
-        else:
-            st.warning("No se encontró stock con ese nombre o código.")
+        if res.empty:
+            st.warning("No se encontraron lotes con ese nombre o código.")
+            
+        for i, r in res.iterrows():
+            with st.expander(f"📦 {r['nombre']} | Stock: {r['cantidad']}"):
+                # Los 4 micro-detalles exactos que pediste
+                st.write(f"**Vence:** {r['fecha']} | **Ubi:** {r['ubicacion']} | **Depo:** {r['deposito']}")
+                baja = st.number_input("Cantidad a sacar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
+                if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
+                    cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
+                    conn.commit()
+                    st.rerun()
 
 # --- TAB 3: PLANILLA ---
 with tab3:
-    st.subheader("Planilla")
-    t_ver = st.radio("Ver:", ["inventario", "maestra"], horizontal=True)
+    st.subheader("Planilla General")
+    tabla_ver = st.radio("Ver tabla:", ["inventario", "maestra"], horizontal=True)
     try:
-        df = pd.read_sql(f"SELECT * FROM {t_ver}", conn)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-    except: st.info("Sincroniza datos.")
+        df_full = pd.read_sql(f"SELECT * FROM {tabla_ver}", conn)
+        st.dataframe(df_full, use_container_width=True, hide_index=True)
+    except: st.info("Sincroniza para ver datos.")
