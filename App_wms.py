@@ -1,118 +1,142 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
+from datetime import datetime
 import requests
 import os
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 
-# --- CONFIGURACIÓN DRIVE ---
+# --- CONFIGURACIÓN DRIVE (Tu conexión original) ---
 FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
 DB_NAME = 'inventario_wms.db'
 URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
-# --- TUS CREDENCIALES (JSON integrado para que no falle) ---
-CREDS_DICT = {
-    "type": "service_account",
-    "project_id": "fifth-liberty-486120-q0",
-    "private_key_id": "91b213e986ed3f85db65f034f02127d95cd7694c",
-    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEuwIBADANBgkqhkiG9w0BAQEFAASCBKUwggShAgEAAoIBAQDBN3LgtQhI6gtN\nhGZzHfNA9CH0AlKyBuddI7BJVXLBzzDRPasJdmvvcwx+9N3ChPOVcjLA7GvhxVsa\nH+qgbTDfzH+J+Qz/MejJm09ov0T2R5NHqtxmuHgTUnSPLN9y685LCezWibiGQOEc\nvPdZ8GA7S0rkKSYL4+nvKrFmFk9eq+Gmkc5tMY+76ixJyHr85nzi3HmH4AC7wmsc\n3o5HAJR1tKVH7tZwqSgCGAoYCq0aHd7NI12JpeZcJAAtrQv4H9BN28yod25WdFdU\nnAkM+zLMs7iqUVFxfTyDdMCxWNjoX6tfohBovQVdpYPpVEiytxZhnRHqMH7EMSa5\nSVgHPHDfAgMBAAECggEAHfkSjo42w0zfRP6pf+kg/63/iGFF380XXgj3w2CIhU01\nVvg4jKa8trADu7wTnKXQPZoyCmCCmcrqR4K0/H8DymvoSwiB/iKJaKD5sBefxI60\n57S3LQ4nvmOXplBBN4wh+90FywAhSl5NLY6Y1nBmFTyoWP2TI9wOwaW/UEVcuaQu\nLNwYGdqId4LfLgqfZvnsjDs4NXV6EBY829u+kk7k0WMx8BwilfyiXLv1lhphnuhq\n1RBGbhhXuPtu4G8ZmTjJmFjU77Ll8NTNWz5cuMeU8+11LdrYoTq3cmT4yzu6r9xY\ XuH6Dy8z+R3y0L/rg6oHgeRS8Jxx4EurUyxHQxyTMQKBgQDqEtGF88V8i7Q6ZQOT\nzKq5KK5GsQPRwqwgityhZQsRASrJuSgXlQlSddU/SciD/mACPv3zwbSsoDOEuC1y\nojQliju0dh5ufgiePHXjft4t+tTjikgHhbChCs+eMPXsMBzSFW3NzLTi+lNEPBOW\n6zu0xkG9jzuRDkZeV7IoWBi9kQKBgQDTUN1BKR4OlEIDpfK7wwD3iGD6ILXlR6sp\nRDJJZTbq0+KS5Bl1l2qxqyy9B78z1zYX8cvVN8nMDR5Adr7W7qUG71QRFRRHE3A2\niytMClKCa810guhnMRm7QlhHRdcy4jYgbqtxLV5Puv1xE45e0bRJEfmRzEXijKuA\ IQmCKprPbwKBgQDE6D2/vJjGM9PSR8WhoMuBZXpt111KKMSZv5boYlLT5DJ1bcAP\nTn2AE8XnLo9ykht76DfDxZDSoxWTsUfyJgdOCSI+phrlgjqHun7FeKU48sgB/gKn\n6UvzvV94SOGn5bVo+UPcmzcTtdc0EIG+NHaOlTUaXJKUbPi/RnCFxc5SMQJ/Rvzj\nVwB5GGy1wIP/BxR7PqyR53UVpfBtj29ZdU6LJFgJxU7bPqWfMhBO9zGjCcdCZMjV\nsMsM/39oqj853PpOdgXwN8zdAwOErs4RvXm6PhX47ysK55+XBVFEVq0fnfhgNoT3\nEw4qoJ4whcwMB85qwiFHtbLpxzF6a5CtoQyu9QKBgGwQJbx2/zjcYKFjYVbp2Cgn\nu/5tEY1Jfx8gZXB6djg6f/gZk6/tKK9hLQ4XtPQRDoRlghw31RsZjdcL0zIf2ZX7\nlFZgvh8zw3MWDeMv2l95xsHMoz3RrdffyBnbYIGhw3oesD0kFP0g0aiBf+54Ujwg\3HRDebG/rUmZGkXcjdX2\n-----END PRIVATE KEY-----\n",
-    "client_email": "app-stock@fifth-liberty-486120-q0.iam.gserviceaccount.com",
-    "token_uri": "https://oauth2.googleapis.com/token",
-}
+st.set_page_config(page_title="WMS Master Pro", layout="wide")
 
-st.set_page_config(page_title="LOGISTICA MOVIL", layout="wide")
-
-# --- FUNCION SUBIDA ---
-def subir_datos():
+# --- MOTOR DE UBICACIÓN (Tu lógica: 99 + secuencia ABCD +1) ---
+def motor_sugerencia_pc(conn):
     try:
-        scope = ['https://www.googleapis.com/auth/drive.file']
-        creds = service_account.Credentials.from_service_account_info(CREDS_DICT, scopes=scope)
-        service = build('drive', 'v3', credentials=creds)
-        media = MediaFileUpload(DB_NAME, mimetype='application/octet-stream')
-        service.files().update(fileId=FILE_ID, media_body=media).execute()
-        return True
-    except Exception as e:
-        st.error(f"Error: {e}")
-        return False
-
-# --- BASE DE DATOS ---
-conn = sqlite3.connect(DB_NAME, check_same_thread=False)
-cursor = conn.cursor()
-
-# --- LOGICA 99 (La misma que usás siempre) ---
-def sugerir_99(conn):
-    try:
+        cursor = conn.cursor()
         cursor.execute("SELECT ubicacion FROM inventario WHERE ubicacion LIKE '99-%' ORDER BY rowid DESC LIMIT 1")
-        u = cursor.fetchone()
-        if not u: return "99-01A"
-        ubi = str(u[0]).upper()
+        ultimo = cursor.fetchone()
+        if not ultimo: return "99-01A"
+        ubi_str = str(ultimo[0]).upper()
         ciclo = ['A', 'B', 'C', 'D']
-        p = ubi.split("-")[1]
-        letra = p[-1]
-        num = int("".join(filter(str.isdigit, p)))
-        if letra in ciclo and ciclo.index(letra) < 3:
-            return f"99-{str(num).zfill(2)}{ciclo[ciclo.index(letra)+1]}"
-        else:
-            return f"99-{str(num+1).zfill(2)}A"
+        if "-" not in ubi_str: return "99-01A"
+        partes = ubi_str.split("-")
+        cuerpo = partes[1]
+        letra_actual = cuerpo[-1]
+        num_str = "".join(filter(str.isdigit, cuerpo))
+        num_actual = int(num_str) if num_str else 1
+        if letra_actual in ciclo:
+            idx = ciclo.index(letra_actual)
+            if idx < 3: nueva_letra = ciclo[idx+1]; nuevo_num = num_actual
+            else: nueva_letra = 'A'; nuevo_num = num_actual + 1
+        else: nueva_letra = 'A'; nuevo_num = num_actual + 1
+        return f"99-{str(nuevo_num).zfill(2)}{nueva_letra}"
     except: return "99-01A"
 
-# --- INTERFAZ ---
-with st.sidebar:
-    st.title("SEGURIDAD")
-    clave = st.text_input("Clave Admin", type="password")
-    es_admin = (clave == "70797474")
+def init_db():
+    conn = sqlite3.connect(DB_NAME, check_same_thread=False)
+    cursor = conn.cursor()
+    cursor.execute('CREATE TABLE IF NOT EXISTS maestra (cod_int TEXT PRIMARY KEY, nombre TEXT, barras TEXT)')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS inventario 
+                      (cod_int TEXT, cantidad REAL, nombre TEXT, barras TEXT, 
+                       fecha TEXT, ubicacion TEXT, deposito TEXT)''')
+    conn.commit()
+    return conn, cursor
 
-st.title("📦 GESTIÓN DE STOCK")
+conn, cursor = init_db()
 
-if st.button("🔄 ACTUALIZAR"): st.rerun()
+# --- INTERFAZ ESTILO DESKTOP COMPLETA ---
+st.title("🖥️ LOGISTICA - SISTEMA DE GESTIÓN INTEGRAL")
 
-if es_admin:
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("📥 CLONAR DRIVE", use_container_width=True):
-            r = requests.get(URL_DIRECTA)
-            with open(DB_NAME, 'wb') as f: f.write(r.content)
-            st.success("Cargado!")
-            st.rerun()
-    with col2:
-        if st.button("📤 SUBIR CAMBIOS", use_container_width=True):
-            if subir_datos(): st.success("Guardado en la Nube!")
+# Botón de Sincronización (No se pierde)
+if st.button("🔄 CLONAR DATOS DESDE DRIVE (LOGISTICA.EXE)"):
+    try:
+        if os.path.exists(DB_NAME): os.remove(DB_NAME)
+        r = requests.get(URL_DIRECTA, timeout=10)
+        with open(DB_NAME, 'wb') as f: f.write(r.content)
+        st.success("✅ BASE DE DATOS ACTUALIZADA")
+        st.rerun()
+    except Exception as e: st.error(f"Error: {e}")
 
-t1, t2, t3 = st.tabs(["📥 ENTRADAS", "📤 DESPACHO", "📊 STOCK"])
+tab1, tab2, tab3 = st.tabs(["📥 ENTRADAS / MOVIMIENTOS", "📤 DESPACHO / SALIDAS", "📊 PLANILLA GENERAL"])
 
-with t1:
-    if es_admin:
-        maestra = pd.read_sql("SELECT * FROM maestra", conn)
-        prods = maestra.apply(lambda x: f"{x['cod_int']} | {x['nombre']}", axis=1).tolist()
-        sel = st.selectbox("Producto:", [""] + prods)
-        with st.form("f1"):
-            c_int = sel.split(" | ")[0] if sel else ""
-            f_can = st.number_input("Cantidad", min_value=0.0)
+# --- TAB 1: MOVIMIENTOS ---
+with tab1:
+    st.subheader("Ingreso de Mercadería")
+    
+    # Búsqueda elástica por Nombre, Código o Barras
+    bus_m = st.text_input("🔍 Buscar en Maestra (Escribe o Escanea)", key="bus_m")
+    
+    try:
+        query_m = "SELECT * FROM maestra WHERE cod_int LIKE ? OR nombre LIKE ? OR barras LIKE ?"
+        maestra_df = pd.read_sql(query_m, conn, params=(f'%{bus_m}%', f'%{bus_m}%', f'%{bus_m}%'))
+        
+        # Lista desplegable con Descripción Completa
+        opciones = maestra_df.apply(lambda x: f"{x['cod_int']} | {x['nombre']} | {x['barras']}", axis=1).tolist()
+        seleccion = st.selectbox("Seleccione el producto exacto:", options=[""] + opciones)
+        
+        if seleccion:
+            item = maestra_df[maestra_df['cod_int'] == seleccion.split(" | ")[0]].iloc[0]
+            cod_sel, nom_sel, bar_sel = item['cod_int'], item['nombre'], item['barras']
+        else:
+            cod_sel, nom_sel, bar_sel = "", "", ""
+    except:
+        cod_sel, nom_sel, bar_sel = "", "", ""
+
+    with st.form("form_entrada", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            f_cod = st.text_input("Código Interno", value=cod_sel)
+            f_nom = st.text_input("Descripción / Nombre", value=nom_sel)
+            f_bar = st.text_input("Código de Barras", value=bar_sel)
+            f_can = st.number_input("Cantidad", min_value=0.0, step=1.0)
+        
+        with col2:
             f_dep = st.selectbox("Depósito", ["depo1", "depo2"])
-            f_ubi = st.text_input("Ubicación", value=sugerir_99(conn))
-            f_venc = st.text_input("Vencimiento (MMAA)", max_chars=4)
-            if st.form_submit_button("REGISTRAR"):
-                if len(f_venc) == 4:
-                    v = f"{f_venc[:2]}/{f_venc[2:]}"
-                    nom = maestra[maestra['cod_int'] == c_int]['nombre'].values[0]
-                    cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?,?)", (c_int, f_can, nom, "", v, f_ubi, f_dep))
-                    conn.commit()
-                    st.success("Guardado local. Subí los cambios al terminar.")
+            f_ubi = st.text_input("Ubicación", value=motor_sugerencia_pc(conn))
+            f_venc_raw = st.text_input("Vencimiento (MMAA)", max_chars=4, help="Solo números, el sistema pone la barra")
 
-with t2:
-    bus = st.text_input("🔍 Buscar")
-    if bus:
-        res = pd.read_sql(f"SELECT rowid, * FROM inventario WHERE nombre LIKE '%{bus}%' AND cantidad > 0", conn)
+        if st.form_submit_button("⚡ REGISTRAR EN INVENTARIO"):
+            if f_cod and len(f_venc_raw) == 4:
+                # Formato mm/aa automático
+                f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
+                cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?,?)", 
+                             (f_cod, f_can, f_nom, f_bar, f_venc, f_ubi, f_dep))
+                conn.commit()
+                st.success(f"Registrado: {f_nom} en {f_ubi}")
+                st.rerun()
+
+# --- TAB 2: DESPACHO ---
+with tab2:
+    st.subheader("Buscador de Stock para Despacho")
+    bus_d = st.text_input("🔍 Buscar por Nombre, Código o Barras", key="bus_d")
+    
+    if bus_d:
+        query_d = "SELECT rowid, * FROM inventario WHERE (cod_int LIKE ? OR nombre LIKE ? OR barras LIKE ?) AND cantidad > 0"
+        res = pd.read_sql(query_d, conn, params=(f'%{bus_d}%', f'%{bus_d}%', f'%{bus_d}%'))
+        
         for i, r in res.iterrows():
-            with st.expander(f"{r['nombre']} ({r['cantidad']})"):
-                if es_admin:
-                    q = st.number_input("Retirar", 1.0, float(r['cantidad']), key=f"q{i}")
-                    if st.button("OK", key=f"b{i}"):
-                        cursor.execute("UPDATE inventario SET cantidad=cantidad-? WHERE rowid=?", (q, r['rowid']))
-                        conn.commit()
-                        st.rerun()
+            with st.expander(f"📦 {r['nombre']} - Cantidad: {r['cantidad']}"):
+                c1, c2, c3 = st.columns(3)
+                c1.write(f"**Cód:** {r['cod_int']}")
+                c1.write(f"**Barras:** {r['barras']}")
+                c2.write(f"**Ubicación:** {r['ubicacion']}")
+                c2.write(f"**Depósito:** {r['deposito']}")
+                c3.write(f"**Vencimiento:** {r['fecha']}")
+                
+                cant_baja = st.number_input("Cantidad a retirar", min_value=1.0, max_value=float(r['cantidad']), key=f"del_{r['rowid']}")
+                if st.button("CONFIRMAR SALIDA", key=f"btn_{r['rowid']}"):
+                    cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (cant_baja, r['rowid']))
+                    conn.commit()
+                    st.rerun()
 
-with t3:
-    st.dataframe(pd.read_sql("SELECT * FROM inventario", conn), use_container_width=True)
+# --- TAB 3: PLANILLA ---
+with tab3:
+    st.subheader("Vista de Tablas (Excel Style)")
+    modo = st.radio("Seleccionar Tabla:", ["Inventario", "Maestra"], horizontal=True)
+    tabla = "inventario" if modo == "Inventario" else "maestra"
+    
+    df_ver = pd.read_sql(f"SELECT * FROM {tabla}", conn)
+    st.dataframe(df_ver, use_container_width=True, hide_index=True)
