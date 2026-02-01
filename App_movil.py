@@ -24,11 +24,11 @@ def conectar():
 
 st.set_page_config(page_title="WMS Master", layout="centered")
 
-# Botón de sincronización en la barra lateral
+# Botón de sincronización
 if st.sidebar.button("🔄 Sincronizar con Drive"):
     descargar_de_drive()
 
-# Inicializar DB
+# Inicializar DB y CREAR TABLAS (Esto evita el DatabaseError)
 conn = conectar()
 cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS maestra (cod_int TEXT PRIMARY KEY, nombre TEXT)")
@@ -55,14 +55,15 @@ with tab2:
     st.subheader("Despacho (App Stock)")
     bus = st.text_input("🔍 Buscar producto...")
     if bus:
-        df = pd.read_sql(f"SELECT rowid, * FROM inventario WHERE cod_int LIKE '%{bus}%' OR ubicacion LIKE '%{bus}%'", conn)
-        for i, r in df.iterrows():
-            with st.expander(f"📍 {r['ubicacion']} | Cant: {r['cantidad']}"):
-                cant_baja = st.number_input("Cantidad a sacar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
-                if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
-                    cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (cant_baja, r['rowid']))
-                    conn.commit()
-                    st.rerun()
+        df = pd.read_sql(f"SELECT rowid, * FROM inventario WHERE cod_int LIKE '%{bus}%' OR ubicacion LIKE '%{bus}%' AND cantidad > 0", conn)
+        if not df.empty:
+            for i, r in df.iterrows():
+                with st.expander(f"📍 {r['ubicacion']} | Cant: {r['cantidad']}"):
+                    baja = st.number_input("Sacar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
+                    if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
+                        cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
+                        conn.commit()
+                        st.rerun()
 
 with tab3:
     st.subheader("Inventario (Vista Excel)")
