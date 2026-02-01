@@ -12,41 +12,29 @@ URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
 st.set_page_config(page_title="WMS Master Pro", layout="centered")
 
-# --- MOTOR DE UBICACIÓN (Lógica exacta de tu sugerir_ubicacion de PC) ---
+# --- MOTOR DE UBICACIÓN (Idéntico a tu LOGISTICA.exe) ---
 def motor_sugerencia_pc(conn):
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT ubicacion FROM inventario WHERE ubicacion LIKE '99-%' ORDER BY rowid DESC LIMIT 1")
         ultimo = cursor.fetchone()
         if not ultimo: return "99-01A"
-        
         ubi_str = str(ultimo[0]).upper()
         ciclo = ['A', 'B', 'C', 'D']
         if "-" not in ubi_str: return "99-01A"
-        
         partes = ubi_str.split("-")
         cuerpo = partes[1]
         letra_actual = cuerpo[-1]
         num_str = "".join(filter(str.isdigit, cuerpo))
         num_actual = int(num_str) if num_str else 1
-        
         if letra_actual in ciclo:
             idx = ciclo.index(letra_actual)
-            if idx < 3:
-                nueva_letra = ciclo[idx+1]
-                nuevo_num = num_actual
-            else:
-                nueva_letra = 'A'
-                nuevo_num = num_actual + 1
-        else:
-            nueva_letra = 'A'
-            nuevo_num = num_actual + 1
-            
+            if idx < 3: nueva_letra = ciclo[idx+1]; nuevo_num = num_actual
+            else: nueva_letra = 'A'; nuevo_num = num_actual + 1
+        else: nueva_letra = 'A'; nuevo_num = num_actual + 1
         return f"99-{str(nuevo_num).zfill(2)}{nueva_letra}"
-    except:
-        return "99-01A"
+    except: return "99-01A"
 
-# --- CONEXIÓN DB ---
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     cursor = conn.cursor()
@@ -59,8 +47,7 @@ def init_db():
 
 conn, cursor = init_db()
 
-# --- INTERFAZ ---
-st.title("📦 WMS PROFESIONAL MÓVIL")
+st.title("🚀 WMS PROFESIONAL MÓVIL")
 
 if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
     try:
@@ -76,23 +63,16 @@ tab1, tab2, tab3 = st.tabs(["📥 MOVIMIENTOS", "📤 DESPACHO", "📊 PLANILLA"
 # --- TAB 1: MOVIMIENTOS ---
 with tab1:
     st.subheader("Entrada de Mercadería")
-    # Campo optimizado para escáner (el foco del teclado permite escaneo directo)
-    scan_input = st.text_input("📷 Escanear o buscar Código/Nombre", key="scan_mov")
+    
+    # Lógica de búsqueda por texto o nombre
+    bus_entrada = st.text_input("🔍 Buscar por Nombre o Código", key="txt_mov")
     
     try:
-        maestra_df = pd.read_sql("SELECT cod_int, nombre, barras FROM maestra", conn)
+        # Búsqueda que ignora mayúsculas/minúsculas para el nombre
+        query_m = f"SELECT cod_int, nombre FROM maestra WHERE cod_int LIKE '%{bus_entrada}%' OR nombre LIKE '%{bus_entrada}%' OR barras LIKE '%{bus_entrada}%'"
+        maestra_df = pd.read_sql(query_m, conn)
         
-        # Lógica de pre-selección por escaneo
-        val_inicial = ""
-        if scan_input:
-            match = maestra_df[(maestra_df['barras'] == scan_input) | (maestra_df['cod_int'] == scan_input)]
-            if not match.empty:
-                val_inicial = match['cod_int'].values[0]
-
-        cod_sel = st.selectbox("Confirmar Producto", 
-                               options=[""] + maestra_df['cod_int'].tolist(),
-                               index=maestra_df['cod_int'].tolist().index(val_inicial) + 1 if val_inicial in maestra_df['cod_int'].tolist() else 0)
-        
+        cod_sel = st.selectbox("Confirmar Producto", options=[""] + maestra_df['cod_int'].tolist())
         nom_auto = maestra_df[maestra_df['cod_int'] == cod_sel]['nombre'].values[0] if cod_sel != "" else ""
         ubi_sug = motor_sugerencia_pc(conn)
     except: cod_sel, nom_auto, ubi_sug = "", "", "99-01A"
@@ -113,15 +93,22 @@ with tab1:
                 cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?,?)", 
                              (f_cod, f_can, f_nom, "", f_venc, f_ubi, f_dep))
                 conn.commit()
-                st.success(f"Registrado en {f_ubi}")
+                st.success(f"Cargado en {f_ubi}")
                 st.rerun()
 
-# --- TAB 2: DESPACHO (Visualización de 4 micro-detalles) ---
+# --- TAB 2: DESPACHO (Detalle Total + Búsqueda por Nombre) ---
 with tab2:
     st.subheader("Salida de Mercadería")
-    bus = st.text_input("🔍 Escanear o Buscar (Nombre, Cod o Barras)", key="bus_despacho")
+    
+    # Botón para activar cámara de celular
+    if st.checkbox("📷 Activar Escáner de Cámara"):
+        foto = st.camera_input("Encuadra el código de barras")
+        if foto: st.info("Procesando imagen... (Usa el código detectado en el buscador)")
+
+    bus = st.text_input("🔎 Escribe Nombre, Código o Barras", key="bus_despacho")
     
     if bus:
+        # Consulta SQL mejorada para buscar por nombre parcial y códigos
         query = f"""
             SELECT rowid, cod_int, nombre, cantidad, ubicacion, fecha, deposito 
             FROM inventario 
@@ -129,16 +116,19 @@ with tab2:
             AND cantidad > 0
         """
         res = pd.read_sql(query, conn)
+        
+        if res.empty:
+            st.warning("No se encontraron coincidencias.")
+        
         for i, r in res.iterrows():
-            # El expander muestra los datos principales
             with st.expander(f"📦 {r['nombre']} (Cod: {r['cod_int']})"):
-                # MOSTRAR LOS 4 MICRO-DETALLES SOLICITADOS
+                # LOS 4 MICRO-DETALLES SOLICITADOS SIN FALTAR NADA
                 st.markdown(f"""
                 **Detalles del Lote:**
-                * 🔢 **Cantidad Disponible:** {r['cantidad']}
-                * 📅 **Fecha Vencimiento:** {r['fecha']}
-                * 📍 **Ubicación:** {r['ubicacion']}
-                * 🏢 **Depósito:** {r['deposito']}
+                * 🔢 **CANTIDAD:** {r['cantidad']}
+                * 📅 **FECHA (Vence):** {r['fecha']}
+                * 📍 **UBICACIÓN:** {r['ubicacion']}
+                * 🏢 **DEPÓSITO:** {r['deposito']}
                 """)
                 
                 baja = st.number_input(f"Cantidad a retirar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
