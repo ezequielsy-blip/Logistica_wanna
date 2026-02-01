@@ -4,10 +4,6 @@ import pandas as pd
 from datetime import datetime
 import requests
 import os
-import re
-# Importante: Para que el escáner funcione, debes tener instalada esta librería:
-# pip install streamlit-barcode-scanner
-from streamlit_barcode_scanner import streamlit_barcode_scanner
 
 # --- CONFIGURACIÓN DRIVE ---
 FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
@@ -16,7 +12,7 @@ URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
 st.set_page_config(page_title="WMS Master Pro", layout="centered")
 
-# --- MOTOR DE UBICACIÓN (Lógica idéntica a tu función sugerir_ubicacion de PC) ---
+# --- MOTOR DE UBICACIÓN (Lógica exacta de tu sugerir_ubicacion de PC) ---
 def motor_sugerencia_pc(conn):
     try:
         cursor = conn.cursor()
@@ -65,7 +61,6 @@ conn, cursor = init_db()
 
 # --- INTERFAZ ---
 st.title("📦 WMS PROFESIONAL MÓVIL")
-st.info("Sincronizado con: LOGISTICA.EXE")
 
 if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
     try:
@@ -81,25 +76,20 @@ tab1, tab2, tab3 = st.tabs(["📥 MOVIMIENTOS", "📤 DESPACHO", "📊 PLANILLA"
 # --- TAB 1: MOVIMIENTOS ---
 with tab1:
     st.subheader("Entrada de Mercadería")
-    
-    # --- ESCÁNER PARA ENTRADA ---
-    st.write("📷 Escanear para buscar:")
-    barcode_entrada = streamlit_barcode_scanner()
+    # Campo optimizado para escáner (el foco del teclado permite escaneo directo)
+    scan_input = st.text_input("📷 Escanear o buscar Código/Nombre", key="scan_mov")
     
     try:
         maestra_df = pd.read_sql("SELECT cod_int, nombre, barras FROM maestra", conn)
         
-        # Si escaneó algo, buscamos el cod_int correspondiente
+        # Lógica de pre-selección por escaneo
         val_inicial = ""
-        if barcode_entrada:
-            match = maestra_df[maestra_df['barras'] == barcode_entrada]
+        if scan_input:
+            match = maestra_df[(maestra_df['barras'] == scan_input) | (maestra_df['cod_int'] == scan_input)]
             if not match.empty:
                 val_inicial = match['cod_int'].values[0]
-            else:
-                # Si no está en barras, quizás escaneó el código interno directamente
-                val_inicial = barcode_entrada
 
-        cod_sel = st.selectbox("Buscar Producto (Maestra)", 
+        cod_sel = st.selectbox("Confirmar Producto", 
                                options=[""] + maestra_df['cod_int'].tolist(),
                                index=maestra_df['cod_int'].tolist().index(val_inicial) + 1 if val_inicial in maestra_df['cod_int'].tolist() else 0)
         
@@ -114,7 +104,7 @@ with tab1:
         with c1: f_can = st.number_input("Cantidad", min_value=0.0)
         with c2: f_dep = st.selectbox("Depósito", ["DEPO 1", "DEPO 2"])
         c3, c4 = st.columns(2)
-        with c3: f_venc_raw = st.text_input("Vencimiento (MM/AA)", placeholder="Ej: 1226", max_chars=4)
+        with c3: f_venc_raw = st.text_input("Vencimiento (MMAA)", max_chars=4)
         with c4: f_ubi = st.text_input("Ubicación", value=ubi_sug)
         
         if st.form_submit_button("⚡ REGISTRAR MOVIMIENTO"):
@@ -123,18 +113,13 @@ with tab1:
                 cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?,?)", 
                              (f_cod, f_can, f_nom, "", f_venc, f_ubi, f_dep))
                 conn.commit()
-                st.success(f"Cargado en {f_ubi}")
+                st.success(f"Registrado en {f_ubi}")
                 st.rerun()
 
-# --- TAB 2: DESPACHO ---
+# --- TAB 2: DESPACHO (Visualización de 4 micro-detalles) ---
 with tab2:
     st.subheader("Salida de Mercadería")
-    
-    # --- ESCÁNER PARA DESPACHO ---
-    st.write("📷 Escanear código:")
-    barcode_despacho = streamlit_barcode_scanner()
-    
-    bus = st.text_input("🔍 Buscar por Nombre, Cod o Barras", value=barcode_despacho if barcode_despacho else "")
+    bus = st.text_input("🔍 Escanear o Buscar (Nombre, Cod o Barras)", key="bus_despacho")
     
     if bus:
         query = f"""
@@ -145,13 +130,22 @@ with tab2:
         """
         res = pd.read_sql(query, conn)
         for i, r in res.iterrows():
-            with st.expander(f"📦 {r['nombre']} | Cant: {r['cantidad']} | Ubi: {r['ubicacion']}"):
-                st.write(f"**Vence:** {r['fecha']} | **Ubi:** {r['ubicacion']} | **Depo:** {r['deposito']}")
-                baja = st.number_input("Cantidad a sacar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
+            # El expander muestra los datos principales
+            with st.expander(f"📦 {r['nombre']} (Cod: {r['cod_int']})"):
+                # MOSTRAR LOS 4 MICRO-DETALLES SOLICITADOS
+                st.markdown(f"""
+                **Detalles del Lote:**
+                * 🔢 **Cantidad Disponible:** {r['cantidad']}
+                * 📅 **Fecha Vencimiento:** {r['fecha']}
+                * 📍 **Ubicación:** {r['ubicacion']}
+                * 🏢 **Depósito:** {r['deposito']}
+                """)
+                
+                baja = st.number_input(f"Cantidad a retirar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
                 if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
                     cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
                     conn.commit()
-                    st.success("Salida realizada")
+                    st.success("Salida confirmada")
                     st.rerun()
 
 # --- TAB 3: PLANILLA ---
