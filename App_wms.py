@@ -10,142 +10,116 @@ FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
 DB_NAME = 'inventario_wms.db'
 URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
-# --- DISEÑO UI ESTILIZADO (MODERNO) ---
-st.set_page_config(page_title="WMS Master Pro", layout="centered")
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="WMS MASTER", layout="centered")
 
+# --- CSS DE FUERZA BRUTA (Para que nada se vea negro/invisible) ---
 st.markdown("""
     <style>
-    /* Fondo y tipografía */
-    .stApp { background-color: #fdfdfd !important; }
+    /* 1. Fondo Blanco Total */
+    .stApp, .main, .block-container { background-color: #FFFFFF !important; }
     
-    /* Títulos con estilo */
-    h1 { color: #1a1a1a !important; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-weight: 800 !important; }
-    label { color: #444 !important; font-weight: 600 !important; font-size: 14px !important; margin-bottom: 5px; }
+    /* 2. Forzar todos los textos a NEGRO PURO */
+    h1, h2, h3, h4, h5, h6, p, label, li, span, div { 
+        color: #000000 !important; 
+        font-weight: 600 !important;
+    }
 
-    /* Botón de Sincronización Estilizado */
-    div.stButton > button:first-child {
-        background: linear-gradient(135deg, #007bff 0%, #0056b3 100%) !important;
+    /* 3. Botón de Sincronización (Igual a LOGISTICA.exe) */
+    div.stButton > button {
+        background-color: #004cff !important;
         color: white !important;
-        border-radius: 15px;
-        height: 3.5rem;
-        font-weight: 700;
-        border: none;
-        box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
-        transition: all 0.3s ease;
-    }
-
-    /* Campos de Entrada Redondeados y Limpios */
-    input, .stSelectbox > div > div, .stNumberInput > div > div > input {
-        border-radius: 12px !important;
-        border: 1px solid #e0e0e0 !important;
-        background-color: #ffffff !important;
-        padding: 10px !important;
-    }
-    
-    /* Foco en los inputs */
-    input:focus { border: 1px solid #007bff !important; box-shadow: 0 0 5px rgba(0,123,255,0.2) !important; }
-
-    /* Botón Guardar Verde Premium */
-    .stForm button {
-        background: linear-gradient(135deg, #28a745 0%, #218838 100%) !important;
-        color: white !important;
-        border-radius: 12px;
-        height: 3.8rem;
-        font-size: 18px;
-        font-weight: 700;
-        border: none;
-        margin-top: 10px;
-        box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
-    }
-
-    /* Estilo de Tarjetas para Salidas */
-    .product-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 15px;
-        border: 1px solid #f0f0f0;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.03);
-        margin-bottom: 15px;
-    }
-    
-    /* Pestañas (Tabs) Estilizadas */
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; padding: 5px; background-color: #f1f3f5; border-radius: 15px; }
-    .stTabs [data-baseweb="tab"] {
-        height: 45px;
-        color: #666;
-        font-weight: 600;
         border-radius: 10px;
+        height: 3.5em;
+        width: 100%;
+        font-weight: bold;
+        border: none;
+        box-shadow: 0px 4px 10px rgba(0,0,0,0.2);
     }
-    .stTabs [aria-selected="true"] {
-        background-color: #ffffff !important;
-        color: #007bff !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+
+    /* 4. Inputs de texto con borde definido para que se vean */
+    input {
+        background-color: #f0f2f6 !important;
+        color: black !important;
+        border: 2px solid #d1d5db !important;
+        border-radius: 8px !important;
     }
+
+    /* 5. Estilo para las Tabs (Pestañas) */
+    .stTabs [data-baseweb="tab-list"] { background-color: #f0f2f6; border-radius: 10px; padding: 5px; }
+    .stTabs [data-baseweb="tab"] { color: #666; }
+    .stTabs [aria-selected="true"] { color: #004cff !important; font-weight: bold; }
+
+    /* 6. Botón Guardar Verde (Copia fiel) */
+    .stForm button {
+        background-color: #218838 !important;
+        color: white !important;
+    }
+    
+    /* 7. Dataframe (Excel) legible */
+    .stDataFrame { background-color: white; border: 1px solid #ddd; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LÓGICA DE DATOS ---
+# --- FUNCIONES ---
 def descargar_base():
-    with st.spinner('Sincronizando con PC...'):
-        try:
-            if os.path.exists(DB_NAME): os.remove(DB_NAME)
-            response = requests.get(URL_DIRECTA)
-            if response.status_code == 200:
-                with open(DB_NAME, 'wb') as f: f.write(response.content)
-                st.toast("✅ Sincronización exitosa", icon="🔄")
-                st.rerun()
-        except Exception as e: st.error(f"Error: {e}")
+    try:
+        if os.path.exists(DB_NAME): os.remove(DB_NAME)
+        response = requests.get(URL_DIRECTA)
+        if response.status_code == 200:
+            with open(DB_NAME, 'wb') as f: f.write(response.content)
+            st.success("✅ Datos clonados de la PC")
+            st.rerun()
+    except Exception as e: st.error(f"Error: {e}")
 
+# Conexión
 conn = sqlite3.connect(DB_NAME, check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS maestra (cod_int TEXT PRIMARY KEY, nombre TEXT)")
 cursor.execute("CREATE TABLE IF NOT EXISTS inventario (cod_int TEXT, cantidad REAL, ubicacion TEXT, fecha TEXT)")
 conn.commit()
 
-# --- CABECERA ---
-st.title("📦 WMS Pro Móvil")
+# --- INTERFAZ ---
+st.title("📦 WMS Master Móvil")
 
-if st.button("🔄 SINCRONIZAR CON DRIVE"):
+# Botón de Sincronización
+if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
     descargar_base()
 
-tab1, tab2, tab3 = st.tabs(["📥 ENTRADAS", "📤 SALIDAS", "📊 STOCK"])
+# Pestañas exactas a tus ejecutables
+tab1, tab2, tab3 = st.tabs(["📥 LOGISTICA", "📤 APP_STOCK", "📊 EXCEL TOTAL"])
 
-# --- 1. ENTRADAS (LOGISTICA) ---
 with tab1:
-    st.markdown("### Nuevo Registro")
+    st.markdown("### Registro de Entradas")
     maestra_df = pd.read_sql("SELECT cod_int, nombre FROM maestra", conn)
     
-    with st.container():
-        # Buscador estilizado de código
-        cod_list = [""] + maestra_df['cod_int'].tolist()
-        cod_sel = st.selectbox("Buscar por código", options=cod_list, help="Selecciona un código para autocompletar")
-        
-        nombre_auto = ""
-        if cod_sel != "":
-            nombre_auto = maestra_df[maestra_df['cod_int'] == cod_sel]['nombre'].values[0]
-        
-        with st.form("form_registro", clear_on_submit=True):
-            f_cod = st.text_input("Código de Producto", value=cod_sel)
-            f_nom = st.text_input("Nombre / Descripción", value=nombre_auto)
-            
-            c1, c2 = st.columns(2)
-            with c1: f_can = st.number_input("Cantidad", min_value=0.0)
-            with c2: f_ubi = st.text_input("📍 Ubicación")
-            
-            if st.form_submit_button("💾 GUARDAR EN LOGISTICA"):
-                if f_cod and f_nom:
-                    cursor.execute("INSERT OR IGNORE INTO maestra VALUES (?,?)", (f_cod, f_nom))
-                    cursor.execute("INSERT INTO inventario VALUES (?,?,?,?)", 
-                                 (f_cod, f_can, f_ubi, datetime.now().strftime('%d/%m/%Y')))
-                    conn.commit()
-                    st.success("¡Registrado correctamente!")
-                    st.rerun()
-
-# --- 2. SALIDAS (APP_STOCK) ---
-with tab2:
-    st.markdown("### Despacho de Stock")
-    bus = st.text_input("🔍 Buscar producto...")
+    # Autocompletado inteligente
+    opciones = [""] + maestra_df['cod_int'].tolist()
+    cod_seleccionado = st.selectbox("Buscar Código (Autocompletar)", options=opciones)
     
+    nombre_sugerido = ""
+    if cod_seleccionado != "":
+        nombre_sugerido = maestra_df[maestra_df['cod_int'] == cod_seleccionado]['nombre'].values[0]
+
+    with st.form("form_entrada", clear_on_submit=True):
+        f_cod = st.text_input("Código de Producto", value=cod_seleccionado)
+        f_nom = st.text_input("Nombre / Descripción", value=nombre_sugerido)
+        col1, col2 = st.columns(2)
+        with col1: f_can = st.number_input("Cantidad", min_value=0.0)
+        with col2: f_ubi = st.text_input("Ubicación")
+        
+        if st.form_submit_button("💾 GUARDAR ENTRADA"):
+            if f_cod and f_nom:
+                cursor.execute("INSERT OR IGNORE INTO maestra VALUES (?,?)", (f_cod, f_nom))
+                cursor.execute("INSERT INTO inventario VALUES (?,?,?,?)", 
+                             (f_cod, f_can, f_ubi, datetime.now().strftime('%d/%m/%Y')))
+                conn.commit()
+                st.success(f"Registrado: {f_nom}")
+                st.rerun()
+
+with tab2:
+    st.markdown("### Salidas / Despacho")
+    bus = st.text_input("🔍 Buscar por Nombre, Código o Ubicación")
     if bus:
         query = f"""
             SELECT i.rowid, i.cod_int, m.nombre, i.cantidad, i.ubicacion 
@@ -154,28 +128,24 @@ with tab2:
             WHERE (i.cod_int LIKE '%{bus}%' OR m.nombre LIKE '%{bus}%' OR i.ubicacion LIKE '%{bus}%')
             AND i.cantidad > 0
         """
-        df_res = pd.read_sql(query, conn)
-        for i, r in df_res.iterrows():
-            st.markdown(f"""
-            <div class="product-card">
-                <span style="font-size: 18px; font-weight: bold;">{r['nombre']}</span><br>
-                <span style="color: #666;">📍 {r['ubicacion']} | Stock: <b>{r['cantidad']}</b></span>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            baja = st.number_input(f"Cantidad a sacar de {r['cod_int']}", min_value=1.0, max_value=float(r['cantidad']), key=f"out_{r['rowid']}")
-            if st.button(f"CONFIRMAR SALIDA", key=f"btn_{r['rowid']}"):
-                cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
-                conn.commit()
-                st.rerun()
+        res = pd.read_sql(query, conn)
+        for i, r in res.iterrows():
+            with st.container():
+                st.markdown(f"**{r['nombre']}**")
+                st.markdown(f"📍 {r['ubicacion']} | Stock: **{r['cantidad']}**")
+                cant_baja = st.number_input("Sacar cantidad", min_value=1.0, max_value=float(r['cantidad']), key=f"out_{r['rowid']}")
+                if st.button(f"CONFIRMAR SALIDA {r['rowid']}", key=f"btn_{r['rowid']}"):
+                    cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (cant_baja, r['rowid']))
+                    conn.commit()
+                    st.rerun()
+                st.markdown("---")
 
-# --- 3. STOCK TOTAL ---
 with tab3:
-    st.markdown("### Resumen Total")
-    df_full = pd.read_sql("""
-        SELECT i.cod_int as [Cód], m.nombre as [Producto], i.cantidad as [Cant], i.ubicacion as [Lugar]
+    st.markdown("### Stock Total (Vista Excel)")
+    df_excel = pd.read_sql("""
+        SELECT i.cod_int as [Cód], m.nombre as [Producto], i.cantidad as [Stock], i.ubicacion as [Ubicación]
         FROM inventario i 
         JOIN maestra m ON i.cod_int = m.cod_int 
         WHERE i.cantidad > 0
     """, conn)
-    st.dataframe(df_full, use_container_width=True, hide_index=True)
+    st.dataframe(df_excel, use_container_width=True, hide_index=True)
