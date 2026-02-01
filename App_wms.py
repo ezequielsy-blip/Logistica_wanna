@@ -13,7 +13,7 @@ URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
 st.set_page_config(page_title="WMS Master Pro", layout="centered")
 
-# --- MOTOR DE UBICACIÓN (Tu lógica idéntica de PC) ---
+# --- MOTOR DE UBICACIÓN (Tu lógica: 99 + secuencia ABCD) ---
 def motor_sugerencia_pc(conn):
     try:
         cursor = conn.cursor()
@@ -30,20 +30,12 @@ def motor_sugerencia_pc(conn):
         num_actual = int(num_str) if num_str else 1
         if letra_actual in ciclo:
             idx = ciclo.index(letra_actual)
-            if idx < 3:
-                nueva_letra = ciclo[idx+1]
-                nuevo_num = num_actual
-            else:
-                nueva_letra = 'A'
-                nuevo_num = num_actual + 1
-        else:
-            nueva_letra = 'A'
-            nuevo_num = num_actual + 1
+            if idx < 3: nueva_letra = ciclo[idx+1]; nuevo_num = num_actual
+            else: nueva_letra = 'A'; nuevo_num = num_actual + 1
+        else: nueva_letra = 'A'; nuevo_num = num_actual + 1
         return f"99-{str(nuevo_num).zfill(2)}{nueva_letra}"
-    except:
-        return "99-01A"
+    except: return "99-01A"
 
-# --- CONEXIÓN DB ---
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     cursor = conn.cursor()
@@ -74,12 +66,14 @@ tab1, tab2, tab3 = st.tabs(["📥 MOVIMIENTOS", "📤 DESPACHO", "📊 PLANILLA"
 # --- TAB 1: MOVIMIENTOS ---
 with tab1:
     st.subheader("Entrada de Mercadería")
-    # Buscador manual o para App de Escáner externa
-    bus_m = st.text_input("🔍 Buscar en Maestra (Escribe nombre o usa App Escáner)")
+    # Este buscador recibirá el código de "Barcode to PC" automáticamente
+    bus_m = st.text_input("🔍 ESCANEA AQUÍ EL CÓDIGO", key="bus_maestra")
     
     try:
-        # Búsqueda por nombre o código para que funcione el escáner externo
-        maestra_df = pd.read_sql(f"SELECT cod_int, nombre FROM maestra WHERE cod_int LIKE '%{bus_m}%' OR nombre LIKE '%{bus_m}%'", conn)
+        # Buscamos por nombre, código interno o código de barras
+        query_m = "SELECT cod_int, nombre FROM maestra WHERE cod_int LIKE ? OR nombre LIKE ? OR barras LIKE ?"
+        maestra_df = pd.read_sql(query_m, conn, params=(f'%{bus_m}%', f'%{bus_m}%', f'%{bus_m}%'))
+        
         cod_sel = st.selectbox("Confirmar Producto", options=[""] + maestra_df['cod_int'].tolist())
         nom_auto = maestra_df[maestra_df['cod_int'] == cod_sel]['nombre'].values[0] if cod_sel != "" else ""
         ubi_sug = motor_sugerencia_pc(conn)
@@ -92,7 +86,7 @@ with tab1:
         with c1: f_can = st.number_input("Cantidad", min_value=0.0)
         with c2: f_dep = st.selectbox("Depósito", ["depo1", "depo2"])
         c3, c4 = st.columns(2)
-        with c3: f_venc_raw = st.text_input("Vencimiento (MM/AA)", placeholder="Ej: 1226", max_chars=4)
+        with c3: f_venc_raw = st.text_input("Vencimiento (MMAA)", max_chars=4)
         with c4: f_ubi = st.text_input("Ubicación", value=ubi_sug)
         
         if st.form_submit_button("⚡ REGISTRAR MOVIMIENTO"):
@@ -101,22 +95,22 @@ with tab1:
                 cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?,?)", 
                              (f_cod, f_can, f_nom, "", f_venc, f_ubi, f_dep))
                 conn.commit()
-                st.success(f"Cargado en {f_ubi}")
+                st.success(f"Registrado en {f_ubi}")
                 st.rerun()
 
 # --- TAB 2: DESPACHO ---
 with tab2:
     st.subheader("Salida de Mercadería")
-    bus = st.text_input("🔍 Buscar por Nombre, Cod o Barras (Usa App Escáner)")
+    # Buscador automático para despacho
+    bus = st.text_input("🔍 ESCANEA PARA BUSCAR STOCK", key="bus_despacho")
     if bus:
-        # Consulta corregida para buscar por nombre parcial o código
-        query = f"SELECT rowid, * FROM inventario WHERE (cod_int LIKE '%{bus}%' OR nombre LIKE '%{bus}%') AND cantidad > 0"
-        res = pd.read_sql(query, conn)
+        query = "SELECT rowid, * FROM inventario WHERE (cod_int LIKE ? OR nombre LIKE ?) AND cantidad > 0"
+        res = pd.read_sql(query, conn, params=(f'%{bus}%', f'%{bus}%'))
         for i, r in res.iterrows():
             with st.expander(f"📦 {r['nombre']} | Stock: {r['cantidad']}"):
-                # Los 4 micro-detalles exactos
+                # Los 4 detalles críticos conservados
                 st.write(f"**Vence:** {r['fecha']} | **Ubi:** {r['ubicacion']} | **Depo:** {r['deposito']}")
-                baja = st.number_input("Cantidad a sacar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
+                baja = st.number_input("Cantidad a retirar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
                 if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
                     cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
                     conn.commit()
@@ -129,5 +123,4 @@ with tab3:
     try:
         df_full = pd.read_sql(f"SELECT * FROM {tabla_ver}", conn)
         st.dataframe(df_full, use_container_width=True, hide_index=True)
-    except:
-        st.info("Sincroniza para ver la planilla.")
+    except: st.info("Sincroniza para ver datos.")
