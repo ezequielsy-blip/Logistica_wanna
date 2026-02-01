@@ -3,11 +3,12 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 
-# 1. CONFIGURACIÓN DE LA APP
-st.set_page_config(page_title="WMS Móvil", layout="centered")
+# Configuración visual
+st.set_page_config(page_title="WMS Master Móvil", layout="centered")
 
-# 2. CONEXIÓN Y CREACIÓN AUTOMÁTICA (Esto evita tus errores)
-def iniciar_db():
+# --- CONEXIÓN A BASE DE DATOS ---
+# Nota: Para sincronizar con Drive real, usaremos el archivo local que Streamlit sincroniza
+def conectar():
     conn = sqlite3.connect('inventario_wms.db', check_same_thread=False)
     c = conn.cursor()
     c.execute("CREATE TABLE IF NOT EXISTS maestra (cod_int TEXT PRIMARY KEY, nombre TEXT)")
@@ -15,39 +16,48 @@ def iniciar_db():
     conn.commit()
     return conn
 
-conn = iniciar_db()
+conn = conectar()
 
-st.title("📦 Sistema WMS Móvil")
-tab1, tab2 = st.tabs(["📥 ENTRADAS", "📤 SALIDAS"])
+st.title("🚀 Logística & Stock Unificado")
 
-# PESTAÑA DE ENTRADAS (LOGISTICA)
+# Pestañas que unen tus 2 Apps de escritorio
+tab1, tab2, tab3 = st.tabs(["📥 LOGISTICA (Entradas)", "📤 APP_STOCK (Salidas)", "📊 INVENTARIO TOTAL"])
+
+# 1. FUNCIÓN LOGISTICA (Entradas)
 with tab1:
-    st.subheader("Cargar Mercadería")
-    with st.form("ingreso"):
-        cod = st.text_input("Código")
-        nom = st.text_input("Nombre")
-        can = st.number_input("Cantidad", min_value=0.0)
-        ubi = st.text_input("Ubicación")
-        if st.form_submit_button("GUARDAR ENTRADA"):
-            c = conn.cursor()
-            c.execute("INSERT OR IGNORE INTO maestra VALUES (?,?)", (cod, nom))
-            c.execute("INSERT INTO inventario VALUES (?,?,?,?)", (cod, f"{can}", ubi, datetime.now().strftime('%Y-%m-%d')))
+    st.subheader("Ingreso de Mercadería")
+    with st.form("form_logistica"):
+        c_cod = st.text_input("Código de Producto")
+        c_nom = st.text_input("Nombre / Descripción")
+        c_can = st.number_input("Cantidad Entrante", min_value=0.0)
+        c_ubi = st.text_input("Ubicación Destino")
+        if st.form_submit_button("REGISTRAR ENTRADA"):
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR IGNORE INTO maestra VALUES (?,?)", (c_cod, c_nom))
+            cursor.execute("INSERT INTO inventario VALUES (?,?,?,?)", (c_cod, c_can, c_ubi, datetime.now().strftime('%Y-%m-%d')))
             conn.commit()
-            st.success(f"Guardado: {nom}")
+            st.success("Ingreso registrado correctamente")
 
-# PESTAÑA DE SALIDAS (STOCK/DESPACHO)
+# 2. FUNCIÓN APP_STOCK (Salidas/Despacho)
 with tab2:
-    st.subheader("Despacho")
-    busqueda = st.text_input("Buscar producto...")
+    st.subheader("Buscador de Despacho")
+    busqueda = st.text_input("Buscar por nombre o código para sacar")
     if busqueda:
-        query = f"SELECT rowid, * FROM inventario WHERE cod_int LIKE '%{busqueda}%' OR ubicacion LIKE '%{busqueda}%'"
-        df = pd.read_sql(query, conn)
-        if not df.empty:
-            for i, r in df.iterrows():
-                st.write(f"📍 {r['ubicacion']} | Stock: {r['cantidad']}")
-                if st.button(f"Descontar 1", key=str(r['rowid'])):
-                    conn.execute(f"UPDATE inventario SET cantidad = cantidad - 1 WHERE rowid = {r['rowid']}")
-                    conn.commit()
-                    st.rerun()
+        df_salida = pd.read_sql(f"SELECT rowid, * FROM inventario WHERE cod_int LIKE '%{busqueda}%' AND cantidad > 0", conn)
+        if not df_salida.empty:
+            for i, r in df_salida.iterrows():
+                with st.container():
+                    col1, col2 = st.columns([2,1])
+                    col1.write(f"📍 {r['ubicacion']} | Cant: {r['cantidad']}")
+                    if col2.button(f"DESCONTAR", key=f"btn_{r['rowid']}"):
+                        conn.execute(f"UPDATE inventario SET cantidad = cantidad - 1 WHERE rowid = {r['rowid']}")
+                        conn.commit()
+                        st.rerun()
         else:
-            st.info("No hay stock. Cargá algo en ENTRADAS primero.")
+            st.warning("No hay stock disponible.")
+
+# 3. VISTA EXCEL (Inventario General)
+with tab3:
+    st.subheader("Estado Actual del Depósito")
+    df_total = pd.read_sql("SELECT cod_int as Código, cantidad as Stock, ubicacion as Lugar, fecha as Registro FROM inventario WHERE cantidad > 0", conn)
+    st.dataframe(df_total, use_container_width=True)
