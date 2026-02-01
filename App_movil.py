@@ -10,62 +10,57 @@ FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
 DB_NAME = 'inventario_wms.db'
 URL = f'https://drive.google.com/uc?id={FILE_ID}'
 
-# Función para bajar la base de tu PC al Celular
+# Forzar el tema claro
+st.markdown("""<style>
+    .stApp { background-color: white; color: black; }
+    header {visibility: hidden;}
+    </style>""", unsafe_allow_html=True)
+
+# Función para sincronizar con Drive
 def descargar_de_drive():
     try:
-        if os.path.exists(DB_NAME):
-            os.remove(DB_NAME)
+        if os.path.exists(DB_NAME): os.remove(DB_NAME)
         gdown.download(URL, DB_NAME, quiet=False)
         st.success("✅ Datos clonados de la PC con éxito")
         st.rerun()
     except Exception as e:
         st.error("Error al conectar con Drive. Verifica el enlace.")
 
-# --- INICIO DE APP ---
-st.set_page_config(page_title="WMS Master Unificado", layout="centered", initial_sidebar_state="collapsed")
+# --- INICIO ---
+st.set_page_config(page_title="LOGISTICA + STOCK", layout="centered")
+st.title("📦 Sistema WMS Unificado")
 
-# TEMA CLARO FORZADO POR CÓDIGO
-st.markdown("""
-    <style>
-    .stApp { background-color: white; }
-    </style>
-    """, unsafe_allow_html=True)
-
-st.title("📦 LOGISTICA + STOCK")
-
-# BOTÓN DE SINCRONIZACIÓN
 if st.button("🔄 CLONAR DATOS DESDE DRIVE (PC)"):
     descargar_de_drive()
 
-# Conectar a la base descargada
+# Conexión
 conn = sqlite3.connect(DB_NAME, check_same_thread=False)
 cursor = conn.cursor()
+cursor.execute("CREATE TABLE IF NOT EXISTS maestra (cod_int TEXT PRIMARY KEY, nombre TEXT)")
+cursor.execute("CREATE TABLE IF NOT EXISTS inventario (cod_int TEXT, cantidad REAL, ubicacion TEXT, fecha TEXT)")
+conn.commit()
 
-# Las 3 pestañas (Copia fiel de tus ejecutables)
+# LAS 3 PESTAÑAS (Aquí está la clave)
 tab1, tab2, tab3 = st.tabs(["📥 LOGISTICA (Entradas)", "📤 APP_STOCK (Salidas)", "📊 EXCEL TOTAL"])
 
-# 1. LOGISTICA (Igual a tu APP_LOGISTICA.exe)
 with tab1:
-    st.subheader("Ingreso de Mercadería")
-    with st.form("form_log", clear_on_submit=True):
-        f_cod = st.text_input("Código")
-        f_nom = st.text_input("Nombre")
-        f_can = st.number_input("Cantidad", min_value=0.0)
-        f_ubi = st.text_input("Ubicación")
-        if st.form_submit_button("GUARDAR"):
-            cursor.execute("INSERT OR IGNORE INTO maestra VALUES (?,?)", (f_cod, f_nom))
-            cursor.execute("INSERT INTO inventario VALUES (?,?,?,?)", 
-                         (f_cod, f_can, f_ubi, datetime.now().strftime('%d-%m-%Y')))
+    st.subheader("Registrar Ingreso (LOGISTICA)")
+    with st.form("f1", clear_on_submit=True):
+        c = st.text_input("Código")
+        n = st.text_input("Nombre")
+        can = st.number_input("Cantidad", min_value=0.0)
+        ub = st.text_input("Ubicación")
+        if st.form_submit_button("GUARDAR ENTRADA"):
+            cursor.execute("INSERT OR IGNORE INTO maestra VALUES (?,?)", (c, n))
+            cursor.execute("INSERT INTO inventario VALUES (?,?,?,?)", (c, can, ub, datetime.now().strftime('%d-%m-%Y')))
             conn.commit()
-            st.success("Registrado")
+            st.success("¡Registrado!")
 
-# 2. APP_STOCK (Igual a tu buscador de despacho)
 with tab2:
-    st.subheader("Buscador de Despacho")
-    bus = st.text_input("🔍 Buscar...")
+    st.subheader("Buscador de Despacho (APP_STOCK)")
+    bus = st.text_input("🔍 Buscar por Código o Ubicación")
     if bus:
-        query = f"SELECT rowid, * FROM inventario WHERE cod_int LIKE '%{bus}%' OR ubicacion LIKE '%{bus}%'"
-        df_res = pd.read_sql(query, conn)
+        df_res = pd.read_sql(f"SELECT rowid, * FROM inventario WHERE cod_int LIKE '%{bus}%' OR ubicacion LIKE '%{bus}%'", conn)
         for i, r in df_res.iterrows():
             if r['cantidad'] > 0:
                 with st.expander(f"📍 {r['ubicacion']} | Stock: {r['cantidad']}"):
@@ -75,8 +70,7 @@ with tab2:
                         conn.commit()
                         st.rerun()
 
-# 3. EXCEL TOTAL (Como tu Excel 2013)
 with tab3:
-    st.subheader("Inventario Completo")
-    df_total = pd.read_sql("SELECT cod_int as Código, cantidad as Stock, ubicacion as Ubicación, fecha as Fecha FROM inventario WHERE cantidad > 0", conn)
+    st.subheader("Inventario Completo (EXCEL)")
+    df_total = pd.read_sql("SELECT cod_int as Código, cantidad as Stock, ubicacion as Ubicación, fecha as Registro FROM inventario WHERE cantidad > 0", conn)
     st.dataframe(df_total, use_container_width=True)
