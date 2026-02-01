@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 import requests
 import os
+import streamlit.components.v1 as components
 
 # --- CONFIGURACIÓN DRIVE ---
 FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
@@ -12,7 +13,25 @@ URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
 st.set_page_config(page_title="WMS Master Pro", layout="centered")
 
-# --- MOTOR DE UBICACIÓN (Idéntico a tu LOGISTICA.exe) ---
+# --- COMPONENTE SCANNER JS (INYECTA EL CÓDIGO AUTOMÁTICAMENTE) ---
+def scanner_component(key):
+    # Este componente abre la cámara y devuelve el código detectado al buscador
+    code = components.html(
+        """
+        <div id="reader" style="width:100%;"></div>
+        <script src="https://unpkg.com/html5-qrcode"></script>
+        <script>
+            function onScanSuccess(decodedText, decodedResult) {
+                window.parent.postMessage({type: 'barcode', value: decodedText, key: '""" + key + """'}, '*');
+                html5QrcodeScanner.clear();
+            }
+            let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+            html5QrcodeScanner.render(onScanSuccess);
+        </script>
+        """, height=350)
+    return code
+
+# --- MOTOR DE UBICACIÓN (Lógica idéntica a tu LOGISTICA.exe: 99-01A...) ---
 def motor_sugerencia_pc(conn):
     try:
         cursor = conn.cursor()
@@ -47,6 +66,7 @@ def init_db():
 
 conn, cursor = init_db()
 
+# --- TÍTULO Y SINCRONIZACIÓN ---
 st.title("🚀 WMS PROFESIONAL MÓVIL")
 
 if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
@@ -60,18 +80,17 @@ if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
 
 tab1, tab2, tab3 = st.tabs(["📥 MOVIMIENTOS", "📤 DESPACHO", "📊 PLANILLA"])
 
-# --- TAB 1: MOVIMIENTOS ---
+# --- TAB 1: MOVIMIENTOS (ENTRADA) ---
 with tab1:
-    st.subheader("Entrada de Mercadería")
+    st.subheader("Carga (Réplica LOGISTICA)")
+    if st.checkbox("📷 Activar Scanner (Entrada)"):
+        scanner_component("mov")
     
-    # Lógica de búsqueda por texto o nombre
-    bus_entrada = st.text_input("🔍 Buscar por Nombre o Código", key="txt_mov")
+    bus_entrada = st.text_input("🔍 Buscar por Nombre, Cod o Scan", key="txt_mov")
     
     try:
-        # Búsqueda que ignora mayúsculas/minúsculas para el nombre
         query_m = f"SELECT cod_int, nombre FROM maestra WHERE cod_int LIKE '%{bus_entrada}%' OR nombre LIKE '%{bus_entrada}%' OR barras LIKE '%{bus_entrada}%'"
         maestra_df = pd.read_sql(query_m, conn)
-        
         cod_sel = st.selectbox("Confirmar Producto", options=[""] + maestra_df['cod_int'].tolist())
         nom_auto = maestra_df[maestra_df['cod_int'] == cod_sel]['nombre'].values[0] if cod_sel != "" else ""
         ubi_sug = motor_sugerencia_pc(conn)
@@ -96,19 +115,15 @@ with tab1:
                 st.success(f"Cargado en {f_ubi}")
                 st.rerun()
 
-# --- TAB 2: DESPACHO (Detalle Total + Búsqueda por Nombre) ---
+# --- TAB 2: DESPACHO (SALIDA CON MICRO-DETALLES) ---
 with tab2:
-    st.subheader("Salida de Mercadería")
-    
-    # Botón para activar cámara de celular
-    if st.checkbox("📷 Activar Escáner de Cámara"):
-        foto = st.camera_input("Encuadra el código de barras")
-        if foto: st.info("Procesando imagen... (Usa el código detectado en el buscador)")
+    st.subheader("Salida (Réplica APP_STOCK)")
+    if st.checkbox("📷 Activar Scanner (Despacho)"):
+        scanner_component("des")
 
-    bus = st.text_input("🔎 Escribe Nombre, Código o Barras", key="bus_despacho")
+    bus = st.text_input("🔎 Escribe Nombre, Código o Scan", key="bus_despacho")
     
     if bus:
-        # Consulta SQL mejorada para buscar por nombre parcial y códigos
         query = f"""
             SELECT rowid, cod_int, nombre, cantidad, ubicacion, fecha, deposito 
             FROM inventario 
@@ -116,15 +131,11 @@ with tab2:
             AND cantidad > 0
         """
         res = pd.read_sql(query, conn)
-        
-        if res.empty:
-            st.warning("No se encontraron coincidencias.")
-        
         for i, r in res.iterrows():
             with st.expander(f"📦 {r['nombre']} (Cod: {r['cod_int']})"):
-                # LOS 4 MICRO-DETALLES SOLICITADOS SIN FALTAR NADA
+                # MICRO-DETALLES EXACTOS SOLICITADOS
                 st.markdown(f"""
-                **Detalles del Lote:**
+                **DATOS DEL LOTE:**
                 * 🔢 **CANTIDAD:** {r['cantidad']}
                 * 📅 **FECHA (Vence):** {r['fecha']}
                 * 📍 **UBICACIÓN:** {r['ubicacion']}
@@ -140,10 +151,9 @@ with tab2:
 
 # --- TAB 3: PLANILLA ---
 with tab3:
-    st.subheader("Planilla General")
+    st.subheader("Excel Total")
     tabla_ver = st.radio("Ver tabla:", ["inventario", "maestra"], horizontal=True)
     try:
         df_full = pd.read_sql(f"SELECT * FROM {tabla_ver}", conn)
         st.dataframe(df_full, use_container_width=True, hide_index=True)
-    except:
-        st.info("Sincroniza para ver la planilla.")
+    except: st.info("Sincroniza para ver datos.")
