@@ -10,37 +10,38 @@ FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
 DB_NAME = 'inventario_wms.db'
 URL = f'https://drive.google.com/uc?id={FILE_ID}'
 
+# Función para bajar la base de tu PC (Drive) al Celular
 def descargar_de_drive():
     try:
         if os.path.exists(DB_NAME):
             os.remove(DB_NAME)
         gdown.download(URL, DB_NAME, quiet=False)
-        st.sidebar.success("✅ Sincronizado con éxito")
+        st.sidebar.success("✅ Base sincronizada")
     except Exception as e:
         st.sidebar.error("Error al conectar con Drive")
 
 def conectar():
     return sqlite3.connect(DB_NAME, check_same_thread=False)
 
-st.set_page_config(page_title="WMS Master", layout="centered")
+st.set_page_config(page_title="LOGISTICA + STOCK", layout="centered")
 
-# Botón de sincronización
+# Botón de sincronización en el menú lateral
 if st.sidebar.button("🔄 Sincronizar con Drive"):
     descargar_de_drive()
 
-# Inicializar DB y CREAR TABLAS (Esto evita el DatabaseError)
+# CONEXIÓN Y CREACIÓN DE TABLAS (Evita el DatabaseError)
 conn = conectar()
 cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS maestra (cod_int TEXT PRIMARY KEY, nombre TEXT)")
 cursor.execute("CREATE TABLE IF NOT EXISTS inventario (cod_int TEXT, cantidad REAL, ubicacion TEXT, fecha TEXT)")
 conn.commit()
 
-st.title("🚀 WMS Logística & Stock")
+st.title("📦 WMS Unificado")
 tab1, tab2, tab3 = st.tabs(["📥 ENTRADAS", "📤 SALIDAS", "📊 STOCK TOTAL"])
 
 with tab1:
-    st.subheader("Ingreso (App Logística)")
-    with st.form("in", clear_on_submit=True):
+    st.subheader("App Logística (Ingresos)")
+    with st.form("ingreso_form", clear_on_submit=True):
         c1 = st.text_input("Código")
         n1 = st.text_input("Nombre")
         ca1 = st.number_input("Cantidad", min_value=0.0)
@@ -49,23 +50,23 @@ with tab1:
             cursor.execute("INSERT OR IGNORE INTO maestra VALUES (?,?)", (c1, n1))
             cursor.execute("INSERT INTO inventario VALUES (?,?,?,?)", (c1, ca1, ub1, datetime.now().strftime('%Y-%m-%d')))
             conn.commit()
-            st.success("Registrado")
+            st.success("Registrado correctamente")
 
 with tab2:
-    st.subheader("Despacho (App Stock)")
-    bus = st.text_input("🔍 Buscar producto...")
+    st.subheader("App Stock (Despacho)")
+    bus = st.text_input("🔍 Buscar por código o ubicación")
     if bus:
-        df = pd.read_sql(f"SELECT rowid, * FROM inventario WHERE cod_int LIKE '%{bus}%' OR ubicacion LIKE '%{bus}%' AND cantidad > 0", conn)
-        if not df.empty:
-            for i, r in df.iterrows():
+        df = pd.read_sql(f"SELECT rowid, * FROM inventario WHERE cod_int LIKE '%{bus}%' OR ubicacion LIKE '%{bus}%'", conn)
+        for i, r in df.iterrows():
+            if r['cantidad'] > 0:
                 with st.expander(f"📍 {r['ubicacion']} | Cant: {r['cantidad']}"):
-                    baja = st.number_input("Sacar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
+                    baja = st.number_input("Sacar cantidad", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
                     if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
                         cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
                         conn.commit()
                         st.rerun()
 
 with tab3:
-    st.subheader("Inventario (Vista Excel)")
+    st.subheader("Inventario Total (Excel 2013)")
     df_total = pd.read_sql("SELECT cod_int as Código, cantidad as Stock, ubicacion as Ubicación FROM inventario WHERE cantidad > 0", conn)
     st.dataframe(df_total, use_container_width=True)
