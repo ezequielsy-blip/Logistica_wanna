@@ -4,9 +4,8 @@ import pandas as pd
 from datetime import datetime
 import requests
 import os
-import streamlit.components.v1 as components
 
-# --- CONFIGURACIÓN DRIVE ---
+# --- CONFIGURACIÓN DRIVE (ORIGINAL) ---
 FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
 DB_NAME = 'inventario_wms.db'
 URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
@@ -22,29 +21,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- SCRIPT PARA BARRA AUTOMÁTICA (JS) ---
-components.html(
-    """
-    <script>
-    const inputs = window.parent.document.querySelectorAll('input');
-    inputs.forEach(input => {
-        if (input.placeholder === "MM/AA") {
-            input.addEventListener('input', function(e) {
-                let val = e.target.value.replace(/[^0-9]/g, '');
-                if (val.length > 2) {
-                    e.target.value = val.substring(0, 2) + '/' + val.substring(2, 4);
-                } else {
-                    e.target.value = val;
-                }
-            });
-        }
-    });
-    </script>
-    """,
-    height=0,
-)
-
-# --- BASE DE DATOS ---
+# --- BASE DE DATOS (CONEXIÓN ESTABLE) ---
 def conectar_y_preparar():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     cursor = conn.cursor()
@@ -52,10 +29,6 @@ def conectar_y_preparar():
     cursor.execute("""CREATE TABLE IF NOT EXISTS inventario (
                         cod_int TEXT, cantidad REAL, ubicacion TEXT, 
                         deposito TEXT, vencimiento TEXT, fecha_registro TEXT)""")
-    cursor.execute("PRAGMA table_info(inventario)")
-    columnas = [info[1] for info in cursor.fetchall()]
-    if 'deposito' not in columnas: cursor.execute("ALTER TABLE inventario ADD COLUMN deposito TEXT DEFAULT 'DEPO1'")
-    if 'vencimiento' not in columnas: cursor.execute("ALTER TABLE inventario ADD COLUMN vencimiento TEXT DEFAULT '00/00'")
     conn.commit()
     return conn, cursor
 
@@ -64,14 +37,20 @@ conn, cursor = conectar_y_preparar()
 # --- INTERFAZ ---
 st.title("📦 WMS Master Móvil")
 
+# VOLVEMOS AL MÉTODO DE SINCRONIZACIÓN QUE TE FUNCIONABA
 if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
-    try:
-        if os.path.exists(DB_NAME): os.remove(DB_NAME)
-        r = requests.get(URL_DIRECTA)
-        with open(DB_NAME, 'wb') as f: f.write(r.content)
-        st.success("✅ Datos clonados")
-        st.rerun()
-    except: st.error("Error al sincronizar")
+    with st.spinner('Sincronizando...'):
+        try:
+            if os.path.exists(DB_NAME): os.remove(DB_NAME)
+            r = requests.get(URL_DIRECTA, timeout=10) # Timeout para evitar esperas infinitas
+            if r.status_code == 200:
+                with open(DB_NAME, 'wb') as f: f.write(r.content)
+                st.success("✅ Datos clonados")
+                st.rerun()
+            else:
+                st.error(f"Error: Google Drive respondió con código {r.status_code}")
+        except Exception as e: 
+            st.error(f"Error de conexión: {str(e)}")
 
 tab1, tab2, tab3 = st.tabs(["📥 LOGISTICA", "📤 APP_STOCK", "📊 EXCEL TOTAL"])
 
@@ -90,12 +69,14 @@ with tab1:
         with c2: f_dep = st.selectbox("Depósito", options=["DEPO1", "DEPO2"])
         
         c3, c4 = st.columns(2)
-        # El placeholder "MM/AA" activa el script de la barra automática
-        with c3: f_venc = st.text_input("Vencimiento", placeholder="MM/AA", max_chars=5)
+        # SOLUCIÓN BARRA "/" AUTOMÁTICA SIN ROMPER LA APP:
+        venc_input = st.text_input("Vencimiento (Solo números MMAA)", max_chars=4, help="Ejemplo: 1226")
         with c4: f_ubi = st.text_input("Ubicación")
         
         if st.form_submit_button("💾 GUARDAR ENTRADA"):
-            if f_cod and f_nom and len(f_venc) == 5:
+            if f_cod and f_nom and len(venc_input) == 4:
+                # AQUÍ SE PONE LA BARRA SOLA AL GUARDAR PARA NO MODIFICAR TUS APPS
+                f_venc = f"{venc_input[:2]}/{venc_input[2:]}"
                 cursor.execute("INSERT OR IGNORE INTO maestra VALUES (?,?)", (f_cod, f_nom))
                 cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?)", 
                              (f_cod, f_can, f_ubi, f_dep, f_venc, datetime.now().strftime('%d/%m/%Y')))
@@ -103,7 +84,7 @@ with tab1:
                 st.success(f"Guardado: {f_nom} ({f_venc})")
                 st.rerun()
             else:
-                st.error("Completar Código, Nombre y Vencimiento (MM/AA)")
+                st.error("Completar Código, Nombre y 4 números de Vencimiento")
 
 with tab2:
     st.subheader("Despacho / Salidas")
