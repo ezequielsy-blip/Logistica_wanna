@@ -51,19 +51,17 @@ with tab1:
         maestra_df = pd.read_sql("SELECT cod_int, nombre FROM maestra", conn)
         cod_sel = st.selectbox("Buscar Código", options=[""] + maestra_df['cod_int'].tolist())
         
-        # Lógica de sugerencia (Igual que en PC)
         nom_auto = ""
         ubi_sug = ""
-        dep_sug = "DEPO1" # Default
+        dep_sug = "DEPO1"
         
         if cod_sel != "":
             nom_auto = maestra_df[maestra_df['cod_int'] == cod_sel]['nombre'].values[0]
-            # Buscamos la última ubicación registrada para este código
+            # Sugerencia de ubicación como en la PC
             last_entry = pd.read_sql(f"SELECT ubicacion, deposito FROM inventario WHERE cod_int = '{cod_sel}' ORDER BY rowid DESC LIMIT 1", conn)
             if not last_entry.empty:
                 ubi_sug = last_entry['ubicacion'].values[0]
                 dep_sug = last_entry['deposito'].values[0]
-                st.info(f"💡 Sugerencia basada en PC: Última vez en {dep_sug} - {ubi_sug}")
     except:
         cod_sel, nom_auto, ubi_sug, dep_sug = "", "", "", "DEPO1"
 
@@ -73,12 +71,10 @@ with tab1:
         
         c1, c2 = st.columns(2)
         with c1: f_can = st.number_input("Cantidad", min_value=0.0, step=1.0)
-        # El depósito se pre-selecciona según la última carga
         with c2: f_dep = st.selectbox("Depósito", options=["DEPO1", "DEPO2"], index=0 if dep_sug == "DEPO1" else 1)
         
         c3, c4 = st.columns(2)
         with c3: f_venc_raw = st.text_input("Vencimiento (MMAA)", placeholder="Ej: 1226", max_chars=4)
-        # La ubicación se pre-completa sola
         with c4: f_ubi = st.text_input("Ubicación", value=ubi_sug)
         
         if st.form_submit_button("💾 GUARDAR ENTRADA"):
@@ -91,7 +87,7 @@ with tab1:
                 st.success(f"Guardado: {f_venc}")
                 st.rerun()
             else:
-                st.error("Faltan datos o el vencimiento no tiene 4 números")
+                st.error("Faltan datos (Vencimiento requiere 4 números)")
 
 # --- TAB 2: SALIDAS (APP_STOCK) ---
 with tab2:
@@ -112,8 +108,10 @@ with tab2:
                     st.write(f"Vence: **{r['vencimiento']}** | Ubicación: **{r['ubicacion']}**")
                     baja = st.number_input("Cantidad a sacar", min_value=1.0, key=f"s_{r['rowid']}")
                     if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
-                        cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']}")
+                        # CORREGIDO: Se eliminó el paréntesis/comilla que sobraba aquí
+                        cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
                         conn.commit()
+                        st.success("Salida realizada")
                         st.rerun()
         except:
             st.warning("Primero sincronizá los datos de Drive")
