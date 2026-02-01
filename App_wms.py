@@ -78,7 +78,6 @@ if es_autorizado:
                 st.rerun()
             except Exception as e: st.error(f"Error: {e}")
     with col_b:
-        # ESTA ES LA OTRA FORMA: DESCARGA DIRECTA AL CELULAR
         with open(DB_NAME, "rb") as file:
             st.download_button(
                 label="📤 DESCARGAR BASE ACTUALIZADA",
@@ -87,6 +86,16 @@ if es_autorizado:
                 mime="application/octet-stream",
                 use_container_width=True
             )
+    
+    # --- UNICA MODIFICACIÓN: CARGA MANUAL PARA REEMPLAZAR ID ---
+    st.divider()
+    st.subheader("📁 REEMPLAZAR BASE INTERNA")
+    archivo_subido = st.file_uploader("Subí el archivo .db para actualizar la App sin cambiar IDs", type="db")
+    if archivo_subido is not None:
+        with open(DB_NAME, "wb") as f:
+            f.write(archivo_subido.getbuffer())
+        st.success("✅ Base interna reemplazada. Ya podés operar con los datos nuevos.")
+        st.rerun()
 
 tab1, tab2, tab3 = st.tabs(["📥 ENTRADAS", "📤 DESPACHO / CONSULTA", "📊 PLANILLA GENERAL"])
 
