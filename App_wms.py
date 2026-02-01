@@ -11,115 +11,105 @@ DB_NAME = 'inventario_wms.db'
 URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="WMS MASTER", layout="centered")
+st.set_page_config(page_title="WMS MASTER PRO", layout="centered")
 
-# --- CSS DE FUERZA BRUTA (Para que nada se vea negro/invisible) ---
+# --- CSS PARA LEGIBILIDAD Y BOTONES ---
 st.markdown("""
     <style>
-    /* 1. Fondo Blanco Total */
-    .stApp, .main, .block-container { background-color: #FFFFFF !important; }
-    
-    /* 2. Forzar todos los textos a NEGRO PURO */
-    h1, h2, h3, h4, h5, h6, p, label, li, span, div { 
-        color: #000000 !important; 
+    /* Asegura que los textos sean legibles en ambos temas */
+    .stMarkdown, p, label {
         font-weight: 600 !important;
     }
-
-    /* 3. Botón de Sincronización (Igual a LOGISTICA.exe) */
+    /* Botones grandes para uso táctil */
     div.stButton > button {
-        background-color: #004cff !important;
-        color: white !important;
-        border-radius: 10px;
-        height: 3.5em;
         width: 100%;
+        height: 3.5em;
+        border-radius: 12px;
         font-weight: bold;
-        border: none;
-        box-shadow: 0px 4px 10px rgba(0,0,0,0.2);
+        text-transform: uppercase;
     }
-
-    /* 4. Inputs de texto con borde definido para que se vean */
-    input {
-        background-color: #f0f2f6 !important;
-        color: black !important;
-        border: 2px solid #d1d5db !important;
-        border-radius: 8px !important;
+    /* Estilo de las pestañas */
+    .stTabs [data-baseweb="tab"] {
+        font-size: 16px;
+        font-weight: bold;
     }
-
-    /* 5. Estilo para las Tabs (Pestañas) */
-    .stTabs [data-baseweb="tab-list"] { background-color: #f0f2f6; border-radius: 10px; padding: 5px; }
-    .stTabs [data-baseweb="tab"] { color: #666; }
-    .stTabs [aria-selected="true"] { color: #004cff !important; font-weight: bold; }
-
-    /* 6. Botón Guardar Verde (Copia fiel) */
-    .stForm button {
-        background-color: #218838 !important;
-        color: white !important;
+    /* Mejora la visualización de las tablas */
+    .stDataFrame {
+        border-radius: 10px;
     }
-    
-    /* 7. Dataframe (Excel) legible */
-    .stDataFrame { background-color: white; border: 1px solid #ddd; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIONES ---
+# --- FUNCIONES DE SINCRONIZACIÓN ---
 def descargar_base():
-    try:
-        if os.path.exists(DB_NAME): os.remove(DB_NAME)
-        response = requests.get(URL_DIRECTA)
-        if response.status_code == 200:
-            with open(DB_NAME, 'wb') as f: f.write(response.content)
-            st.success("✅ Datos clonados de la PC")
-            st.rerun()
-    except Exception as e: st.error(f"Error: {e}")
+    with st.spinner('Sincronizando datos de PC...'):
+        try:
+            if os.path.exists(DB_NAME): os.remove(DB_NAME)
+            response = requests.get(URL_DIRECTA)
+            if response.status_code == 200:
+                with open(DB_NAME, 'wb') as f: f.write(response.content)
+                st.toast("✅ Base de datos actualizada", icon="🔄")
+                st.rerun()
+            else:
+                st.error("Error al descargar: El archivo de Drive no es público.")
+        except Exception as e: st.error(f"Error: {e}")
 
-# Conexión
+# Conexión SQLite
 conn = sqlite3.connect(DB_NAME, check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS maestra (cod_int TEXT PRIMARY KEY, nombre TEXT)")
 cursor.execute("CREATE TABLE IF NOT EXISTS inventario (cod_int TEXT, cantidad REAL, ubicacion TEXT, fecha TEXT)")
 conn.commit()
 
-# --- INTERFAZ ---
+# --- INTERFAZ PRINCIPAL ---
 st.title("📦 WMS Master Móvil")
 
-# Botón de Sincronización
+# Botón de Sincronización (Lo primero que necesitas)
 if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
     descargar_base()
 
-# Pestañas exactas a tus ejecutables
-tab1, tab2, tab3 = st.tabs(["📥 LOGISTICA", "📤 APP_STOCK", "📊 EXCEL TOTAL"])
+# Pestañas: Copia fiel de tus ejecutables
+tab1, tab2, tab3 = st.tabs(["📥 LOGISTICA (Entradas)", "📤 APP_STOCK (Salidas)", "📊 STOCK TOTAL"])
 
+# --- 1. LOGISTICA (IGUAL A TU APP_LOGISTICA) ---
 with tab1:
-    st.markdown("### Registro de Entradas")
+    st.subheader("Registro de Ingresos")
+    # Traemos la maestra para el autocompletado
     maestra_df = pd.read_sql("SELECT cod_int, nombre FROM maestra", conn)
+    cod_list = [""] + maestra_df['cod_int'].tolist()
     
-    # Autocompletado inteligente
-    opciones = [""] + maestra_df['cod_int'].tolist()
-    cod_seleccionado = st.selectbox("Buscar Código (Autocompletar)", options=opciones)
+    # Campo de selección para autocompletar (Como en tu PC)
+    cod_sel = st.selectbox("Seleccione Código (Buscador)", options=cod_list)
     
+    # Lógica de autocompletado automática
     nombre_sugerido = ""
-    if cod_seleccionado != "":
-        nombre_sugerido = maestra_df[maestra_df['cod_int'] == cod_seleccionado]['nombre'].values[0]
+    if cod_sel != "":
+        nombre_sugerido = maestra_df[maestra_df['cod_int'] == cod_sel]['nombre'].values[0]
 
-    with st.form("form_entrada", clear_on_submit=True):
-        f_cod = st.text_input("Código de Producto", value=cod_seleccionado)
+    with st.form("form_entradas", clear_on_submit=True):
+        f_cod = st.text_input("Confirmar Código", value=cod_sel)
         f_nom = st.text_input("Nombre / Descripción", value=nombre_sugerido)
-        col1, col2 = st.columns(2)
-        with col1: f_can = st.number_input("Cantidad", min_value=0.0)
-        with col2: f_ubi = st.text_input("Ubicación")
         
-        if st.form_submit_button("💾 GUARDAR ENTRADA"):
+        col_c, col_u = st.columns(2)
+        with col_c: f_can = st.number_input("Cantidad", min_value=0.0, step=1.0)
+        with col_u: f_ubi = st.text_input("Ubicación")
+        
+        if st.form_submit_button("💾 GUARDAR REGISTRO"):
             if f_cod and f_nom:
                 cursor.execute("INSERT OR IGNORE INTO maestra VALUES (?,?)", (f_cod, f_nom))
                 cursor.execute("INSERT INTO inventario VALUES (?,?,?,?)", 
                              (f_cod, f_can, f_ubi, datetime.now().strftime('%d/%m/%Y')))
                 conn.commit()
-                st.success(f"Registrado: {f_nom}")
+                st.success(f"Guardado: {f_nom}")
                 st.rerun()
+            else:
+                st.warning("Complete Código y Nombre")
 
+# --- 2. APP_STOCK (IGUAL A TU BUSCADOR DE SALIDAS) ---
 with tab2:
-    st.markdown("### Salidas / Despacho")
+    st.subheader("Buscador de Despacho")
     bus = st.text_input("🔍 Buscar por Nombre, Código o Ubicación")
+    
     if bus:
         query = f"""
             SELECT i.rowid, i.cod_int, m.nombre, i.cantidad, i.ubicacion 
@@ -130,20 +120,20 @@ with tab2:
         """
         res = pd.read_sql(query, conn)
         for i, r in res.iterrows():
-            with st.container():
-                st.markdown(f"**{r['nombre']}**")
-                st.markdown(f"📍 {r['ubicacion']} | Stock: **{r['cantidad']}**")
-                cant_baja = st.number_input("Sacar cantidad", min_value=1.0, max_value=float(r['cantidad']), key=f"out_{r['rowid']}")
-                if st.button(f"CONFIRMAR SALIDA {r['rowid']}", key=f"btn_{r['rowid']}"):
-                    cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (cant_baja, r['rowid']))
+            with st.expander(f"📦 {r['nombre']} | STOCK: {r['cantidad']}"):
+                st.write(f"**Ubicación:** {r['ubicacion']} | **Código:** {r['cod_int']}")
+                baja = st.number_input(f"Cantidad a sacar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
+                if st.button("CONFIRMAR SALIDA", key=f"btn_{r['rowid']}"):
+                    cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
                     conn.commit()
+                    st.success("Salida realizada")
                     st.rerun()
-                st.markdown("---")
 
+# --- 3. EXCEL (VISTA TOTAL DE STOCK) ---
 with tab3:
-    st.markdown("### Stock Total (Vista Excel)")
+    st.subheader("Estado de Inventario (Excel)")
     df_excel = pd.read_sql("""
-        SELECT i.cod_int as [Cód], m.nombre as [Producto], i.cantidad as [Stock], i.ubicacion as [Ubicación]
+        SELECT i.cod_int as [Código], m.nombre as [Producto], i.cantidad as [Stock], i.ubicacion as [Lugar]
         FROM inventario i 
         JOIN maestra m ON i.cod_int = m.cod_int 
         WHERE i.cantidad > 0
