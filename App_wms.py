@@ -61,7 +61,6 @@ conn, cursor = init_db()
 
 # --- INTERFAZ ---
 st.title("📦 WMS MASTER (PC-MÓVIL)")
-st.caption("Sincronizado con LOGISTICA.EXE")
 
 if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
     try:
@@ -76,7 +75,7 @@ tab1, tab2, tab3 = st.tabs(["📥 MOVIMIENTOS", "📤 DESPACHO", "📊 PLANILLA"
 
 # --- TAB 1: MOVIMIENTOS (Basado en tu procesar_carga) ---
 with tab1:
-    st.subheader("Entrada de Mercadería")
+    st.subheader("Carga (Réplica LOGISTICA)")
     try:
         maestra_df = pd.read_sql("SELECT cod_int, nombre FROM maestra", conn)
         cod_sel = st.selectbox("Buscar en Maestra", options=[""] + maestra_df['cod_int'].tolist())
@@ -91,8 +90,7 @@ with tab1:
         with c1: f_can = st.number_input("Cantidad", min_value=0.0)
         with c2: f_dep = st.selectbox("Depósito", ["DEPO 1", "DEPO 2"])
         c3, c4 = st.columns(2)
-        # Formato mm/aa con barra automática al guardar
-        with c3: f_venc_raw = st.text_input("Vencimiento (MMAA)", placeholder="Ej: 0526", max_chars=4)
+        with c3: f_venc_raw = st.text_input("Vencimiento (MMAA)", max_chars=4)
         with c4: f_ubi = st.text_input("Ubicación", value=ubi_sug)
         
         if st.form_submit_button("⚡ REGISTRAR MOVIMIENTO"):
@@ -101,15 +99,15 @@ with tab1:
                 cursor.execute("INSERT INTO inventario VALUES (?,?,?,?,?,?,?)", 
                              (f_cod, f_can, f_nom, "", f_venc, f_ubi, f_dep))
                 conn.commit()
-                st.success(f"Guardado: {f_nom} en {f_ubi}")
+                st.success(f"Guardado en {f_ubi}")
                 st.rerun()
 
-# --- TAB 2: DESPACHO (Detalles solicitados agregados) ---
+# --- TAB 2: DESPACHO (DETALLES DEL LOTE) ---
 with tab2:
-    st.subheader("Salida de Mercadería")
-    bus = st.text_input("🔍 Buscar por Nombre, Cod o Barras", key="bus_salida")
+    st.subheader("Salida (Réplica APP_STOCK)")
+    bus = st.text_input("🔍 Buscar por Nombre, Cod o Barras", key="bus_despacho")
     if bus:
-        # Se traen todos los campos para mostrar el micro-detalle
+        # Traemos todos los campos para el micro-detalle solicitado
         query = f"""
             SELECT rowid, cod_int, nombre, cantidad, ubicacion, fecha, deposito 
             FROM inventario 
@@ -118,14 +116,16 @@ with tab2:
         """
         res = pd.read_sql(query, conn)
         for i, r in res.iterrows():
-            # Título del expander idéntico a tu imagen
-            with st.expander(f"📦 {r['nombre']} | Stock: {r['cantidad']}"):
-                # MICRO-DETALLES AGREGADOS SEGÚN TU PEDIDO:
+            with st.expander(f"📦 {r['nombre']} (Cod: {r['cod_int']})"):
+                # MICRO-DETALLES SOLICITADOS:
                 st.markdown(f"""
-                **Información del Lote:**
-                * 📅 **Vencimiento (Fecha):** {r['fecha']}
-                * 📍 **Ubicación:** {r['ubicacion']}
-                * 🏢 **Depósito:** {r['deposito']}
+                ---
+                **DATOS DEL LOTE:**
+                * 🔢 **CANTIDAD:** {r['cantidad']}
+                * 📅 **FECHA (Vencimiento):** {r['fecha']}
+                * 📍 **UBICACIÓN:** {r['ubicacion']}
+                * 🏢 **DEPÓSITO:** {r['deposito']}
+                ---
                 """)
                 
                 baja = st.number_input(f"Cantidad a retirar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
