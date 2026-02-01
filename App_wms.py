@@ -5,7 +5,6 @@ from datetime import datetime
 import requests
 import os
 import re
-import streamlit.components.v1 as components
 
 # --- CONFIGURACIÓN DRIVE ---
 FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
@@ -13,25 +12,6 @@ DB_NAME = 'inventario_wms.db'
 URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
 st.set_page_config(page_title="WMS Master Pro", layout="centered")
-
-# --- COMPONENTE SCANNER (Solo para capturar el texto) ---
-def lector_barras(key):
-    return components.html(
-        f"""
-        <div id="reader-{key}"></div>
-        <script src="https://unpkg.com/html5-qrcode"></script>
-        <script>
-            function onScanSuccess(decodedText) {{
-                window.parent.postMessage({{
-                    type: 'streamlit:setComponentValue',
-                    value: decodedText
-                }}, '*');
-            }}
-            let html5QrcodeScanner = new Html5QrcodeScanner("reader-{key}", {{ fps: 10, qrbox: 250 }});
-            html5QrcodeScanner.render(onScanSuccess);
-        </script>
-        """, height=350
-    )
 
 # --- MOTOR DE UBICACIÓN (Tu lógica idéntica de PC) ---
 def motor_sugerencia_pc(conn):
@@ -51,13 +31,17 @@ def motor_sugerencia_pc(conn):
         if letra_actual in ciclo:
             idx = ciclo.index(letra_actual)
             if idx < 3:
-                nueva_letra = ciclo[idx+1]; nuevo_num = num_actual
+                nueva_letra = ciclo[idx+1]
+                nuevo_num = num_actual
             else:
-                nueva_letra = 'A'; nuevo_num = num_actual + 1
+                nueva_letra = 'A'
+                nuevo_num = num_actual + 1
         else:
-            nueva_letra = 'A'; nuevo_num = num_actual + 1
+            nueva_letra = 'A'
+            nuevo_num = num_actual + 1
         return f"99-{str(nuevo_num).zfill(2)}{nueva_letra}"
-    except: return "99-01A"
+    except:
+        return "99-01A"
 
 # --- CONEXIÓN DB ---
 def init_db():
@@ -90,18 +74,13 @@ tab1, tab2, tab3 = st.tabs(["📥 MOVIMIENTOS", "📤 DESPACHO", "📊 PLANILLA"
 # --- TAB 1: MOVIMIENTOS ---
 with tab1:
     st.subheader("Entrada de Mercadería")
-    with st.expander("📷 Escanear"):
-        val_scan_mov = lector_barras("mov")
-    
-    # Buscador por nombre o código
-    bus_m = st.text_input("Buscar en Maestra", value=val_scan_mov if val_scan_mov else "")
+    # Buscador manual o para App de Escáner externa
+    bus_m = st.text_input("🔍 Buscar en Maestra (Escribe nombre o usa App Escáner)")
     
     try:
-        # Búsqueda corregida (Sin SyntaxError)
-        query_maestra = "SELECT cod_int, nombre FROM maestra WHERE cod_int LIKE ? OR nombre LIKE ? OR barras LIKE ?"
-        maestra_df = pd.read_sql(query_maestra, conn, params=(f'%{bus_m}%', f'%{bus_m}%', f'%{bus_m}%'))
-        
-        cod_sel = st.selectbox("Buscar Producto (Maestra)", options=[""] + maestra_df['cod_int'].tolist())
+        # Búsqueda por nombre o código para que funcione el escáner externo
+        maestra_df = pd.read_sql(f"SELECT cod_int, nombre FROM maestra WHERE cod_int LIKE '%{bus_m}%' OR nombre LIKE '%{bus_m}%'", conn)
+        cod_sel = st.selectbox("Confirmar Producto", options=[""] + maestra_df['cod_int'].tolist())
         nom_auto = maestra_df[maestra_df['cod_int'] == cod_sel]['nombre'].values[0] if cod_sel != "" else ""
         ubi_sug = motor_sugerencia_pc(conn)
     except: cod_sel, nom_auto, ubi_sug = "", "", "99-01A"
@@ -128,18 +107,14 @@ with tab1:
 # --- TAB 2: DESPACHO ---
 with tab2:
     st.subheader("Salida de Mercadería")
-    with st.expander("📷 Escanear"):
-        val_scan_des = lector_barras("des")
-        
-    bus = st.text_input("🔍 Buscar por Nombre, Cod o Barras", value=val_scan_des if val_scan_des else "")
-    
+    bus = st.text_input("🔍 Buscar por Nombre, Cod o Barras (Usa App Escáner)")
     if bus:
-        # Búsqueda en inventario corregida (Sin DatabaseError)
-        query_despacho = "SELECT rowid, cod_int, nombre, cantidad, ubicacion, fecha, deposito FROM inventario WHERE (cod_int LIKE ? OR nombre LIKE ?) AND cantidad > 0"
-        res = pd.read_sql(query_despacho, conn, params=(f'%{bus}%', f'%{bus}%'))
-        
+        # Consulta corregida para buscar por nombre parcial o código
+        query = f"SELECT rowid, * FROM inventario WHERE (cod_int LIKE '%{bus}%' OR nombre LIKE '%{bus}%') AND cantidad > 0"
+        res = pd.read_sql(query, conn)
         for i, r in res.iterrows():
             with st.expander(f"📦 {r['nombre']} | Stock: {r['cantidad']}"):
+                # Los 4 micro-detalles exactos
                 st.write(f"**Vence:** {r['fecha']} | **Ubi:** {r['ubicacion']} | **Depo:** {r['deposito']}")
                 baja = st.number_input("Cantidad a sacar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
                 if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
@@ -154,4 +129,5 @@ with tab3:
     try:
         df_full = pd.read_sql(f"SELECT * FROM {tabla_ver}", conn)
         st.dataframe(df_full, use_container_width=True, hide_index=True)
-    except: st.info("Sincroniza para ver la planilla.")
+    except:
+        st.info("Sincroniza para ver la planilla.")
