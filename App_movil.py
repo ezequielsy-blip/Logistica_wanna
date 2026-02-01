@@ -16,70 +16,67 @@ def descargar_de_drive():
         if os.path.exists(DB_NAME):
             os.remove(DB_NAME)
         gdown.download(URL, DB_NAME, quiet=False)
-        st.success("✅ Base sincronizada desde Google Drive")
+        st.success("✅ Datos clonados de la PC con éxito")
         st.rerun()
     except Exception as e:
         st.error("Error al conectar con Drive. Verifica el enlace.")
 
-def conectar():
-    return sqlite3.connect(DB_NAME, check_same_thread=False)
-
 # --- INICIO DE APP ---
-st.set_page_config(page_title="WMS Master Unificado", layout="centered")
+st.set_page_config(page_title="WMS Master Unificado", layout="centered", initial_sidebar_state="collapsed")
 
-# BOTÓN DE SINCRONIZACIÓN (Bien visible arriba)
+# TEMA CLARO FORZADO POR CÓDIGO
+st.markdown("""
+    <style>
+    .stApp { background-color: white; }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.title("📦 LOGISTICA + STOCK")
+
+# BOTÓN DE SINCRONIZACIÓN
 if st.button("🔄 CLONAR DATOS DESDE DRIVE (PC)"):
     descargar_de_drive()
 
-# Inicializar Base de Datos y Tablas
-conn = conectar()
+# Conectar a la base descargada
+conn = sqlite3.connect(DB_NAME, check_same_thread=False)
 cursor = conn.cursor()
-cursor.execute("CREATE TABLE IF NOT EXISTS maestra (cod_int TEXT PRIMARY KEY, nombre TEXT)")
-cursor.execute("CREATE TABLE IF NOT EXISTS inventario (cod_int TEXT, cantidad REAL, ubicacion TEXT, fecha TEXT)")
-conn.commit()
 
-st.title("📦 Gestión Logística & Stock")
+# Las 3 pestañas (Copia fiel de tus ejecutables)
+tab1, tab2, tab3 = st.tabs(["📥 LOGISTICA (Entradas)", "📤 APP_STOCK (Salidas)", "📊 EXCEL TOTAL"])
 
-# Las 3 pestañas que pediste (Copia fiel de tus apps)
-tab1, tab2, tab3 = st.tabs(["📥 LOGISTICA", "📤 APP_STOCK", "📊 EXCEL TOTAL"])
-
-# 1. LOGISTICA (Entradas)
+# 1. LOGISTICA (Igual a tu APP_LOGISTICA.exe)
 with tab1:
-    st.subheader("Registrar Ingreso de Mercadería")
+    st.subheader("Ingreso de Mercadería")
     with st.form("form_log", clear_on_submit=True):
-        f_cod = st.text_input("Código de Producto")
-        f_nom = st.text_input("Nombre / Descripción")
+        f_cod = st.text_input("Código")
+        f_nom = st.text_input("Nombre")
         f_can = st.number_input("Cantidad", min_value=0.0)
         f_ubi = st.text_input("Ubicación")
-        if st.form_submit_button("GUARDAR ENTRADA"):
+        if st.form_submit_button("GUARDAR"):
             cursor.execute("INSERT OR IGNORE INTO maestra VALUES (?,?)", (f_cod, f_nom))
             cursor.execute("INSERT INTO inventario VALUES (?,?,?,?)", 
-                         (f_cod, f_can, f_ubi, datetime.now().strftime('%Y-%m-%d')))
+                         (f_cod, f_can, f_ubi, datetime.now().strftime('%d-%m-%Y')))
             conn.commit()
-            st.success(f"Ingresado: {f_nom}")
+            st.success("Registrado")
 
-# 2. APP_STOCK (Salidas/Buscador)
+# 2. APP_STOCK (Igual a tu buscador de despacho)
 with tab2:
-    st.subheader("Buscador para Despacho")
-    bus = st.text_input("🔍 Buscar por Código o Ubicación")
+    st.subheader("Buscador de Despacho")
+    bus = st.text_input("🔍 Buscar...")
     if bus:
         query = f"SELECT rowid, * FROM inventario WHERE cod_int LIKE '%{bus}%' OR ubicacion LIKE '%{bus}%'"
         df_res = pd.read_sql(query, conn)
-        if not df_res.empty:
-            for i, r in df_res.iterrows():
-                if r['cantidad'] > 0:
-                    with st.expander(f"📍 {r['ubicacion']} | Stock: {r['cantidad']}"):
-                        baja = st.number_input("Cantidad a sacar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
-                        if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
-                            cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
-                            conn.commit()
-                            st.success("Salida registrada")
-                            st.rerun()
-        else:
-            st.info("No hay resultados con stock.")
+        for i, r in df_res.iterrows():
+            if r['cantidad'] > 0:
+                with st.expander(f"📍 {r['ubicacion']} | Stock: {r['cantidad']}"):
+                    baja = st.number_input("Sacar", min_value=1.0, max_value=float(r['cantidad']), key=f"s_{r['rowid']}")
+                    if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
+                        cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
+                        conn.commit()
+                        st.rerun()
 
-# 3. EXCEL TOTAL (Vista General)
+# 3. EXCEL TOTAL (Como tu Excel 2013)
 with tab3:
-    st.subheader("Inventario Completo (Vista Excel)")
-    df_total = pd.read_sql("SELECT cod_int as Código, cantidad as Stock, ubicacion as Ubicación, fecha as Registro FROM inventario WHERE cantidad > 0", conn)
+    st.subheader("Inventario Completo")
+    df_total = pd.read_sql("SELECT cod_int as Código, cantidad as Stock, ubicacion as Ubicación, fecha as Fecha FROM inventario WHERE cantidad > 0", conn)
     st.dataframe(df_total, use_container_width=True)
