@@ -4,16 +4,25 @@ import pandas as pd
 from datetime import datetime
 import requests
 import os
+import re
 
 # --- CONFIGURACIÓN DRIVE ---
 FILE_ID = '1ZZQJP6gJyvX-7uAi8IvLLACfRyL0Hzv1'
 DB_NAME = 'inventario_wms.db'
 URL_DIRECTA = f'https://drive.google.com/uc?export=download&id={FILE_ID}'
 
-# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="WMS Master Pro", layout="centered")
 
-# --- BASE DE DATOS ---
+# --- FUNCIONES LÓGICAS ---
+def proxima_ubicacion(ultima_ubi):
+    if not ultima_ubi: return "1"
+    # Busca números al final
+    match = re.search(r'(\d+)$', str(ultima_ubi))
+    if match:
+        numero = int(match.group(1))
+        return str(ultima_ubi[:match.start()]) + str(numero + 1)
+    return str(ultima_ubi) + "1"
+
 def conectar_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     cursor = conn.cursor()
@@ -37,38 +46,30 @@ if st.button("🔄 CLONAR DATOS DESDE DRIVE"):
             with open(DB_NAME, 'wb') as f: f.write(r.content)
             st.success("✅ Sincronización Exitosa")
             st.rerun()
-        else:
-            st.error(f"Error de Drive: {r.status_code}")
-    except Exception as e:
-        st.error(f"Error: {e}")
+    except Exception as e: st.error(f"Error: {e}")
 
 tab1, tab2, tab3 = st.tabs(["📥 LOGISTICA", "📤 APP_STOCK", "📊 EXCEL TOTAL"])
 
-# --- TAB 1: CARGA (LOGISTICA) CON SUGERENCIAS ---
 with tab1:
     st.subheader("Carga de Mercadería")
     try:
         maestra_df = pd.read_sql("SELECT cod_int, nombre FROM maestra", conn)
         cod_sel = st.selectbox("Buscar Código", options=[""] + maestra_df['cod_int'].tolist())
         
-        nom_auto = ""
-        ubi_sug = ""
-        dep_sug = "DEPO1"
+        nom_auto, ubi_sug, dep_sug = "", "", "DEPO1"
         
         if cod_sel != "":
             nom_auto = maestra_df[maestra_df['cod_int'] == cod_sel]['nombre'].values[0]
-            # Sugerencia de ubicación como en la PC
-            last_entry = pd.read_sql(f"SELECT ubicacion, deposito FROM inventario WHERE cod_int = '{cod_sel}' ORDER BY rowid DESC LIMIT 1", conn)
+            # Lógica sugerir ubicación: la más alta + 1
+            last_entry = pd.read_sql("SELECT ubicacion, deposito FROM inventario ORDER BY rowid DESC LIMIT 1", conn)
             if not last_entry.empty:
-                ubi_sug = last_entry['ubicacion'].values[0]
+                ubi_sug = proxima_ubicacion(last_entry['ubicacion'].values[0])
                 dep_sug = last_entry['deposito'].values[0]
-    except:
-        cod_sel, nom_auto, ubi_sug, dep_sug = "", "", "", "DEPO1"
+    except: cod_sel, nom_auto, ubi_sug, dep_sug = "", "", "", "DEPO1"
 
     with st.form("form_carga", clear_on_submit=True):
         f_cod = st.text_input("Código", value=cod_sel)
         f_nom = st.text_input("Nombre", value=nom_auto)
-        
         c1, c2 = st.columns(2)
         with c1: f_can = st.number_input("Cantidad", min_value=0.0, step=1.0)
         with c2: f_dep = st.selectbox("Depósito", options=["DEPO1", "DEPO2"], index=0 if dep_sug == "DEPO1" else 1)
@@ -86,48 +87,25 @@ with tab1:
                 conn.commit()
                 st.success(f"Guardado: {f_venc}")
                 st.rerun()
-            else:
-                st.error("Faltan datos (Vencimiento requiere 4 números)")
 
-# --- TAB 2: SALIDAS (APP_STOCK) ---
 with tab2:
     st.subheader("Despacho / Salidas")
-    bus = st.text_input("🔍 Buscar por Nombre o Código...")
+    bus = st.text_input("🔍 Buscar...")
     if bus:
-        query = f"""
-            SELECT i.rowid, i.cod_int, m.nombre, i.cantidad, i.ubicacion, i.deposito, i.vencimiento 
-            FROM inventario i 
-            LEFT JOIN maestra m ON i.cod_int = m.cod_int 
-            WHERE (i.cod_int LIKE '%{bus}%' OR m.nombre LIKE '%{bus}%') 
-            AND i.cantidad > 0
-        """
-        try:
-            res = pd.read_sql(query, conn)
-            for i, r in res.iterrows():
-                with st.expander(f"📦 {r['nombre']} | {r['deposito']} | Stock: {r['cantidad']}"):
-                    st.write(f"Vence: **{r['vencimiento']}** | Ubicación: **{r['ubicacion']}**")
-                    baja = st.number_input("Cantidad a sacar", min_value=1.0, key=f"s_{r['rowid']}")
-                    if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
-                        # CORREGIDO: Se eliminó el paréntesis/comilla que sobraba aquí
-                        cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
-                        conn.commit()
-                        st.success("Salida realizada")
-                        st.rerun()
-        except:
-            st.warning("Primero sincronizá los datos de Drive")
+        query = f"SELECT i.rowid, i.cod_int, m.nombre, i.cantidad, i.ubicacion, i.deposito, i.vencimiento FROM inventario i LEFT JOIN maestra m ON i.cod_int = m.cod_int WHERE (i.cod_int LIKE '%{bus}%' OR m.nombre LIKE '%{bus}%') AND i.cantidad > 0"
+        res = pd.read_sql(query, conn)
+        for i, r in res.iterrows():
+            with st.expander(f"📦 {r['nombre']} | {r['deposito']} | Stock: {r['cantidad']}"):
+                st.write(f"Vence: **{r['vencimiento']}** | Ubicación: **{r['ubicacion']}**")
+                baja = st.number_input("Cantidad", min_value=1.0, key=f"s_{r['rowid']}")
+                if st.button("CONFIRMAR SALIDA", key=f"b_{r['rowid']}"):
+                    cursor.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE rowid = ?", (baja, r['rowid']))
+                    conn.commit()
+                    st.rerun()
 
-# --- TAB 3: PLANILLA (EXCEL TOTAL) ---
 with tab3:
     st.subheader("Stock Consolidado")
     try:
-        df_full = pd.read_sql("""
-            SELECT i.cod_int as [Cód], m.nombre as [Producto], i.cantidad as [Stock], 
-                   i.deposito as [Depósito], i.ubicacion as [Ubicación], i.vencimiento as [Vencimiento]
-            FROM inventario i 
-            JOIN maestra m ON i.cod_int = m.cod_int 
-            WHERE i.cantidad > 0
-            ORDER BY i.vencimiento ASC
-        """, conn)
+        df_full = pd.read_sql("SELECT i.cod_int as [Cód], m.nombre as [Producto], i.cantidad as [Stock], i.deposito as [Depósito], i.ubicacion as [Ubicación], i.vencimiento as [Vencimiento] FROM inventario i JOIN maestra m ON i.cod_int = m.cod_int WHERE i.cantidad > 0", conn)
         st.dataframe(df_full, use_container_width=True, hide_index=True)
-    except:
-        st.info("Sincroniza para ver la tabla")
+    except: st.info("Sincroniza para ver la tabla")
