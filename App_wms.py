@@ -105,7 +105,12 @@ with t1:
         init_b = st.session_state.transfer_data['cod_int'] if st.session_state.transfer_data else ""
         bus = st.text_input("🔍 ESCANEAR/BUSCAR", value=init_b, key="ent_bus")
         if bus:
-            m = supabase.table("maestra").select("*").or_(f"cod_int.eq.{bus},barras.eq.{bus},nombre.ilike.%{bus}%").execute()
+            # LÓGICA CORREGIDA: Búsqueda exacta si es código, flexible si es texto
+            if bus.isdigit():
+                m = supabase.table("maestra").select("*").or_(f"cod_int.eq.{bus},barras.eq.{bus}").execute()
+            else:
+                m = supabase.table("maestra").select("*").ilike("nombre", f"%{bus}%").execute()
+            
             if m.data:
                 p = m.data[0]
                 u_vacia = buscar_hueco_vacio()
@@ -149,14 +154,18 @@ with t1:
 with t2:
     bus_s = st.text_input("🔎 BUSCAR STOCK", key="bus_s")
     if bus_s:
-        s = supabase.table("inventario").select("*").or_(f"cod_int.eq.{bus_s},barras.eq.{bus_s},nombre.ilike.%{bus_s}%").execute()
+        # LÓGICA CORREGIDA: Exacta para códigos en Stock
+        if bus_s.isdigit():
+            s = supabase.table("inventario").select("*").or_(f"cod_int.eq.{bus_s},barras.eq.{bus_s}").execute()
+        else:
+            s = supabase.table("inventario").select("*").ilike("nombre", f"%{bus_s}%").execute()
+            
         if s.data:
             df = pd.DataFrame(s.data).sort_values(by='ubicacion')
             st.markdown(f'<div style="background-color:#21618C; padding:15px; border-radius:10px; text-align:center; color:white;"><h2>TOTAL: {int(df["cantidad"].sum())}</h2></div>', unsafe_allow_html=True)
             for _, r in df.iterrows():
                 if int(r['cantidad']) <= 0: continue
                 with st.container():
-                    # AQUÍ SE AGREGA EL CÓDIGO INTERNO AL VISOR
                     st.markdown(f"""
                         <div class="stock-card">
                             <b style="font-size:22px;">{r["nombre"]}</b><br>
