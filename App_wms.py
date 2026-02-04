@@ -10,18 +10,15 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.set_page_config(page_title="LOGISTICA Master", layout="wide")
 
-# --- GESTIÓN DE USUARIOS AUTORIZADOS ---
-# Aquí puedes agregar más usuarios siguiendo el formato "usuario": "clave"
-USUARIOS_AUTO = {
-    "admin": "70797474",
-    "logistica": "1234",
-    "deposito": "5678"
-}
-
+# --- INICIALIZACIÓN DE ESTADOS Y USUARIOS ---
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = None
 
-# --- ESTILOS COMPLETOS (Sin cortes de sintaxis) ---
+if "usuarios_db" not in st.session_state:
+    # Usuario inicial maestro
+    st.session_state.usuarios_db = {"admin": "70797474"}
+
+# --- ESTILOS COMPLETOS ---
 st.markdown("""
     <style>
     .main { background-color: #0F1116; }
@@ -97,43 +94,43 @@ st.markdown("<h1>LOGIEZE</h1>", unsafe_allow_html=True)
 if st.button("🔄 ACTUALIZAR PANTALLA"):
     st.rerun()
 
-# --- LOGIN CON MÚLTIPLES USUARIOS ---
+# --- LOGIN ---
 with st.sidebar:
     st.header("🔐 Acceso")
-    user_input = st.text_input("Usuario")
-    pass_input = st.text_input("Contraseña", type="password")
+    u_log = st.text_input("Usuario")
+    p_log = st.text_input("Contraseña", type="password")
     
-    # Validación de credenciales
     es_autorizado = False
-    if user_input in USUARIOS_AUTO:
-        if USUARIOS_AUTO[user_input] == pass_input:
+    es_admin_maestro = False
+    
+    if u_log in st.session_state.usuarios_db:
+        if st.session_state.usuarios_db[u_log] == p_log:
             es_autorizado = True
-            st.success(f"Bienvenido {user_input}")
-    elif user_input != "" or pass_input != "":
-        st.error("Credenciales incorrectas")
+            if u_log == "admin": es_admin_maestro = True
+            st.success(f"Conectado: {u_log}")
 
-t1, t2, t3 = st.tabs(["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"])
+# --- TABS ---
+tabs_list = ["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"]
+if es_admin_maestro:
+    tabs_list.append("👥 USUARIOS")
 
-# --- TAB ENTRADAS ---
+t1, t2, t3, *t_extra = st.tabs(tabs_list)
+
+# --- TAB ENTRADAS (CORREGIDO) ---
 with t1:
     if es_autorizado:
         init_b = st.session_state.transfer_data['cod_int'] if st.session_state.transfer_data else ""
         bus = st.text_input("🔍 ESCANEAR/BUSCAR PRODUCTO", value=init_b, key="ent_bus")
         if bus:
-            # CORRECCIÓN BUSCADOR EXACTO
+            # LÓGICA DE BÚSQUEDA EXACTA PARA ENTRADAS
             if bus.isdigit():
+                # Primero buscamos por ID exacto o Barras exacta
                 m = supabase.table("maestra").select("*").or_(f"cod_int.eq.{bus},barras.eq.{bus}").execute()
             else:
                 m = supabase.table("maestra").select("*").ilike("nombre", f"%{bus}%").execute()
             
             if m.data:
-                # Filtrar si hay varios y buscamos ID exacto
-                if bus.isdigit():
-                    p_list = [item for item in m.data if str(item['cod_int']) == bus or str(item['barras']) == bus]
-                    p = p_list[0] if p_list else m.data[0]
-                else:
-                    p = m.data[0]
-                
+                p = m.data[0]
                 u_vacia = buscar_hueco_vacio()
                 u_99 = buscar_proxima_99()
                 st.markdown(f'<div class="sugerencia-box">📍 LIBRE: <b>{u_vacia}</b> | PRÓXIMA 99: <b>{u_99}</b></div>', unsafe_allow_html=True)
@@ -175,7 +172,6 @@ with t1:
 with t2:
     bus_s = st.text_input("🔎 BUSCAR EN STOCK", key="bus_s")
     if bus_s:
-        # CORRECCIÓN BUSCADOR EXACTO EN STOCK
         if bus_s.isdigit():
             s = supabase.table("inventario").select("*").or_(f"cod_int.eq.{bus_s},barras.eq.{bus_s}").execute()
         else:
@@ -211,7 +207,6 @@ with t2:
                                     st.rerun()
                             st.markdown('</div>', unsafe_allow_html=True)
                         
-                        # PROTECCIÓN CONTRA EL ERROR DE VALOR MÁXIMO
                         qm = st.number_input("Cantidad Operación", min_value=1, max_value=max(1, curr_q), step=1, key=f"qm_{r['id']}")
                         c_sal, c_pas = st.columns(2)
                         if c_sal.button("SALIDA", key=f"bsa_{r['id']}"):
@@ -233,3 +228,23 @@ with t3:
         dfp = pd.DataFrame(p.data)
         dfp['cantidad'] = dfp['cantidad'].astype(int)
         st.dataframe(dfp, use_container_width=True, hide_index=True)
+
+# --- TAB USUARIOS (SOLO ADMIN) ---
+if es_admin_maestro:
+    with t_extra[0]:
+        st.header("👥 Gestión de Personal")
+        
+        with st.form("nuevo_usuario"):
+            st.write("### Agregar Nuevo Usuario")
+            n_user = st.text_input("Nombre de Usuario")
+            n_pass = st.text_input("Contraseña")
+            if st.form_submit_button("➕ REGISTRAR"):
+                if n_user and n_pass:
+                    st.session_state.usuarios_db[n_user] = n_pass
+                    st.success(f"Usuario {n_user} creado correctamente.")
+                    st.rerun()
+        
+        st.write("---")
+        st.write("### Usuarios Actuales")
+        for u, k in st.session_state.usuarios_db.items():
+            st.write(f"👤 **{u}** | Clave: {k}")
