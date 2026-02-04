@@ -60,7 +60,6 @@ def buscar_proxima_99():
 
 st.markdown("<h1>LOGIEZE</h1>", unsafe_allow_html=True)
 
-# Botón de actualización principal
 if st.button("🔄 ACTUALIZAR PANTALLA", type="secondary"):
     st.rerun()
 
@@ -81,7 +80,7 @@ tabs_list = ["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"]
 if es_admin_maestro: tabs_list.append("👥 USUARIOS")
 t1, t2, t3, *t_extra = st.tabs(tabs_list)
 
-# --- ENTRADAS ---
+# --- ENTRADAS (CORRECCIÓN GUION MANUAL) ---
 with t1:
     if es_autorizado:
         val_pasado = str(st.session_state.transfer_data['cod_int']) if st.session_state.transfer_data else ""
@@ -116,7 +115,14 @@ with t1:
                     man = st.text_input("SI ES MANUAL:")
                     
                     if st.form_submit_button("⚡ REGISTRAR"):
-                        ubi_f = u_vacia if "LIBRE" in dest else (u_99 if "99" in dest else man.upper())
+                        if "LIBRE" in dest: ubi_f = u_vacia
+                        elif "99" in dest: ubi_f = u_99
+                        else:
+                            # CORRECCIÓN: Si el usuario pone "051A", se convierte en "05-1A"
+                            txt = man.upper().replace("-", "")
+                            if len(txt) >= 3: ubi_f = f"{txt[:2]}-{txt[2:]}"
+                            else: ubi_f = txt
+                        
                         fv = f"{v_raw[:2]}/{v_raw[2:]}"
                         ch = supabase.table("inventario").select("*").eq("cod_int", p['cod_int']).eq("ubicacion", ubi_f).eq("fecha", fv).eq("deposito", dep).execute()
                         if ch.data:
@@ -158,7 +164,6 @@ with t2:
                                 st.rerun()
                             st.markdown('</div>', unsafe_allow_html=True)
                         
-                        # CORRECCIÓN ERROR IMAGEN 8: Eliminamos el max_value restrictivo para evitar el error de Streamlit
                         qm = st.number_input("Cant. Operación", min_value=1, value=1, key=f"qm_{r['id']}")
                         c_sal, c_pas = st.columns(2)
                         if c_sal.button("SALIDA", key=f"sal_{r['id']}"):
@@ -191,7 +196,7 @@ if es_admin_maestro:
                         st.success(f"Usuario {nu} registrado.")
                         st.rerun()
                     except Exception:
-                        st.error("Error al registrar (RLS o duplicado)")
+                        st.error("Error al registrar.")
         try:
             u_list = supabase.table("usuarios").select("*").execute().data
             if u_list:
