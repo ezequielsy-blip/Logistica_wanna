@@ -6,43 +6,47 @@ from supabase import create_client
 SUPABASE_URL = "https://twnzmsrthinzbyoedwnc.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3bnptc3J0aGluemJ5b2Vkd25jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMzY4NzAsImV4cCI6MjA4NTYxMjg3MH0.4lPtZWqKotDRFcwftPFtDZF2Bm4D1nDjUJn7Etfv1NM"
 
-# Conexión directa para asegurar persistencia inmediata
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.set_page_config(page_title="LOGISTICA Master", layout="wide")
 
+# --- GESTIÓN DE USUARIOS AUTORIZADOS ---
+# Aquí puedes agregar más usuarios siguiendo el formato "usuario": "clave"
+USUARIOS_AUTO = {
+    "admin": "70797474",
+    "logistica": "1234",
+    "deposito": "5678"
+}
+
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = None
 
-# --- ESTILOS COMPLETOS (Modo Oscuro, Botones Gigantes y Tarjetas) ---
+# --- ESTILOS COMPLETOS (Sin cortes de sintaxis) ---
 st.markdown("""
     <style>
     .main { background-color: #0F1116; }
     [data-testid="column"] { display: inline-block !important; width: 48% !important; min-width: 48% !important; }
     
-    /* Botones de acción principales */
     div.stButton > button {
         width: 100%; height: 85px !important; font-size: 26px !important;
         font-weight: 700 !important; border-radius: 15px !important; color: white !important;
     }
     
-    /* Botón de actualizar */
     .block-container div.stButton > button[kind="secondary"] {
         background-color: #D4AC0D !important; height: 65px !important; color: black !important;
     }
 
     div.stForm button { background-color: #1E8449 !important; }
-    div[data-testid="column"]:nth-of-type(1) button { background-color: #2E4053 !important; } /* Salida */
-    div[data-testid="column"]:nth-of-type(2) button { background-color: #1B2631 !important; } /* Pasar */
+    div[data-testid="column"]:nth-of-type(1) button { background-color: #2E4053 !important; }
+    div[data-testid="column"]:nth-of-type(2) button { background-color: #1B2631 !important; }
     
-    /* Inputs y Selectores */
     .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] {
         font-size: 22px !important; height: 60px !important; 
         background-color: #1A1C23 !important; color: #ECF0F1 !important;
         border: 2px solid #34495E !important; border-radius: 10px !important;
     }
     
-    h1 { text-align: center; color: #FFFFFF; font-size: 60px !important; font-weight: 800; margin-bottom: 20px; }
+    h1 { text-align: center; color: #FFFFFF; font-size: 60px !important; font-weight: 800; }
     
     .sugerencia-box { 
         background-color: #1C2833; padding: 25px; border-radius: 15px; 
@@ -60,7 +64,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- MOTORES DE LÓGICA (Hueco libre y Serie 99) ---
+# --- MOTORES DE LÓGICA ---
 def buscar_hueco_vacio():
     try:
         res = supabase.table("inventario").select("ubicacion").eq("deposito", "DEPO 1").gt("cantidad", 0).execute()
@@ -71,7 +75,7 @@ def buscar_hueco_vacio():
                     ubi = f"{str(e).zfill(2)}-{n}{l}"
                     if ubi not in ocupadas: return ubi
         return "SIN HUECO"
-    except: return "99-01A"
+    except: return "ERROR"
 
 def buscar_proxima_99():
     try:
@@ -93,9 +97,20 @@ st.markdown("<h1>LOGIEZE</h1>", unsafe_allow_html=True)
 if st.button("🔄 ACTUALIZAR PANTALLA"):
     st.rerun()
 
+# --- LOGIN CON MÚLTIPLES USUARIOS ---
 with st.sidebar:
-    clave = st.text_input("PIN ADMIN", type="password")
-    es_autorizado = (clave == "70797474")
+    st.header("🔐 Acceso")
+    user_input = st.text_input("Usuario")
+    pass_input = st.text_input("Contraseña", type="password")
+    
+    # Validación de credenciales
+    es_autorizado = False
+    if user_input in USUARIOS_AUTO:
+        if USUARIOS_AUTO[user_input] == pass_input:
+            es_autorizado = True
+            st.success(f"Bienvenido {user_input}")
+    elif user_input != "" or pass_input != "":
+        st.error("Credenciales incorrectas")
 
 t1, t2, t3 = st.tabs(["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"])
 
@@ -103,16 +118,22 @@ t1, t2, t3 = st.tabs(["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"])
 with t1:
     if es_autorizado:
         init_b = st.session_state.transfer_data['cod_int'] if st.session_state.transfer_data else ""
-        bus = st.text_input("🔍 ESCANEAR/BUSCAR", value=init_b, key="ent_bus")
+        bus = st.text_input("🔍 ESCANEAR/BUSCAR PRODUCTO", value=init_b, key="ent_bus")
         if bus:
-            # LÓGICA CORREGIDA: Búsqueda exacta si es código, flexible si es texto
+            # CORRECCIÓN BUSCADOR EXACTO
             if bus.isdigit():
                 m = supabase.table("maestra").select("*").or_(f"cod_int.eq.{bus},barras.eq.{bus}").execute()
             else:
                 m = supabase.table("maestra").select("*").ilike("nombre", f"%{bus}%").execute()
             
             if m.data:
-                p = m.data[0]
+                # Filtrar si hay varios y buscamos ID exacto
+                if bus.isdigit():
+                    p_list = [item for item in m.data if str(item['cod_int']) == bus or str(item['barras']) == bus]
+                    p = p_list[0] if p_list else m.data[0]
+                else:
+                    p = m.data[0]
+                
                 u_vacia = buscar_hueco_vacio()
                 u_99 = buscar_proxima_99()
                 st.markdown(f'<div class="sugerencia-box">📍 LIBRE: <b>{u_vacia}</b> | PRÓXIMA 99: <b>{u_99}</b></div>', unsafe_allow_html=True)
@@ -152,9 +173,9 @@ with t1:
 
 # --- TAB STOCK / PASES ---
 with t2:
-    bus_s = st.text_input("🔎 BUSCAR STOCK", key="bus_s")
+    bus_s = st.text_input("🔎 BUSCAR EN STOCK", key="bus_s")
     if bus_s:
-        # LÓGICA CORREGIDA: Exacta para códigos en Stock
+        # CORRECCIÓN BUSCADOR EXACTO EN STOCK
         if bus_s.isdigit():
             s = supabase.table("inventario").select("*").or_(f"cod_int.eq.{bus_s},barras.eq.{bus_s}").execute()
         else:
@@ -164,13 +185,15 @@ with t2:
             df = pd.DataFrame(s.data).sort_values(by='ubicacion')
             st.markdown(f'<div style="background-color:#21618C; padding:15px; border-radius:10px; text-align:center; color:white;"><h2>TOTAL: {int(df["cantidad"].sum())}</h2></div>', unsafe_allow_html=True)
             for _, r in df.iterrows():
-                if int(r['cantidad']) <= 0: continue
+                curr_q = int(r['cantidad'])
+                if curr_q <= 0: continue
+                
                 with st.container():
                     st.markdown(f"""
                         <div class="stock-card">
                             <b style="font-size:22px;">{r["nombre"]}</b><br>
                             ID: <span style="color:#AEB6BF;">{r["cod_int"]}</span> | 
-                            Q: <span style="color:#F1C40F; font-size:24px;">{int(r["cantidad"])}</span><br>
+                            Q: <span style="color:#F1C40F; font-size:24px;">{curr_q}</span><br>
                             UBI: {r["ubicacion"]} | {r["deposito"]} | VENCE: {r["fecha"]}
                         </div>
                     """, unsafe_allow_html=True)
@@ -179,7 +202,7 @@ with t2:
                         with st.expander("🛠️ EDITAR LOTE (ADMIN)"):
                             st.markdown('<div class="edit-box">', unsafe_allow_html=True)
                             ce1, ce2 = st.columns(2)
-                            nq = ce1.number_input("Cant. Real", value=int(r['cantidad']), step=1, key=f"nq_{r['id']}")
+                            nq = ce1.number_input("Cant. Real", value=curr_q, step=1, key=f"nq_{r['id']}")
                             nv = ce2.text_input("Venc. Real (MMAA)", value=r['fecha'].replace("/",""), max_chars=4, key=f"nv_{r['id']}")
                             if st.button("💾 GUARDAR CORRECCIÓN", key=f"bg_{r['id']}"):
                                 if len(nv) == 4:
@@ -188,15 +211,16 @@ with t2:
                                     st.rerun()
                             st.markdown('</div>', unsafe_allow_html=True)
                         
-                        qm = st.number_input("Cantidad Mover/Salida", min_value=1, max_value=int(r['cantidad']), step=1, key=f"qm_{r['id']}")
+                        # PROTECCIÓN CONTRA EL ERROR DE VALOR MÁXIMO
+                        qm = st.number_input("Cantidad Operación", min_value=1, max_value=max(1, curr_q), step=1, key=f"qm_{r['id']}")
                         c_sal, c_pas = st.columns(2)
                         if c_sal.button("SALIDA", key=f"bsa_{r['id']}"):
-                            nueva = int(r['cantidad']) - qm
+                            nueva = curr_q - qm
                             if nueva <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
                             else: supabase.table("inventario").update({"cantidad": nueva}).eq("id", r['id']).execute()
                             st.rerun()
                         if c_pas.button("PASAR", key=f"bpa_{r['id']}"):
-                            nueva = int(r['cantidad']) - qm
+                            nueva = curr_q - qm
                             if nueva <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
                             else: supabase.table("inventario").update({"cantidad": nueva}).eq("id", r['id']).execute()
                             st.session_state.transfer_data = {'cod_int':r['cod_int'], 'cantidad':qm, 'fecha':r['fecha'], 'deposito_orig':r['deposito']}
