@@ -6,7 +6,7 @@ from supabase import create_client
 SUPABASE_URL = "https://twnzmsrthinzbyoedwnc.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3bnptc3J0aGluemJ5b2Vkd25jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMzY4NzAsImV4cCI6MjA4NTYxMjg3MH0.4lPtZWqKotDRFcwftPFtDZF2Bm4D1nDjUJn7Etfv1NM"
 
-# Conexión directa sin caché para asegurar que los datos suban y bajen al instante
+# Conexión directa para asegurar persistencia inmediata
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.set_page_config(page_title="LOGISTICA Master", layout="wide")
@@ -14,7 +14,7 @@ st.set_page_config(page_title="LOGISTICA Master", layout="wide")
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = None
 
-# --- ESTILOS COMPLETOS (Botones gigantes, banners y modo oscuro) ---
+# --- ESTILOS COMPLETOS (Modo Oscuro, Botones Gigantes y Tarjetas) ---
 st.markdown("""
     <style>
     .main { background-color: #0F1116; }
@@ -113,7 +113,7 @@ with t1:
                 st.markdown(f'<div class="sugerencia-box">📍 LIBRE: <b>{u_vacia}</b> | PRÓXIMA 99: <b>{u_99}</b></div>', unsafe_allow_html=True)
                 
                 with st.form("f_carga", clear_on_submit=True):
-                    st.write(f"### {p['nombre']}")
+                    st.write(f"### {p['nombre']} (ID: {p['cod_int']})")
                     c1, c2 = st.columns(2)
                     q = c1.number_input("CANTIDAD", min_value=1, step=1, value=int(st.session_state.transfer_data['cantidad']) if st.session_state.transfer_data else 1)
                     v_raw = c1.text_input("VENCIMIENTO (MMAA)", value=st.session_state.transfer_data['fecha'].replace("/","") if st.session_state.transfer_data else "", max_chars=4)
@@ -156,7 +156,16 @@ with t2:
             for _, r in df.iterrows():
                 if int(r['cantidad']) <= 0: continue
                 with st.container():
-                    st.markdown(f'<div class="stock-card"><b style="font-size:22px;">{r["nombre"]}</b><br>Q: <span style="color:#F1C40F; font-size:24px;">{int(r["cantidad"])}</span> | UBI: {r["ubicacion"]} | {r["deposito"]} | {r["fecha"]}</div>', unsafe_allow_html=True)
+                    # AQUÍ SE AGREGA EL CÓDIGO INTERNO AL VISOR
+                    st.markdown(f"""
+                        <div class="stock-card">
+                            <b style="font-size:22px;">{r["nombre"]}</b><br>
+                            ID: <span style="color:#AEB6BF;">{r["cod_int"]}</span> | 
+                            Q: <span style="color:#F1C40F; font-size:24px;">{int(r["cantidad"])}</span><br>
+                            UBI: {r["ubicacion"]} | {r["deposito"]} | VENCE: {r["fecha"]}
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
                     if es_autorizado:
                         with st.expander("🛠️ EDITAR LOTE (ADMIN)"):
                             st.markdown('<div class="edit-box">', unsafe_allow_html=True)
@@ -164,9 +173,10 @@ with t2:
                             nq = ce1.number_input("Cant. Real", value=int(r['cantidad']), step=1, key=f"nq_{r['id']}")
                             nv = ce2.text_input("Venc. Real (MMAA)", value=r['fecha'].replace("/",""), max_chars=4, key=f"nv_{r['id']}")
                             if st.button("💾 GUARDAR CORRECCIÓN", key=f"bg_{r['id']}"):
-                                f_nv = f"{nv[:2]}/{nv[2:]}"
-                                supabase.table("inventario").update({"cantidad": int(nq), "fecha": f_nv}).eq("id", r['id']).execute()
-                                st.rerun()
+                                if len(nv) == 4:
+                                    f_nv = f"{nv[:2]}/{nv[2:]}"
+                                    supabase.table("inventario").update({"cantidad": int(nq), "fecha": f_nv}).eq("id", r['id']).execute()
+                                    st.rerun()
                             st.markdown('</div>', unsafe_allow_html=True)
                         
                         qm = st.number_input("Cantidad Mover/Salida", min_value=1, max_value=int(r['cantidad']), step=1, key=f"qm_{r['id']}")
