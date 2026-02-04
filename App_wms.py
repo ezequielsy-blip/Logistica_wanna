@@ -1,77 +1,80 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import os
 from supabase import create_client, Client
 
 # --- CONFIGURACIÓN CLOUD ---
 SUPABASE_URL = "https://twnzmsrthinzbyoedwnc.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3bnptc3J0aGluemJ5b2Vkd25jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMzY4NzAsImV4cCI6MjA4NTYxMjg3MH0.4lPtZWqKotDRFcwftPFtDZF2Bm4D1nDjUJn7Etfv1NM"
 
-st.set_page_config(page_title="LOGIEZE - Mobile WMS", layout="wide")
+st.set_page_config(page_title="LOGIEZE - WMS Master", layout="wide")
 
-# --- ESTILOS PERSONALIZADOS (BOTONES GIGANTES Y FUENTE GRANDE) ---
+# --- ESTILOS LOGIEZE (Máxima Visibilidad y Botones Gigantes) ---
 st.markdown("""
     <style>
     .main { background-color: #121212; }
-    .stButton>button {
-        width: 100%;
-        height: 70px;
-        font-size: 22px !important;
-        font-weight: bold;
-        border-radius: 12px;
-        margin-top: 10px;
+    .stButton>button { 
+        width: 100%; 
+        height: 85px; 
+        font-size: 26px !important; 
+        font-weight: bold; 
+        border-radius: 15px; 
+        background-color: #27ae60;
+        color: white;
+        border: 2px solid #2ecc71;
     }
-    .stTextInput>div>div>input, .stNumberInput>div>div>input {
-        font-size: 20px !important;
-        height: 50px !important;
+    .stTextInput input, .stNumberInput input { 
+        font-size: 24px !important; 
+        height: 65px !important; 
+        background-color: #1e1e1e !important;
+        color: #f1c40f !important;
     }
-    label { font-size: 18px !important; color: #f1c40f !important; }
-    .stTabs [data-baseweb="tab"] { font-size: 18px; font-weight: bold; padding: 20px; }
-    .stock-card {
-        padding: 20px;
-        border-radius: 15px;
-        border-left: 10px solid #2980b9;
-        background-color: #1e1e1e;
-        margin-bottom: 15px;
+    h1 { text-align: center; color: #f1c40f; font-size: 65px !important; text-shadow: 3px 3px #000; margin-bottom: 0px; }
+    h2 { color: #3498db; font-size: 35px !important; }
+    .stock-card { 
+        background-color: #2c3e50; 
+        padding: 20px; 
+        border-radius: 12px; 
+        border-left: 10px solid #f1c40f; 
+        margin-bottom: 15px; 
     }
-    .vence-rojo { border-left: 10px solid #e74c3c !important; }
-    .vence-amarillo { border-left: 10px solid #f1c40f !important; }
-    .vence-verde { border-left: 10px solid #2ecc71 !important; }
-    h1 { text-align: center; color: #ffffff; font-size: 50px !important; text-shadow: 2px 2px #2980b9; }
+    .picking-ok { 
+        background-color: #1e8449; 
+        padding: 15px; 
+        border-radius: 10px; 
+        color: white; 
+        font-weight: bold; 
+        font-size: 20px;
+        text-align: center;
+        border: 2px solid #2ecc71;
+    }
+    .stTabs [data-baseweb="tab"] { font-size: 22px; font-weight: bold; padding: 15px; }
+    label { font-size: 20px !important; font-weight: bold !important; color: #bdc3c7 !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# Conexión a Supabase
 @st.cache_resource
 def get_supabase():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 supabase = get_supabase()
 
-# --- FUNCIONES DE LÓGICA ---
-def calcular_semaforo(fecha_str):
-    try:
-        mes, anio = map(int, fecha_str.split('/'))
-        venc = datetime(2000 + anio, mes, 1)
-        hoy = datetime.now()
-        diff = (venc - hoy).days
-        if diff < 60: return "vence-rojo"
-        if diff < 180: return "vence-amarillo"
-        return "vence-verde"
-    except: return ""
+# --- FUNCIONES DE LÓGICA DE PRECISIÓN ---
+def buscar_maestra_precision(termino):
+    # Búsqueda exacta en códigos, parcial en nombre
+    res = supabase.table("maestra").select("*").or_(f"cod_int.eq.{termino},barras.eq.{termino},nombre.ilike.%{termino}%").execute()
+    return pd.DataFrame(res.data)
 
 def motor_sugerencia_pc():
     try:
         res = supabase.table("inventario").select("ubicacion").ilike("ubicacion", "99-%").order("id", desc=True).limit(1).execute()
         if not res.data: return "99-01A"
         ubi_str = str(res.data[0]['ubicacion']).upper()
-        ciclo = ['A', 'B', 'C', 'D']
         partes = ubi_str.split("-")
         cuerpo = partes[1]
         letra_actual = cuerpo[-1]
-        num_str = "".join(filter(str.isdigit, cuerpo))
-        num_actual = int(num_str) if num_str else 1
+        num_actual = int("".join(filter(str.isdigit, cuerpo)))
+        ciclo = ['A', 'B', 'C', 'D']
         if letra_actual in ciclo:
             idx = ciclo.index(letra_actual)
             if idx < 3: nueva_letra = ciclo[idx+1]; nuevo_num = num_actual
@@ -84,99 +87,150 @@ def motor_sugerencia_pc():
 st.markdown("<h1>LOGIEZE</h1>", unsafe_allow_html=True)
 
 with st.sidebar:
-    st.header("🔐 ACCESO")
-    clave = st.text_input("PIN Admin", type="password")
+    st.title("🔒 ADMIN")
+    clave = st.text_input("Clave", type="password")
     es_autorizado = (clave == "70797474")
-    if es_autorizado: st.success("MODO ADMIN")
-    if st.button("🔄 REFRESCAR APP"): st.rerun()
+    if st.button("🔄 RECARGAR SISTEMA"): st.rerun()
 
-tab1, tab2, tab3 = st.tabs(["📥 ENTRADA", "🔍 CONSULTA/SALIDA", "📊 PLANILLA"])
+tab1, tab2, tab3, tab4 = st.tabs(["📥 ENTRADA", "🔍 CONSULTA", "📋 PICKING", "📊 PLANILLA"])
 
+# --- TAB 1: ENTRADAS CON SELECTOR DE UBICACIÓN EXISTENTE ---
 with tab1:
     if not es_autorizado:
-        st.warning("Ingrese clave para registrar movimientos.")
+        st.warning("Ingrese clave para registrar ingresos.")
     else:
-        st.subheader("Carga de Mercadería")
-        bus_m = st.text_input("🔎 Escanear o Buscar Producto", key="bus_m")
-        
-        cod_sel, nom_sel, bar_sel = "", "", ""
+        bus_m = st.text_input("🔎 ESCANEE O BUSQUE CÓDIGO", key="bus_entrada")
         if bus_m:
-            res_m = supabase.table("maestra").select("*").or_(f"cod_int.ilike.%{bus_m}%,nombre.ilike.%{bus_m}%,barras.ilike.%{bus_m}%").execute()
-            if res_m.data:
-                maestra_df = pd.DataFrame(res_m.data)
-                opciones = maestra_df.apply(lambda x: f"{x['cod_int']} | {x['nombre']}", axis=1).tolist()
-                seleccion = st.selectbox("Confirmar Producto:", options=opciones)
-                if seleccion:
-                    item = maestra_df[maestra_df['cod_int'] == seleccion.split(" | ")[0]].iloc[0]
-                    cod_sel, nom_sel, bar_sel = item['cod_int'], item['nombre'], item['barras']
+            df_m = buscar_maestra_precision(bus_m)
+            if not df_m.empty:
+                prod = df_m.iloc[0] if len(df_m) == 1 else st.selectbox("Elegir producto:", df_m['nombre'])
+                
+                # Buscar lotes donde YA hay este producto para permitir sumar
+                lotes_res = supabase.table("inventario").select("*").eq("cod_int", prod['cod_int']).execute()
+                df_lotes = pd.DataFrame(lotes_res.data)
 
-        with st.form("form_logieze", clear_on_submit=True):
-            f_can = st.number_input("CANTIDAD", min_value=0.0, step=1.0)
-            f_venc_raw = st.text_input("VENCIMIENTO (MMAA)", max_chars=4, placeholder="Ej: 0528")
-            f_ubi = st.text_input("UBICACIÓN", value=motor_sugerencia_pc())
-            f_dep = st.selectbox("DEPÓSITO", ["DEPO 1", "DEPO 2"])
-            
-            if st.form_submit_button("⚡ REGISTRAR CARGA"):
-                if cod_sel and f_can > 0 and len(f_venc_raw) == 4:
-                    f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
-                    # LÓGICA ANTI-DUPLICADOS (Suma si coincide todo)
-                    exist = supabase.table("inventario").select("*").eq("cod_int", cod_sel).eq("ubicacion", f_ubi).eq("fecha", f_venc).eq("deposito", f_dep).execute()
+                with st.form("form_registro_entrada", clear_on_submit=True):
+                    st.subheader(f"Cargando: {prod['nombre']}")
+                    f_can = st.number_input("CANTIDAD A INGRESAR", min_value=0.1, step=1.0)
+                    f_venc_raw = st.text_input("VENCIMIENTO (MMAA)", max_chars=4, placeholder="Ej: 1225")
                     
-                    if exist.data:
-                        nueva_q = float(exist.data[0]['cantidad']) + f_can
-                        supabase.table("inventario").update({"cantidad": nueva_q}).eq("id", exist.data[0]['id']).execute()
-                    else:
-                        datos = {"cod_int": cod_sel, "cantidad": f_can, "nombre": nom_sel, "barras": bar_sel, "fecha": f_venc, "ubicacion": f_ubi, "deposito": f_dep}
-                        supabase.table("inventario").insert(datos).execute()
+                    # SELECTOR DE UBICACIÓN TRIPLE
+                    op_ubi = ["NUEVA (SERIE 99)"]
+                    if not df_lotes.empty:
+                        for _, l in df_lotes.iterrows():
+                            op_ubi.append(f"SUMAR A: {l['ubicacion']} | {l['deposito']} | Vence: {l['fecha']} | Stock: {l['cantidad']}")
+                    op_ubi.append("OTRA (UBICACIÓN MANUAL)")
                     
-                    st.balloons()
-                    st.success(f"¡{nom_sel} Cargado!")
-                    st.rerun()
+                    sel_ubi = st.selectbox("DESTINO DE LA MERCADERÍA", op_ubi)
+                    f_ubi_manual = st.text_input("UBICACIÓN MANUAL (Solo si seleccionó OTRA)", value="")
+                    f_dep = st.selectbox("DEPÓSITO", ["DEPO 1", "DEPO 2"])
 
-with tab2:
-    bus_d = st.text_input("🔎 BUSCAR STOCK (Nombre/Código/Barras)", key="bus_d")
-    if bus_d:
-        res_d = supabase.table("inventario").select("*").or_(f"cod_int.ilike.%{bus_d}%,nombre.ilike.%{bus_d}%,barras.ilike.%{bus_d}%").execute()
-        df = pd.DataFrame(res_d.data)
-        
-        if not df.empty:
-            df = df[df['cantidad'] > 0].sort_values(by=['cod_int', 'fecha'])
-            
-            # --- CÁLCULO DE STOCK CONSOLIDADO ---
-            total_global = df['cantidad'].sum()
-            q_depo1 = df[df['deposito'] == "DEPO 1"]['cantidad'].sum()
-            q_depo2 = df[df['deposito'] == "DEPO 2"]['cantidad'].sum()
-            
-            st.markdown(f"""
-                <div style='background-color:#2980b9; padding:20px; border-radius:15px; text-align:center; margin-bottom:20px;'>
-                    <h2 style='margin:0; color:white;'>STOCK TOTAL: {total_global}</h2>
-                    <p style='margin:0; font-size:18px;'>D1: {q_depo1} | D2: {q_depo2}</p>
-                </div>
-            """, unsafe_allow_html=True)
-
-            for _, r in df.iterrows():
-                clase_venc = calcular_semaforo(r['fecha'])
-                with st.container():
-                    st.markdown(f"""
-                        <div class="stock-card {clase_venc}">
-                            <h3 style='margin:0;'>{r['nombre']}</h3>
-                            <p style='margin:5px 0;'><b>CANT: {r['cantidad']}</b> | Ubi: {r['ubicacion']} | Vence: {r['fecha']}</p>
-                            <p style='margin:0; color:#bdc3c7;'>{r['deposito']} | {r['cod_int']}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
-                    
-                    if es_autorizado:
-                        col_a, col_b = st.columns([2,1])
-                        baja = col_a.number_input("Cantidad a retirar", min_value=0.1, max_value=float(r['cantidad']), key=f"n_{r['id']}")
-                        if col_b.button("SALIDA", key=f"btn_{r['id']}"):
-                            nueva_cant = float(r['cantidad']) - baja
-                            if nueva_cant <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
-                            else: supabase.table("inventario").update({"cantidad": nueva_cant}).eq("id", r['id']).execute()
+                    if st.form_submit_button("⚡ CONFIRMAR INGRESO"):
+                        if len(f_venc_raw) == 4:
+                            # Definir ubicación
+                            if "SUMAR A:" in sel_ubi:
+                                f_ubi = sel_ubi.split(": ")[1].split(" |")[0]
+                            elif "NUEVA" in sel_ubi:
+                                f_ubi = motor_sugerencia_pc()
+                            else:
+                                f_ubi = f_ubi_manual.upper().strip()
+                            
+                            f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
+                            
+                            # Lógica Upsert (Suma si coincide todo)
+                            match = supabase.table("inventario").select("*").eq("cod_int", prod['cod_int']).eq("ubicacion", f_ubi).eq("fecha", f_venc).eq("deposito", f_dep).execute()
+                            
+                            if match.data:
+                                nueva_q = float(match.data[0]['cantidad']) + f_can
+                                supabase.table("inventario").update({"cantidad": nueva_q}).eq("id", match.data[0]['id']).execute()
+                            else:
+                                datos = {
+                                    "cod_int": prod['cod_int'], "nombre": prod['nombre'], 
+                                    "cantidad": f_can, "fecha": f_venc, "ubicacion": f_ubi, 
+                                    "deposito": f_dep, "barras": prod['barras']
+                                }
+                                supabase.table("inventario").insert(datos).execute()
+                            
+                            st.success("✅ REGISTRADO CORRECTAMENTE")
                             st.rerun()
-                    st.markdown("---")
 
+# --- TAB 3: PICKING / DESPACHO (VALIDACIÓN POR ESCANEO Y ELECCIÓN DE LOTE) ---
 with tab3:
-    st.subheader("Planilla Completa")
-    res_all = supabase.table("inventario").select("*").order("id", desc=True).execute()
-    if res_all.data:
-        st.dataframe(pd.DataFrame(res_all.data), use_container_width=True, hide_index=True)
+    st.header("Órdenes de Despacho")
+    res_p = supabase.table("despacho").select("*").eq("estado", "PENDIENTE").execute()
+    
+    if res_p.data:
+        df_p = pd.DataFrame(res_p.data)
+        for _, p in df_p.iterrows():
+            with st.expander(f"📦 ORDEN: {p.get('nro_orden', 'S/N')} | PRODUCTO: {p['nombre']}", expanded=True):
+                st.write(f"**CANTIDAD PEDIDA:** {p['cantidad']}")
+                
+                # 1. ESCANEO OBLIGATORIO
+                scan_val = st.text_input(f"Escanear Producto para Despacho", key=f"pick_scan_{p['id']}")
+                
+                # Si el escaneo es correcto (Código Interno o Barras)
+                if scan_val == str(p['cod_int']) or (p.get('barras') and scan_val == str(p['barras'])):
+                    st.markdown('<p class="picking-ok">✅ ESCANEO CORRECTO - SELECCIONE LOTE</p>', unsafe_allow_html=True)
+                    
+                    # 2. MOSTRAR LOTES DISPONIBLES PARA RESTAR
+                    lotes_pick = supabase.table("inventario").select("*").eq("cod_int", p['cod_int']).gt("cantidad", 0).execute()
+                    if lotes_pick.data:
+                        df_lp = pd.DataFrame(lotes_pick.data)
+                        op_lotes = []
+                        for _, lp in df_lp.iterrows():
+                            op_lotes.append(f"ID:{lp['id']} | Ubi: {lp['ubicacion']} | Depo: {lp['deposito']} | Vence: {lp['fecha']} | Stock: {lp['cantidad']}")
+                        
+                        sel_lote_final = st.selectbox("¿DE QUÉ LOTE SACARÁ LA MERCADERÍA?", options=op_lotes, key=f"sel_lote_{p['id']}")
+                        
+                        if st.button(f"FINALIZAR PICKING ORDEN {p['id']}", key=f"f_btn_{p['id']}"):
+                            # Extraer ID del lote seleccionado
+                            id_lote_db = int(sel_lote_final.split(" | ")[0].replace("ID:", ""))
+                            lote_db = df_lp[df_lp['id'] == id_lote_db].iloc[0]
+                            
+                            # Operación de resta
+                            nueva_q_inv = float(lote_db['cantidad']) - float(p['cantidad'])
+                            
+                            if nueva_q_inv < 0:
+                                st.error("❌ No hay suficiente stock en ese lote.")
+                            else:
+                                # Restar del inventario
+                                if nueva_q_inv == 0:
+                                    supabase.table("inventario").delete().eq("id", id_lote_db).execute()
+                                else:
+                                    supabase.table("inventario").update({"cantidad": nueva_q_inv}).eq("id", id_lote_db).execute()
+                                
+                                # Marcar orden como OK
+                                supabase.table("despacho").update({"estado": "OK", "fecha_p": datetime.now().strftime("%Y-%m-%d %H:%M")}).eq("id", p['id']).execute()
+                                st.success("PICKING COMPLETADO")
+                                st.rerun()
+                    else:
+                        st.error("No hay stock disponible en inventario para este código.")
+                elif scan_val != "":
+                    st.error("❌ El código escaneado no coincide con el pedido.")
+    else:
+        st.info("No hay órdenes de despacho pendientes.")
+
+# --- TAB 2: CONSULTA DE STOCK CONSOLIDADO ---
+with tab2:
+    bus_c = st.text_input("🔍 CONSULTAR CÓDIGO O NOMBRE", key="bus_consulta")
+    if bus_c:
+        df_c = supabase.table("inventario").select("*").or_(f"cod_int.eq.{bus_c},barras.eq.{bus_c},nombre.ilike.%{bus_c}%").execute()
+        res_c = pd.DataFrame(df_c.data)
+        if not res_c.empty:
+            st.metric("TOTAL EN DEPÓSITOS", res_c['cantidad'].sum())
+            # Desglose por Depósito
+            d1 = res_c[res_c['deposito'] == "DEPO 1"]['cantidad'].sum()
+            d2 = res_c[res_c['deposito'] == "DEPO 2"]['cantidad'].sum()
+            col1, col2 = st.columns(2)
+            col1.metric("DEPO 1", d1)
+            col2.metric("DEPO 2", d2)
+            
+            st.write("### Detalle por Ubicación (Consecutivo)")
+            st.dataframe(res_c[['cantidad', 'ubicacion', 'deposito', 'fecha', 'nombre']].sort_values(by=['ubicacion']), use_container_width=True, hide_index=True)
+
+# --- TAB 4: PLANILLA GENERAL ---
+with tab4:
+    st.subheader("Planilla General de Inventario")
+    res_inv = supabase.table("inventario").select("*").order("id", desc=True).execute()
+    if res_inv.data:
+        st.dataframe(pd.DataFrame(res_inv.data), use_container_width=True)
