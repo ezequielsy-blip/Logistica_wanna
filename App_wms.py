@@ -10,35 +10,81 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 st.set_page_config(page_title="LOGIEZE PRO", layout="wide")
 
-# --- ESTILOS OPTIMIZADOS PARA MOBILE (SIN DESFASES) ---
+# --- ESTILOS PROFESIONALES (COLORES SUAVES Y BOTONES EN LÍNEA) ---
 st.markdown("""
     <style>
-    .main { background-color: #0E1117; }
+    .main { background-color: #1A1C20; }
+    
+    /* Botón de Registro Principal */
     div.stButton > button:first-child {
-        background-color: #2ECC71 !important; color: white !important; 
-        height: 70px !important; font-size: 22px !important;
-        font-weight: bold !important; border-radius: 12px !important; 
-        border: none !important; margin-top: 10px !important;
+        background-color: #3E8E41 !important; 
+        color: white !important; 
+        height: 65px !important; 
+        font-size: 20px !important;
+        font-weight: bold !important; 
+        border-radius: 10px !important; 
+        border: none !important;
+        margin-top: 10px !important;
     }
-    /* Botón secundario para Transferencias */
-    div.stButton > button[key^="tr_"] {
-        background-color: #3498DB !important;
+
+    /* Botones de la Pestaña Stock (Salida y Pasar) */
+    .stButton > button {
+        height: 55px !important;
+        font-size: 18px !important;
+        font-weight: bold !important;
+        border-radius: 8px !important;
+        border: none !important;
     }
+
+    /* Color Suave para SALIDA */
+    div[data-testid="column"]:nth-of-type(1) button {
+        background-color: #45a049 !important;
+        color: white !important;
+    }
+
+    /* Color Suave para PASAR */
+    div[data-testid="column"]:nth-of-type(2) button {
+        background-color: #4682B4 !important;
+        color: white !important;
+    }
+
+    /* Inputs y Selectores */
     .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] {
-        font-size: 19px !important; height: 50px !important; 
-        background-color: #1A1C23 !important; color: #F1C40F !important;
+        font-size: 18px !important; 
+        height: 48px !important; 
+        background-color: #2D3035 !important; 
+        color: #E0E0E0 !important; 
+        border: 1px solid #444 !important;
     }
-    label { font-size: 17px !important; font-weight: bold !important; color: #ECF0F1 !important; }
-    .stTabs [data-baseweb="tab"] { font-size: 18px; font-weight: bold; padding: 12px; }
+
+    /* Etiquetas */
+    label { 
+        font-size: 16px !important; 
+        font-weight: 500 !important; 
+        color: #A0A0A0 !important; 
+    }
+
+    /* Bloque de Sugerencia 99 */
     .sugerencia-box {
-        background-color: #1B2631; padding: 15px; border-radius: 12px;
-        border-left: 8px solid #3498DB; margin-bottom: 15px;
+        background-color: #25282D; 
+        padding: 15px; 
+        border-radius: 10px;
+        border-left: 6px solid #4682B4; 
+        margin-bottom: 15px;
+        color: #E0E0E0;
     }
+
+    /* Tarjetas de Stock */
     .stock-card {
-        background-color: #16191E; padding: 15px; border-radius: 15px;
-        border-left: 10px solid #2980B9; margin-bottom: 10px;
+        background-color: #25282D; 
+        padding: 15px; 
+        border-radius: 12px;
+        border-left: 8px solid #4682B4; 
+        margin-bottom: 8px;
+        color: #E0E0E0;
     }
-    h1 { text-align: center; color: #2ECC71; font-size: 50px !important; font-weight: 800; }
+
+    h1 { text-align: center; color: #E0E0E0; font-size: 45px !important; font-weight: 700; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -48,7 +94,7 @@ def get_supabase():
 
 supabase = get_supabase()
 
-# --- LÓGICA DE NEGOCIO ---
+# --- MOTOR DE LÓGICA ---
 def buscar_producto_precision(busqueda):
     res = supabase.table("maestra").select("*").or_(f"cod_int.eq.{busqueda},barras.eq.{busqueda},nombre.ilike.%{busqueda}%").execute()
     return pd.DataFrame(res.data)
@@ -71,95 +117,109 @@ def motor_sugerencia_pc():
         return f"99-{str(nuevo_num).zfill(2)}{nueva_letra}"
     except: return "99-01A"
 
-# --- INTERFAZ ---
+# --- INTERFAZ LOGIEZE ---
 st.markdown("<h1>LOGIEZE</h1>", unsafe_allow_html=True)
 
 with st.sidebar:
     st.markdown("### 🔐 ACCESO ADMIN")
     clave = st.text_input("PIN", type="password")
     es_autorizado = (clave == "70797474")
-    if st.button("🔄 RECARGAR"): st.rerun()
+    if st.button("🔄 REFRESCAR SISTEMA"): st.rerun()
 
 tab1, tab2, tab3 = st.tabs(["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"])
 
+# --- TAB 1: ENTRADAS ---
 with tab1:
-    if es_autorizado:
+    if not es_autorizado:
+        st.info("🔒 Ingrese clave para operar Entradas.")
+    else:
         bus_m = st.text_input("🔎 BUSCAR CÓDIGO", key="bus_m")
         if bus_m:
             maestra_df = buscar_producto_precision(bus_m)
             if not maestra_df.empty:
                 opciones = maestra_df.apply(lambda x: f"{x['cod_int']} | {x['nombre']}", axis=1).tolist()
-                seleccion = st.selectbox("Confirmar:", opciones)
+                seleccion = st.selectbox("Confirmar Producto:", opciones)
+                
                 if seleccion:
                     cod_sel = seleccion.split(" | ")[0]
                     item_sel = maestra_df[maestra_df['cod_int'] == cod_sel].iloc[0]
                     ubi_auto = motor_sugerencia_pc()
-                    st.markdown(f'<div class="sugerencia-box">🔹 Sugerencia 99: <b style="color:#F1C40F;">{ubi_auto}</b></div>', unsafe_allow_html=True)
                     
+                    st.markdown(f"""<div class="sugerencia-box">🔹 Sugerencia 99: <b>{ubi_auto}</b></div>""", unsafe_allow_html=True)
+
                     res_ubi = supabase.table("inventario").select("*").eq("cod_int", cod_sel).execute()
                     df_ubi_exist = pd.DataFrame(res_ubi.data)
 
                     with st.form("form_registro", clear_on_submit=True):
-                        st.write(f"Cargando: {item_sel['nombre']}")
-                        c1, c2 = st.columns(2)
-                        f_can = c1.number_input("CANTIDAD", min_value=0.0)
-                        f_venc_raw = c1.text_input("VENCIMIENTO (MMAA)", max_chars=4)
-                        f_dep = c2.selectbox("DEPÓSITO", ["DEPO 1", "DEPO 2"])
+                        st.write(f"**Item:** {item_sel['nombre']}")
+                        col_a, col_b = st.columns(2)
+                        f_can = col_a.number_input("CANTIDAD", min_value=0.0, step=1.0)
+                        f_venc_raw = col_a.text_input("VENCIMIENTO (MMAA)", max_chars=4)
+                        f_dep = col_b.selectbox("DEPÓSITO", ["DEPO 1", "DEPO 2"])
+                        
                         op_ubi = [f"AUTO ({ubi_auto})"]
                         if not df_ubi_exist.empty:
                             for _, r in df_ubi_exist.iterrows():
                                 op_ubi.append(f"EXISTE: {r['ubicacion']} | {r['deposito']} | Q:{r['cantidad']}")
                         op_ubi.append("MANUAL")
-                        sel_modo_ubi = c2.selectbox("UBICACIÓN", op_ubi)
-                        f_ubi_manual = st.text_input("UBICACIÓN MANUAL (Opcional):")
+                        sel_modo_ubi = col_b.selectbox("DESTINO", op_ubi)
                         
-                        if st.form_submit_button("⚡ REGISTRAR"):
+                        f_ubi_manual = st.text_input("UBICACIÓN MANUAL (Si aplica):")
+                        
+                        if st.form_submit_button("⚡ REGISTRAR CARGA"):
                             if f_can > 0 and len(f_venc_raw) == 4:
                                 f_ubi_final = ubi_auto if "AUTO" in sel_modo_ubi else (sel_modo_ubi.split(": ")[1].split(" |")[0] if "EXISTE:" in sel_modo_ubi else f_ubi_manual.upper())
                                 f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
                                 match = supabase.table("inventario").select("*").eq("cod_int", cod_sel).eq("ubicacion", f_ubi_final).eq("fecha", f_venc).eq("deposito", f_dep).execute()
+                                
                                 if match.data:
                                     supabase.table("inventario").update({"cantidad": float(match.data[0]['cantidad']) + f_can}).eq("id", match.data[0]['id']).execute()
                                 else:
                                     supabase.table("inventario").insert({"cod_int": cod_sel, "cantidad": f_can, "nombre": item_sel['nombre'], "barras": item_sel['barras'], "fecha": f_venc, "ubicacion": f_ubi_final, "deposito": f_dep}).execute()
-                                st.success("¡Cargado!"); st.rerun()
+                                st.rerun()
 
+# --- TAB 2: STOCK / PASES (BOTONES AL LADO) ---
 with tab2:
-    bus_d = st.text_input("🔎 BUSCADOR STOCK / PASES", key="bus_d")
+    bus_d = st.text_input("🔎 BUSCADOR", key="bus_d")
     if bus_d:
         res_d = supabase.table("inventario").select("*").or_(f"cod_int.eq.{bus_d},barras.eq.{bus_d},nombre.ilike.%{bus_d}%").execute()
         df = pd.DataFrame(res_d.data)
         if not df.empty:
             df = df[df['cantidad'] > 0].sort_values(by=['ubicacion'])
-            st.markdown(f"<div style='background-color:#2980B9; padding:10px; border-radius:10px; text-align:center;'><h3>TOTAL: {df['cantidad'].sum()}</h3></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='background-color:#4682B4; padding:10px; border-radius:10px; text-align:center;'><h3>TOTAL: {df['cantidad'].sum()}</h3></div>", unsafe_allow_html=True)
+            
             for _, r in df.iterrows():
                 with st.container():
-                    st.markdown(f'<div class="stock-card"><b>{r["nombre"]}</b><br>Q: {r["cantidad"]} | Ubi: {r["ubicacion"]} | {r["deposito"]} | Vence: {r["fecha"]}</div>', unsafe_allow_html=True)
+                    st.markdown(f"""<div class="stock-card"><b>{r['nombre']}</b><br>Q: {r['cantidad']} | Ubi: {r['ubicacion']} | {r['deposito']} | {r['fecha']}</div>""", unsafe_allow_html=True)
                     if es_autorizado:
-                        col_x, col_y, col_z = st.columns([1.5,1,1])
-                        cant_mov = col_x.number_input("Cantidad", min_value=0.1, max_value=float(r['cantidad']), key=f"q_{r['id']}")
+                        # Control de Cantidad
+                        cant_mov = st.number_input(f"Cantidad (ID:{r['id']})", min_value=0.1, max_value=float(r['cantidad']), key=f"q_{r['id']}")
                         
-                        if col_y.button("SALIDA", key=f"btn_{r['id']}"):
+                        # Botones lado a lado
+                        c_sal, c_pas = st.columns(2)
+                        
+                        if c_sal.button("SALIDA", key=f"btn_{r['id']}"):
                             nueva_q = float(r['cantidad']) - cant_mov
                             if nueva_q <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
                             else: supabase.table("inventario").update({"cantidad": nueva_q}).eq("id", r['id']).execute()
                             st.rerun()
                         
-                        if col_z.button("PASAR", key=f"tr_{r['id']}"):
-                            # Lógica de Transferencia
+                        if c_pas.button("PASAR", key=f"tr_{r['id']}"):
                             depo_destino = "DEPO 2" if r['deposito'] == "DEPO 1" else "DEPO 1"
-                            # 1. Restar del origen
+                            # Restar origen
                             nueva_q_orig = float(r['cantidad']) - cant_mov
                             if nueva_q_orig <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
                             else: supabase.table("inventario").update({"cantidad": nueva_q_orig}).eq("id", r['id']).execute()
-                            # 2. Sumar al destino (Upsert)
+                            # Sumar destino
                             match_dest = supabase.table("inventario").select("*").eq("cod_int", r['cod_int']).eq("ubicacion", r['ubicacion']).eq("fecha", r['fecha']).eq("deposito", depo_destino).execute()
                             if match_dest.data:
                                 supabase.table("inventario").update({"cantidad": float(match_dest.data[0]['cantidad']) + cant_mov}).eq("id", match_dest.data[0]['id']).execute()
                             else:
                                 supabase.table("inventario").insert({"cod_int": r['cod_int'], "cantidad": cant_mov, "nombre": r['nombre'], "barras": r['barras'], "fecha": r['fecha'], "ubicacion": r['ubicacion'], "deposito": depo_destino}).execute()
-                            st.success(f"Movido a {depo_destino}"); st.rerun()
+                            st.rerun()
 
+# --- TAB 3: PLANILLA ---
 with tab3:
-    res_inv = supabase.table("inventario").select("*").order("id", desc=True).execute()
-    if res_inv.data: st.dataframe(pd.DataFrame(res_inv.data), use_container_width=True, hide_index=True)
+    res_all = supabase.table("inventario").select("*").order("id", desc=True).execute()
+    if res_all.data:
+        st.dataframe(pd.DataFrame(res_all.data), use_container_width=True, hide_index=True)
