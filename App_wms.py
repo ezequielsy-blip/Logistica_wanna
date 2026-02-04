@@ -161,25 +161,27 @@ with t2:
                             st.session_state.transfer_data = {'cod_int':r['cod_int'], 'cantidad':qm, 'fecha':r['fecha']}
                             st.rerun()
 
-# --- PLANILLA (SOLO AGREGADO EL BOTÓN DE BARRAS) ---
+# --- PLANILLA (CORRECCIÓN DE LÓGICA DE BARRAS) ---
 with t3:
     if es_admin_maestro:
         if st.button("🏷️ COMPLETAR BARRAS DESDE MAESTRA", type="secondary"):
-            # Buscar items sin barras
-            inv_sin_b = supabase.table("inventario").select("id, cod_int").filter("barras", "is", "null").execute()
-            if inv_sin_b.data:
-                # Traer toda la maestra para cruzar
+            # Traemos todo el inventario para filtrar localmente los que están vacíos o nulos
+            inv_all = supabase.table("inventario").select("id, cod_int, barras").execute()
+            # Filtramos: barras es None (null) o es un string vacío o con espacios
+            inv_vacios = [x for x in inv_all.data if not x['barras'] or str(x['barras']).strip() == ""]
+            
+            if inv_vacios:
                 m_data = supabase.table("maestra").select("cod_int, barras").execute()
                 m_dict = {str(x['cod_int']): x['barras'] for x in m_data.data if x['barras']}
                 actualizados = 0
-                for item in inv_sin_b.data:
+                for item in inv_vacios:
                     c_int = str(item['cod_int'])
                     if c_int in m_dict:
                         supabase.table("inventario").update({"barras": m_dict[c_int]}).eq("id", item['id']).execute()
                         actualizados += 1
-                st.success(f"Proceso terminado. Se actualizaron {actualizados} códigos."); st.rerun()
+                st.success(f"Se actualizaron {actualizados} códigos de barras."); st.rerun()
             else:
-                st.info("No hay códigos de barra vacíos en la planilla.")
+                st.info("No se encontraron registros con barras vacías.")
 
     p_data = supabase.table("inventario").select("*").order("id", desc=True).execute().data
     if p_data: st.dataframe(pd.DataFrame(p_data), use_container_width=True, hide_index=True)
