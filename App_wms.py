@@ -13,7 +13,7 @@ st.set_page_config(page_title="LOGISTICA Master", layout="wide")
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = None
 
-# --- ESTILOS ---
+# --- ESTILOS INTEGROS ---
 st.markdown("""
     <style>
     .main { background-color: #0F1116; }
@@ -77,7 +77,7 @@ tabs_list = ["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"]
 if es_admin_maestro: tabs_list.append("👥 USUARIOS")
 t1, t2, t3, *t_extra = st.tabs(tabs_list)
 
-# --- ENTRADAS ---
+# --- ENTRADAS (Buscador Exacto) ---
 with t1:
     if es_autorizado:
         val_pasado = str(st.session_state.transfer_data['cod_int']) if st.session_state.transfer_data else ""
@@ -122,7 +122,7 @@ with t1:
                         st.session_state.transfer_data = None
                         st.rerun()
 
-# --- STOCK / PASES (EDITOR CORREGIDO) ---
+# --- STOCK / PASES (Editor que EDITA + Stock TOTAL) ---
 with t2:
     bus_s = st.text_input("🔎 BUSCAR EN STOCK", key="bus_s")
     if bus_s:
@@ -133,6 +133,10 @@ with t2:
             s_data = supabase.table("inventario").select("*").ilike("nombre", f"%{bus_s}%").execute().data
             
         if s_data:
+            df = pd.DataFrame(s_data)
+            total_stock = int(df["cantidad"].sum())
+            st.markdown(f'<div style="background-color:#21618C; padding:15px; border-radius:10px; text-align:center; color:white; margin-bottom:15px;"><h2>STOCK TOTAL: {total_stock}</h2></div>', unsafe_allow_html=True)
+            
             for r in s_data:
                 curr_q = int(r['cantidad'])
                 with st.container():
@@ -147,7 +151,6 @@ with t2:
                             if st.button("💾 GUARDAR CORRECCIÓN", key=f"save_{r['id']}"):
                                 f_nv = f"{nv[:2]}/{nv[2:]}" if len(nv)==4 else r['fecha']
                                 supabase.table("inventario").update({"cantidad": int(nq), "fecha": f_nv}).eq("id", r['id']).execute()
-                                st.success("Actualizado")
                                 st.rerun()
                             st.markdown('</div>', unsafe_allow_html=True)
                         
@@ -168,19 +171,25 @@ with t3:
     p_data = supabase.table("inventario").select("*").order("id", desc=True).execute().data
     if p_data: st.dataframe(pd.DataFrame(p_data), use_container_width=True, hide_index=True)
 
-# --- USUARIOS ---
+# --- USUARIOS (Con manejo de errores para evitar APIError) ---
 if es_admin_maestro:
     with t_extra[0]:
         st.header("👥 Gestión Usuarios")
-        with st.form("nu"):
+        with st.form("nu", clear_on_submit=True):
             nu, np = st.text_input("Usuario"), st.text_input("Clave")
-            if st.form_submit_button("➕"):
-                supabase.table("usuarios").insert({"usuario": nu.lower(), "clave": np}).execute()
-                st.rerun()
-        u_list = supabase.table("usuarios").select("*").execute().data
-        for u in u_list:
-            col_u, col_b = st.columns([4, 1])
-            col_u.write(f"👤 {u['usuario']}")
-            if col_b.button("🗑️", key=f"del_{u['id']}"):
-                supabase.table("usuarios").delete().eq("id", u['id']).execute()
-                st.rerun()
+            if st.form_submit_button("➕ REGISTRAR"):
+                try:
+                    supabase.table("usuarios").insert({"usuario": nu.lower(), "clave": np}).execute()
+                    st.rerun()
+                except: st.error("Error al registrar (RLS o duplicado)")
+        
+        try:
+            u_list = supabase.table("usuarios").select("*").execute().data
+            if u_list:
+                for u in u_list:
+                    col_u, col_b = st.columns([4, 1])
+                    col_u.write(f"👤 {u['usuario']}")
+                    if col_b.button("🗑️", key=f"del_{u['id']}"):
+                        supabase.table("usuarios").delete().eq("id", u['id']).execute()
+                        st.rerun()
+        except: pass
