@@ -158,7 +158,8 @@ with t2:
                                 st.rerun()
                             st.markdown('</div>', unsafe_allow_html=True)
                         
-                        qm = st.number_input("Cant. Operación", min_value=1, max_value=curr_q, key=f"qm_{r['id']}")
+                        # CORRECCIÓN ERROR IMAGEN 8: Eliminamos el max_value restrictivo para evitar el error de Streamlit
+                        qm = st.number_input("Cant. Operación", min_value=1, value=1, key=f"qm_{r['id']}")
                         c_sal, c_pas = st.columns(2)
                         if c_sal.button("SALIDA", key=f"sal_{r['id']}"):
                             if curr_q - qm <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
@@ -175,27 +176,22 @@ with t3:
     p_data = supabase.table("inventario").select("*").order("id", desc=True).execute().data
     if p_data: st.dataframe(pd.DataFrame(p_data), use_container_width=True, hide_index=True)
 
-# --- USUARIOS (Arreglo definitivo para registro) ---
+# --- USUARIOS ---
 if es_admin_maestro:
     with t_extra[0]:
         st.header("👥 Gestión Usuarios")
-        
-        # Botón de refresco específico para la pestaña usuarios
         if st.button("🔄 ACTUALIZAR LISTA", type="secondary", key="ref_u"):
             st.rerun()
-
         with st.form("nu", clear_on_submit=True):
             nu, np = st.text_input("Usuario"), st.text_input("Clave")
             if st.form_submit_button("➕ REGISTRAR"):
                 if nu and np:
                     try:
-                        # Forzamos el insert. Si falla, el except lo captura.
                         supabase.table("usuarios").insert({"usuario": nu.lower(), "clave": np}).execute()
                         st.success(f"Usuario {nu} registrado.")
                         st.rerun()
-                    except Exception as e:
-                        st.error("Error al registrar: Posible usuario duplicado o falta de permisos RLS en Supabase.")
-        
+                    except Exception:
+                        st.error("Error al registrar (RLS o duplicado)")
         try:
             u_list = supabase.table("usuarios").select("*").execute().data
             if u_list:
@@ -205,5 +201,4 @@ if es_admin_maestro:
                     if col_b.button("🗑️", key=f"del_{u['id']}"):
                         supabase.table("usuarios").delete().eq("id", u['id']).execute()
                         st.rerun()
-        except:
-            st.warning("No se pudo cargar la lista. Verifique conexión.")
+        except Exception: pass
