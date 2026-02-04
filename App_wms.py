@@ -10,49 +10,28 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.set_page_config(page_title="LOGISTICA Master", layout="wide")
 
+# Inicialización crítica para el botón PASAR
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = None
 
-# --- ESTILOS COMPLETOS (Corrección de sintaxis de banners y botones) ---
+# --- ESTILOS ---
 st.markdown("""
     <style>
     .main { background-color: #0F1116; }
     [data-testid="column"] { display: inline-block !important; width: 48% !important; min-width: 48% !important; }
-    
-    div.stButton > button {
-        width: 100%; height: 85px !important; font-size: 26px !important;
-        font-weight: 700 !important; border-radius: 15px !important; color: white !important;
-    }
-    
-    .block-container div.stButton > button[kind="secondary"] {
-        background-color: #D4AC0D !important; height: 65px !important; color: black !important;
-    }
-
+    div.stButton > button { width: 100%; height: 85px !important; font-size: 26px !important; font-weight: 700 !important; border-radius: 15px !important; color: white !important; }
+    .block-container div.stButton > button[kind="secondary"] { background-color: #D4AC0D !important; height: 65px !important; color: black !important; }
     div.stForm button { background-color: #1E8449 !important; }
     div[data-testid="column"]:nth-of-type(1) button { background-color: #2E4053 !important; }
     div[data-testid="column"]:nth-of-type(2) button { background-color: #1B2631 !important; }
-    
-    .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] {
-        font-size: 22px !important; height: 60px !important; 
-        background-color: #1A1C23 !important; color: #ECF0F1 !important;
-        border: 2px solid #34495E !important; border-radius: 10px !important;
-    }
-    
+    .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] { font-size: 22px !important; height: 60px !important; background-color: #1A1C23 !important; color: #ECF0F1 !important; border: 2px solid #34495E !important; border-radius: 10px !important; }
     h1 { text-align: center; color: #FFFFFF; font-size: 60px !important; font-weight: 800; }
-    
-    .sugerencia-box { 
-        background-color: #1C2833; padding: 25px; border-radius: 15px; 
-        border-left: 12px solid #3498DB; margin-bottom: 25px; color: #D5DBDB; font-size: 20px;
-    }
-    
-    .stock-card { 
-        background-color: #17202A; padding: 20px; border-radius: 15px; 
-        border-left: 10px solid #2C3E50; margin-bottom: 15px; color: #EBEDEF;
-    }
+    .sugerencia-box { background-color: #1C2833; padding: 25px; border-radius: 15px; border-left: 12px solid #3498DB; margin-bottom: 25px; color: #D5DBDB; font-size: 20px; }
+    .stock-card { background-color: #17202A; padding: 20px; border-radius: 15px; border-left: 10px solid #2C3E50; margin-bottom: 15px; color: #EBEDEF; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- MOTORES DE LÓGICA (Ubicaciones) ---
+# --- LÓGICA DE UBICACIONES ---
 def buscar_hueco_vacio():
     try:
         res = supabase.table("inventario").select("ubicacion").eq("deposito", "DEPO 1").gt("cantidad", 0).execute()
@@ -85,7 +64,7 @@ st.markdown("<h1>LOGIEZE</h1>", unsafe_allow_html=True)
 if st.button("🔄 ACTUALIZAR PANTALLA"):
     st.rerun()
 
-# --- LOGIN (Conexión segura a tabla Usuarios) ---
+# --- LOGIN ---
 with st.sidebar:
     st.header("🔐 Acceso")
     u_log = st.text_input("Usuario").lower()
@@ -103,37 +82,36 @@ with st.sidebar:
             if res_u.data:
                 es_autorizado = True
                 st.success(f"Conectado: {u_log}")
-            else:
-                st.error("Credenciales incorrectas")
-        except Exception:
-            st.warning("Usando modo sin conexión a usuarios.")
+            else: st.error("Credenciales incorrectas")
+        except: st.error("Error de conexión a Usuarios.")
 
-# --- PESTAÑAS ---
+# --- TABS ---
 tabs_list = ["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"]
 if es_admin_maestro: tabs_list.append("👥 USUARIOS")
 t1, t2, t3, *t_extra = st.tabs(tabs_list)
 
-# --- TAB ENTRADAS (Buscador con Selector Original) ---
+# --- TAB ENTRADAS (CORREGIDO: Búsqueda exacta y auto-relleno de PASAR) ---
 with t1:
     if es_autorizado:
-        init_b = st.session_state.transfer_data['cod_int'] if st.session_state.transfer_data else ""
-        bus = st.text_input("🔍 ESCANEAR/BUSCAR PRODUCTO", value=init_b, key="ent_bus")
+        # Recuperar datos del botón PASAR si existen
+        val_inicial = str(st.session_state.transfer_data['cod_int']) if st.session_state.transfer_data else ""
+        
+        bus = st.text_input("🔍 ESCANEAR/BUSCAR PRODUCTO", value=val_inicial, key="ent_bus")
+        
         if bus:
             if bus.isdigit():
-                # BÚSQUEDA EXACTA PARA CÓDIGOS
+                # BÚSQUEDA EXACTA: Filtramos que el código sea idéntico al escrito
                 m_raw = supabase.table("maestra").select("*").or_(f"cod_int.eq.{bus},barras.eq.{bus}").execute()
                 m_data = [i for i in m_raw.data if str(i['cod_int']) == str(bus) or str(i['barras']) == str(bus)]
             else:
-                # BÚSQUEDA BLANDA PARA NOMBRES
                 m_raw = supabase.table("maestra").select("*").ilike("nombre", f"%{bus}%").execute()
                 m_data = m_raw.data
-            
+
             if m_data:
-                # SELECTOR ORIGINAL SI HAY VARIOS RESULTADOS
                 if len(m_data) > 1:
-                    opciones_nom = {f"{i['nombre']} (ID: {i['cod_int']})": i for i in m_data}
-                    p_selec = st.selectbox("Producto encontrado:", list(opciones_nom.keys()))
-                    p = opciones_nom[p_selec]
+                    opciones_p = {f"{i['nombre']} (ID: {i['cod_int']})": i for i in m_data}
+                    p_sel = st.selectbox("Seleccione el producto:", list(opciones_p.keys()))
+                    p = opciones_p[p_sel]
                 else:
                     p = m_data[0]
 
@@ -142,19 +120,23 @@ with t1:
                 st.markdown(f'<div class="sugerencia-box">📍 LIBRE: <b>{u_vacia}</b> | PRÓXIMA 99: <b>{u_99}</b></div>', unsafe_allow_html=True)
                 
                 with st.form("f_carga", clear_on_submit=True):
-                    st.write(f"### {p['nombre']}")
-                    st.write(f"**ID:** {p['cod_int']}")
+                    st.write(f"### {p['nombre']} (ID: {p['cod_int']})")
                     c1, c2 = st.columns(2)
-                    q = c1.number_input("CANTIDAD", min_value=1, step=1, value=int(st.session_state.transfer_data['cantidad']) if st.session_state.transfer_data else 1)
-                    v_raw = c1.text_input("VENCIMIENTO (MMAA)", value=st.session_state.transfer_data['fecha'].replace("/","") if st.session_state.transfer_data else "", max_chars=4)
+                    
+                    # Relleno de datos de transferencia
+                    q_def = int(st.session_state.transfer_data['cantidad']) if st.session_state.transfer_data else 1
+                    f_def = st.session_state.transfer_data['fecha'].replace("/","") if st.session_state.transfer_data else ""
+                    
+                    q = c1.number_input("CANTIDAD", min_value=1, step=1, value=q_def)
+                    v_raw = c1.text_input("VENCIMIENTO (MMAA)", value=f_def, max_chars=4)
                     dep = c2.selectbox("DEPÓSITO", ["DEPO 1", "DEPO 2"])
                     
                     existentes = supabase.table("inventario").select("ubicacion, deposito").eq("cod_int", p['cod_int']).gt("cantidad", 0).execute()
-                    opciones_ubi = [f"UBI LIBRE ({u_vacia})", f"SERIE 99 ({u_99})"]
-                    for ex in existentes.data: opciones_ubi.append(f"SUMAR A: {ex['ubicacion']} | {ex['deposito']}")
-                    opciones_ubi.append("MANUAL")
+                    opciones_dest = [f"UBI LIBRE ({u_vacia})", f"SERIE 99 ({u_99})"]
+                    for ex in existentes.data: opciones_dest.append(f"SUMAR A: {ex['ubicacion']} | {ex['deposito']}")
+                    opciones_dest.append("MANUAL")
                     
-                    dest = c2.selectbox("DESTINO", opciones_ubi)
+                    dest = c2.selectbox("DESTINO", opciones_dest)
                     man = st.text_input("MANUAL:")
                     
                     if st.form_submit_button("⚡ REGISTRAR"):
@@ -171,7 +153,8 @@ with t1:
                                 supabase.table("inventario").update({"cantidad": int(ch.data[0]['cantidad']) + q}).eq("id", ch.data[0]['id']).execute()
                             else:
                                 supabase.table("inventario").insert({"cod_int":p['cod_int'], "nombre":p['nombre'], "cantidad":q, "fecha":fv, "ubicacion":ubi_f, "deposito":dep, "barras":p['barras']}).execute()
-                            st.session_state.transfer_data = None
+                            
+                            st.session_state.transfer_data = None # Limpiar tras registrar
                             st.rerun()
 
 # --- TAB STOCK / PASES ---
@@ -195,28 +178,23 @@ with t2:
                     st.markdown(f'<div class="stock-card"><b>{r["nombre"]}</b><br>ID: {r["cod_int"]} | Q: {curr_q}<br>UBI: {r["ubicacion"]} | {r["deposito"]} | VENCE: {r["fecha"]}</div>', unsafe_allow_html=True)
                     
                     if es_autorizado:
-                        with st.expander("🛠️ EDITAR (ADMIN)"):
-                            ce1, ce2 = st.columns(2)
-                            nq = ce1.number_input("Cant. Real", value=curr_q, step=1, key=f"nq_{r['id']}")
-                            nv = ce2.text_input("Venc. (MMAA)", value=r['fecha'].replace("/",""), max_chars=4, key=f"nv_{r['id']}")
-                            if st.button("💾 GUARDAR", key=f"bg_{r['id']}"):
-                                if len(nv) == 4:
-                                    supabase.table("inventario").update({"cantidad": int(nq), "fecha": f"{nv[:2]}/{nv[2:]}"}).eq("id", r['id']).execute()
-                                    st.rerun()
-                        
                         qm = st.number_input("Cantidad Movimiento", min_value=1, max_value=max(1, curr_q), step=1, key=f"qm_{r['id']}")
                         c_sal, c_pas = st.columns(2)
+                        
                         if c_sal.button("SALIDA", key=f"bsa_{r['id']}"):
                             n_q = curr_q - qm
                             if n_q <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
                             else: supabase.table("inventario").update({"cantidad": n_q}).eq("id", r['id']).execute()
                             st.rerun()
+                            
                         if c_pas.button("PASAR", key=f"bpa_{r['id']}"):
                             n_q = curr_q - qm
+                            # Restar del origen
                             if n_q <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
                             else: supabase.table("inventario").update({"cantidad": n_q}).eq("id", r['id']).execute()
-                            st.session_state.transfer_data = {'cod_int':r['cod_int'], 'cantidad':qm, 'fecha':r['fecha'], 'deposito_orig':r['deposito']}
-                            st.rerun()
+                            # Guardar en sesión para Entrada
+                            st.session_state.transfer_data = {'cod_int':r['cod_int'], 'cantidad':qm, 'fecha':r['fecha']}
+                            st.success("Datos preparados. Ve a la pestaña ENTRADAS.")
 
 # --- TAB PLANILLA ---
 with t3:
@@ -224,28 +202,25 @@ with t3:
     if p_data.data:
         st.dataframe(pd.DataFrame(p_data.data), use_container_width=True, hide_index=True)
 
-# --- TAB USUARIOS (Corrección de error de duplicados) ---
+# --- TAB USUARIOS (CORREGIDO: Manejo de errores de RLS) ---
 if es_admin_maestro:
     with t_extra[0]:
-        st.header("👥 Personal Registrado")
-        with st.form("nuevo_u"):
-            n_u = st.text_input("Nuevo Usuario").lower()
-            n_p = st.text_input("Clave")
-            if st.form_submit_button("➕ GUARDAR"):
-                if n_u and n_p:
-                    try:
-                        supabase.table("usuarios").insert({"usuario": n_u, "clave": n_p}).execute()
-                        st.success("Usuario registrado."); st.rerun()
-                    except Exception:
-                        st.error("Error: El usuario ya existe o la tabla tiene problemas.")
+        st.header("👥 Gestión de Personal")
+        with st.form("n_u"):
+            n_u = st.text_input("Usuario").lower(); n_p = st.text_input("Clave")
+            if st.form_submit_button("➕ REGISTRAR"):
+                try:
+                    supabase.table("usuarios").insert({"usuario": n_u, "clave": n_p}).execute()
+                    st.success("Guardado"); st.rerun()
+                except Exception as e:
+                    st.error("Error: Verifique las políticas RLS en Supabase.")
         
-        st.write("---")
         try:
-            res_list = supabase.table("usuarios").select("*").execute()
-            for u in res_list.data:
-                col1, col2 = st.columns([4, 1])
-                col1.write(f"👤 **{u['usuario']}**")
-                if col2.button("🗑️", key=f"del_{u['id']}"):
-                    supabase.table("usuarios").delete().eq("id", u['id']).execute()
-                    st.rerun()
-        except Exception: pass
+            res_l = supabase.table("usuarios").select("*").execute()
+            if res_l.data:
+                for u in res_l.data:
+                    c_u, c_b = st.columns([4, 1])
+                    c_u.write(f"👤 **{u['usuario']}**")
+                    if c_b.button("🗑️", key=f"del_{u['id']}"):
+                        supabase.table("usuarios").delete().eq("id", u['id']).execute(); st.rerun()
+        except: pass
