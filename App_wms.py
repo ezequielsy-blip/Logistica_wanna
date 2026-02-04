@@ -13,7 +13,7 @@ st.set_page_config(page_title="LOGISTICA Master", layout="wide")
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = None
 
-# --- ESTILOS INTEGROS ---
+# --- ESTILOS ---
 st.markdown("""
     <style>
     .main { background-color: #0F1116; }
@@ -60,6 +60,10 @@ def buscar_proxima_99():
 
 st.markdown("<h1>LOGIEZE</h1>", unsafe_allow_html=True)
 
+# Botón de actualización principal
+if st.button("🔄 ACTUALIZAR PANTALLA", type="secondary"):
+    st.rerun()
+
 # --- LOGIN ---
 with st.sidebar:
     st.header("🔐 Acceso")
@@ -77,7 +81,7 @@ tabs_list = ["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"]
 if es_admin_maestro: tabs_list.append("👥 USUARIOS")
 t1, t2, t3, *t_extra = st.tabs(tabs_list)
 
-# --- ENTRADAS (Buscador Exacto) ---
+# --- ENTRADAS ---
 with t1:
     if es_autorizado:
         val_pasado = str(st.session_state.transfer_data['cod_int']) if st.session_state.transfer_data else ""
@@ -107,7 +111,7 @@ with t1:
                     c1, c2 = st.columns(2)
                     q = c1.number_input("CANTIDAD", min_value=1, value=q_v)
                     v_raw = c1.text_input("VENCIMIENTO (MMAA)", value=f_v, max_chars=4)
-                    dep = c2.selectbox("DEPÓSITO", ["DEPO 1", "DEPO 2"])
+                    dep = c2.selectbox("DEPÓSITO", ["depo1", "depo2"])
                     dest = c2.selectbox("DESTINO", [f"UBI LIBRE ({u_vacia})", f"SERIE 99 ({u_99})", "MANUAL"])
                     man = st.text_input("SI ES MANUAL:")
                     
@@ -122,7 +126,7 @@ with t1:
                         st.session_state.transfer_data = None
                         st.rerun()
 
-# --- STOCK / PASES (Editor que EDITA + Stock TOTAL) ---
+# --- STOCK / PASES ---
 with t2:
     bus_s = st.text_input("🔎 BUSCAR EN STOCK", key="bus_s")
     if bus_s:
@@ -171,17 +175,26 @@ with t3:
     p_data = supabase.table("inventario").select("*").order("id", desc=True).execute().data
     if p_data: st.dataframe(pd.DataFrame(p_data), use_container_width=True, hide_index=True)
 
-# --- USUARIOS (Con manejo de errores para evitar APIError) ---
+# --- USUARIOS (Arreglo definitivo para registro) ---
 if es_admin_maestro:
     with t_extra[0]:
         st.header("👥 Gestión Usuarios")
+        
+        # Botón de refresco específico para la pestaña usuarios
+        if st.button("🔄 ACTUALIZAR LISTA", type="secondary", key="ref_u"):
+            st.rerun()
+
         with st.form("nu", clear_on_submit=True):
             nu, np = st.text_input("Usuario"), st.text_input("Clave")
             if st.form_submit_button("➕ REGISTRAR"):
-                try:
-                    supabase.table("usuarios").insert({"usuario": nu.lower(), "clave": np}).execute()
-                    st.rerun()
-                except: st.error("Error al registrar (RLS o duplicado)")
+                if nu and np:
+                    try:
+                        # Forzamos el insert. Si falla, el except lo captura.
+                        supabase.table("usuarios").insert({"usuario": nu.lower(), "clave": np}).execute()
+                        st.success(f"Usuario {nu} registrado.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error("Error al registrar: Posible usuario duplicado o falta de permisos RLS en Supabase.")
         
         try:
             u_list = supabase.table("usuarios").select("*").execute().data
@@ -192,4 +205,5 @@ if es_admin_maestro:
                     if col_b.button("🗑️", key=f"del_{u['id']}"):
                         supabase.table("usuarios").delete().eq("id", u['id']).execute()
                         st.rerun()
-        except: pass
+        except:
+            st.warning("No se pudo cargar la lista. Verifique conexión.")
