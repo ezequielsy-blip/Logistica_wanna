@@ -9,37 +9,51 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 st.set_page_config(page_title="LOGIEZE Master", layout="wide")
 
+# --- INICIALIZACIÓN DE ESTADO ---
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = None
 
-# --- ESTILOS (Recuadros, Botones Grandes y UI) ---
+# --- ESTILOS (Botones gigantes, recuadros y UI oscura) ---
 st.markdown("""
     <style>
     .main { background-color: #0F1116; }
     [data-testid="column"] { display: inline-block !important; width: 48% !important; min-width: 48% !important; }
+    
+    /* Botones de Acción */
     div.stButton > button {
         width: 100%; height: 80px !important; font-size: 24px !important;
         font-weight: 700 !important; border-radius: 15px !important; color: white !important;
     }
+    
+    /* Botón de Actualizar Pantalla */
+    .block-container div.stButton > button[kind="secondary"] {
+        background-color: #D4AC0D !important; height: 60px !important; color: black !important;
+    }
+
     div.stForm button { background-color: #1E8449 !important; }
     div[data-testid="column"]:nth-of-type(1) button { background-color: #2E4053 !important; }
     div[data-testid="column"]:nth-of-type(2) button { background-color: #1B2631 !important; }
+    
     .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] {
         font-size: 22px !important; height: 60px !important; 
         background-color: #1A1C23 !important; color: #ECF0F1 !important;
         border: 2px solid #34495E !important; border-radius: 10px !important;
     }
+    
     h1 { text-align: center; color: #FFFFFF; font-size: 60px !important; font-weight: 800; }
+    
     .sugerencia-box { 
         background-color: #1C2833; padding: 25px; border-radius: 15px; 
         border-left: 12px solid #3498DB; margin-bottom: 25px; color: #D5DBDB;
     }
+    
     .stock-card { 
         background-color: #17202A; padding: 20px; border-radius: 15px; 
         border-left: 10px solid #2C3E50; margin-bottom: 15px; color: #EBEDEF;
     }
+    
     .edit-box {
-        background-color: #212F3C; padding: 15px; border-radius: 10px; border: 1px dashed #F1C40F; margin-top: 10px;
+        background-color: #212F3C; padding: 15px; border-radius: 10px; border: 2px dashed #F1C40F; margin-top: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -50,9 +64,10 @@ def get_supabase():
 
 supabase = get_supabase()
 
-# --- MOTORES DE UBICACIÓN ---
+# --- MOTORES DE LÓGICA DE UBICACIÓN ---
 def sugerencia_fisica_vacia():
     try:
+        # Forzamos consulta fresca
         res_inv = supabase.table("inventario").select("ubicacion").eq("deposito", "DEPO 1").gt("cantidad", 0).execute()
         ocupadas = [r['ubicacion'] for r in res_inv.data] if res_inv.data else []
         for e in range(1, 28):
@@ -84,21 +99,25 @@ def sugerencia_99_proxima():
 # --- INTERFAZ ---
 st.markdown("<h1>LOGIEZE</h1>", unsafe_allow_html=True)
 
+# BOTÓN DE ACTUALIZACIÓN MANUAL EN PANTALLA
+if st.button("🔄 ACTUALIZAR TODO EL SISTEMA"):
+    st.cache_resource.clear()
+    st.rerun()
+
 with st.sidebar:
     clave = st.text_input("CLAVE ADMIN", type="password")
     es_autorizado = (clave == "70797474")
-    if st.button("🔄 REFRESCAR SISTEMA"): st.rerun()
 
 tab1, tab2, tab3 = st.tabs(["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"])
 
-# --- TAB ENTRADAS ---
+# --- TAB 1: ENTRADAS ---
 with tab1:
     if es_autorizado:
         init_bus = st.session_state.transfer_data['cod_int'] if st.session_state.transfer_data else ""
         if st.session_state.transfer_data:
-            st.info(f"🔄 MODO PASO: Moviendo {int(st.session_state.transfer_data['cantidad'])} unidades")
+            st.info(f"🔄 MODO PASO ACTIVO: {int(st.session_state.transfer_data['cantidad'])} unidades")
 
-        bus_m = st.text_input("🔍 ESCANEAR / BUSCAR", value=init_bus, key="entrada_bus")
+        bus_m = st.text_input("🔍 PRODUCTO (BARRAS/NOMBRE/ID)", value=init_bus, key="entrada_bus")
         
         if bus_m:
             res_m = supabase.table("maestra").select("*").or_(f"cod_int.eq.{bus_m},barras.eq.{bus_m},nombre.ilike.%{bus_m}%").execute()
@@ -109,7 +128,7 @@ with tab1:
                 ubi_vacia = sugerencia_fisica_vacia()
                 ubi_99 = sugerencia_99_proxima()
                 
-                st.markdown(f'<div class="sugerencia-box">📍 <b>UBI VACÍA:</b> {ubi_vacia} | <b>SIGUIENTE 99:</b> {ubi_99}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="sugerencia-box">📍 <b>LIBRE:</b> {ubi_vacia} | <b>SERIE 99:</b> {ubi_99}</div>', unsafe_allow_html=True)
 
                 with st.form("form_carga", clear_on_submit=True):
                     def_q = int(st.session_state.transfer_data['cantidad']) if st.session_state.transfer_data else 0
@@ -118,25 +137,26 @@ with tab1:
                     
                     st.write(f"### {prod['nombre']}")
                     c1, c2 = st.columns(2)
-                    f_can = c1.number_input("CANTIDAD (Entero)", min_value=0, value=def_q, step=1)
+                    f_can = c1.number_input("CANTIDAD", min_value=0, value=def_q, step=1)
                     f_venc_raw = c1.text_input("VENCIMIENTO (MMAA)", value=def_v, max_chars=4)
                     f_dep = c2.selectbox("DEPÓSITO", ["DEPO 1", "DEPO 2"], index=def_d_idx)
                     
+                    # BUSCAR DONDE EXISTE
                     res_e = supabase.table("inventario").select("ubicacion, deposito").eq("cod_int", prod['cod_int']).gt("cantidad", 0).execute()
                     op_ubi = [f"UBI VACÍA ({ubi_vacia})", f"PROXIMA 99 ({ubi_99})"]
                     if res_e.data:
                         for item in res_e.data:
-                            op_ubi.append(f"EXISTE EN: {item['ubicacion']} | {item['deposito']}")
+                            op_ubi.append(f"SUMAR A: {item['ubicacion']} | {item['deposito']}")
                     op_ubi.append("MANUAL")
                     
-                    sel_ubi = c2.selectbox("DESTINO", op_ubi)
-                    f_ubi_manual = st.text_input("Si marcó MANUAL:")
+                    sel_ubi = c2.selectbox("UBICACIÓN DESTINO", op_ubi)
+                    f_ubi_manual = st.text_input("SI MARCÓ MANUAL:")
 
-                    if st.form_submit_button("⚡ REGISTRAR CARGA"):
+                    if st.form_submit_button("⚡ REGISTRAR ENTRADA"):
                         if f_can > 0 and len(f_venc_raw) == 4:
                             if "UBI VACÍA" in sel_ubi: f_ubi = ubi_vacia
                             elif "PROXIMA 99" in sel_ubi: f_ubi = ubi_99
-                            elif "EXISTE EN:" in sel_ubi: f_ubi = sel_ubi.split(": ")[1].split(" |")[0]
+                            elif "SUMAR A:" in sel_ubi: f_ubi = sel_ubi.split(": ")[1].split(" |")[0]
                             else: f_ubi = f_ubi_manual.upper()
                             
                             f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
@@ -148,11 +168,12 @@ with tab1:
                                 supabase.table("inventario").insert({"cod_int": prod['cod_int'], "nombre": prod['nombre'], "cantidad": f_can, "fecha": f_venc, "ubicacion": f_ubi, "deposito": f_dep, "barras": prod['barras']}).execute()
                             
                             st.session_state.transfer_data = None
-                            st.success("✅ ¡Cargado con éxito!"); st.rerun()
+                            st.cache_resource.clear()
+                            st.success("Cargado!"); st.rerun()
 
-# --- TAB STOCK / PASES (CON EDICIÓN DE ADMIN) ---
+# --- TAB 2: STOCK / PASES (MODIFICACIÓN Y MOVIMIENTOS) ---
 with tab2:
-    bus_s = st.text_input("🔎 BUSCADOR STOCK", key="bus_s")
+    bus_s = st.text_input("🔎 BUSCADOR DE STOCK", key="bus_s")
     if bus_s:
         res_s = supabase.table("inventario").select("*").or_(f"cod_int.eq.{bus_s},barras.eq.{bus_s},nombre.ilike.%{bus_s}%").execute()
         df_s = pd.DataFrame(res_s.data)
@@ -164,45 +185,45 @@ with tab2:
                 with st.container():
                     st.markdown(f"""<div class="stock-card">
                         <b style="font-size:22px;">{r['nombre']}</b><br>
-                        Q: <span style="font-size:24px; color:#F1C40F;">{int(r['cantidad'])}</span> | UBI: {r['ubicacion']} | {r['deposito']} | Vence: {r['fecha']}
+                        Q: <span style="font-size:26px; color:#F1C40F;">{int(r['cantidad'])}</span> | UBI: {r['ubicacion']} | {r['deposito']} | VENCE: {r['fecha']}
                     </div>""", unsafe_allow_html=True)
                     
                     if es_autorizado:
-                        # SECCIÓN DE EDICIÓN DIRECTA
-                        with st.expander("🛠️ CORREGIR DATOS (ADMIN)"):
+                        # MODIFICACIÓN DE ADMIN
+                        with st.expander("🛠️ EDITAR LOTE (CORREGIR ERROR)"):
                             st.markdown('<div class="edit-box">', unsafe_allow_html=True)
-                            c_edit1, c_edit2 = st.columns(2)
-                            new_q = c_edit1.number_input("Nueva Cantidad", value=int(r['cantidad']), step=1, key=f"edit_q_{r['id']}")
-                            # Quitar "/" para editar y volver a ponerlo
-                            clean_venc = r['fecha'].replace("/", "")
-                            new_v = c_edit2.text_input("Nuevo Venc (MMAA)", value=clean_venc, max_chars=4, key=f"edit_v_{r['id']}")
-                            
-                            if st.button("💾 GUARDAR CORRECCIÓN", key=f"btn_edit_{r['id']}"):
-                                if len(new_v) == 4:
-                                    f_venc_edit = f"{new_v[:2]}/{new_v[2:]}"
-                                    supabase.table("inventario").update({"cantidad": new_q, "fecha": f_venc_edit}).eq("id", r['id']).execute()
-                                    st.success("Corregido"); st.rerun()
+                            c_ed1, c_ed2 = st.columns(2)
+                            ed_q = c_ed1.number_input("Cantidad Real", value=int(r['cantidad']), step=1, key=f"ed_q_{r['id']}")
+                            ed_v_raw = c_ed2.text_input("Vencimiento (MMAA)", value=r['fecha'].replace("/", ""), max_chars=4, key=f"ed_v_{r['id']}")
+                            if st.button("💾 GUARDAR CAMBIOS", key=f"btn_ed_{r['id']}"):
+                                if len(ed_v_raw) == 4:
+                                    ed_v_final = f"{ed_v_raw[:2]}/{ed_v_raw[2:]}"
+                                    supabase.table("inventario").update({"cantidad": ed_q, "fecha": ed_v_final}).eq("id", r['id']).execute()
+                                    st.cache_resource.clear()
+                                    st.rerun()
                             st.markdown('</div>', unsafe_allow_html=True)
 
-                        # SECCIÓN DE MOVIMIENTOS (SALIDA/PASAR)
+                        # MOVIMIENTOS
                         limite = int(r['cantidad']) if int(r['cantidad']) > 0 else 1
-                        cant_mov = st.number_input(f"Mover (ID:{r['id']})", min_value=1, max_value=limite, step=1, key=f"q_{r['id']}")
+                        cant_mov = st.number_input(f"Cantidad a Operar (ID:{r['id']})", min_value=1, max_value=limite, step=1, key=f"q_{r['id']}")
                         
-                        col_s, col_p = st.columns(2)
-                        if col_s.button("SALIDA", key=f"s_{r['id']}"):
+                        col_sal, col_pas = st.columns(2)
+                        if col_sal.button("SALIDA", key=f"s_{r['id']}"):
                             nueva_q = int(r['cantidad']) - cant_mov
                             if nueva_q <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
                             else: supabase.table("inventario").update({"cantidad": nueva_q}).eq("id", r['id']).execute()
+                            st.cache_resource.clear()
                             st.rerun()
                         
-                        if col_p.button("PASAR", key=f"p_{r['id']}"):
+                        if col_pas.button("PASAR", key=f"p_{r['id']}"):
                             nueva_q = int(r['cantidad']) - cant_mov
                             if nueva_q <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
                             else: supabase.table("inventario").update({"cantidad": nueva_q}).eq("id", r['id']).execute()
                             st.session_state.transfer_data = {'cod_int': r['cod_int'], 'cantidad': cant_mov, 'fecha': r['fecha'], 'deposito_orig': r['deposito']}
+                            st.cache_resource.clear()
                             st.rerun()
 
-# --- TAB PLANILLA ---
+# --- TAB 3: PLANILLA ---
 with tab3:
     res_p = supabase.table("inventario").select("*").order("id", desc=True).execute()
     if res_p.data:
