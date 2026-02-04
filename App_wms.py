@@ -80,7 +80,7 @@ tabs_list = ["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"]
 if es_admin_maestro: tabs_list.append("👥 USUARIOS")
 t1, t2, t3, *t_extra = st.tabs(tabs_list)
 
-# --- ENTRADAS ---
+# --- ENTRADAS (RESTAURADO EL SELECTBOX) ---
 with t1:
     if es_autorizado:
         val_pasado = str(st.session_state.transfer_data['cod_int']) if st.session_state.transfer_data else ""
@@ -94,7 +94,14 @@ with t1:
                 m_data = m_raw.data
             
             if m_data:
-                p = m_data[0]
+                # AQUÍ SE RESTAURÓ EL DESPLEGABLE DE SELECCIÓN
+                if len(m_data) > 1:
+                    opciones_p = {f"{i['nombre']} (ID: {i['cod_int']})": i for i in m_data}
+                    p_sel = st.selectbox("Seleccione el producto exacto:", list(opciones_p.keys()))
+                    p = opciones_p[p_sel]
+                else:
+                    p = m_data[0]
+
                 u_vacia, u_99 = buscar_hueco_vacio(), buscar_proxima_99()
                 st.markdown(f'<div class="sugerencia-box">📍 LIBRE: {u_vacia} | PRÓXIMA 99: {u_99}</div>', unsafe_allow_html=True)
                 
@@ -165,9 +172,7 @@ with t2:
 with t3:
     if es_admin_maestro:
         if st.button("🏷️ COMPLETAR BARRAS DESDE MAESTRA", type="secondary"):
-            # Traer todo el inventario para filtrar localmente los vacios reales
             inv_p = supabase.table("inventario").select("id, cod_int, barras").execute()
-            # Filtramos los que tienen barras como None, vacío o puros espacios
             inv_vacios = [x for x in inv_p.data if not x['barras'] or str(x['barras']).strip() == ""]
             
             if inv_vacios:
