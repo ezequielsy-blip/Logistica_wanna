@@ -10,15 +10,10 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.set_page_config(page_title="LOGISTICA Master", layout="wide")
 
-# --- INICIALIZACIÓN DE ESTADOS Y USUARIOS ---
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = None
 
-if "usuarios_db" not in st.session_state:
-    # Usuario inicial maestro
-    st.session_state.usuarios_db = {"admin": "70797474"}
-
-# --- ESTILOS COMPLETOS ---
+# --- ESTILOS COMPLETOS (Botones gigantes, modo oscuro, banners) ---
 st.markdown("""
     <style>
     .main { background-color: #0F1116; }
@@ -61,7 +56,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- MOTORES DE LÓGICA ---
+# --- MOTORES DE LÓGICA (Ubicaciones) ---
 def buscar_hueco_vacio():
     try:
         res = supabase.table("inventario").select("ubicacion").eq("deposito", "DEPO 1").gt("cantidad", 0).execute()
@@ -94,49 +89,59 @@ st.markdown("<h1>LOGIEZE</h1>", unsafe_allow_html=True)
 if st.button("🔄 ACTUALIZAR PANTALLA"):
     st.rerun()
 
-# --- LOGIN ---
+# --- LOGIN (Nube + Admin Hardcoded) ---
 with st.sidebar:
     st.header("🔐 Acceso")
-    u_log = st.text_input("Usuario")
+    u_log = st.text_input("Usuario").lower()
     p_log = st.text_input("Contraseña", type="password")
     
     es_autorizado = False
     es_admin_maestro = False
     
-    if u_log in st.session_state.usuarios_db:
-        if st.session_state.usuarios_db[u_log] == p_log:
+    if u_log == "admin" and p_log == "70797474":
+        es_autorizado = True
+        es_admin_maestro = True
+        st.success("Conectado como ADMIN")
+    elif u_log and p_log:
+        res_u = supabase.table("usuarios").select("*").eq("usuario", u_log).eq("clave", p_log).execute()
+        if res_u.data:
             es_autorizado = True
-            if u_log == "admin": es_admin_maestro = True
             st.success(f"Conectado: {u_log}")
+        else:
+            st.error("Credenciales incorrectas")
 
-# --- TABS ---
+# --- PESTAÑAS ---
 tabs_list = ["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"]
 if es_admin_maestro:
     tabs_list.append("👥 USUARIOS")
 
 t1, t2, t3, *t_extra = st.tabs(tabs_list)
 
-# --- TAB ENTRADAS (CORREGIDO) ---
+# --- TAB ENTRADAS (Buscador con lógica de Código Interno Exacto) ---
 with t1:
     if es_autorizado:
         init_b = st.session_state.transfer_data['cod_int'] if st.session_state.transfer_data else ""
         bus = st.text_input("🔍 ESCANEAR/BUSCAR PRODUCTO", value=init_b, key="ent_bus")
         if bus:
-            # LÓGICA DE BÚSQUEDA EXACTA PARA ENTRADAS
+            # Si es número, buscamos coincidencia idéntica en cod_int o barras
             if bus.isdigit():
-                # Primero buscamos por ID exacto o Barras exacta
-                m = supabase.table("maestra").select("*").or_(f"cod_int.eq.{bus},barras.eq.{bus}").execute()
+                m_raw = supabase.table("maestra").select("*").or_(f"cod_int.eq.{bus},barras.eq.{bus}").execute()
+                # Filtrado estricto final para evitar "contiene"
+                m_data = [i for i in m_raw.data if str(i['cod_int']) == bus or str(i['barras']) == bus]
             else:
-                m = supabase.table("maestra").select("*").ilike("nombre", f"%{bus}%").execute()
+                # Búsqueda blanda por nombre si son letras
+                m_raw = supabase.table("maestra").select("*").ilike("nombre", f"%{bus}%").execute()
+                m_data = m_raw.data
             
-            if m.data:
-                p = m.data[0]
+            if m_data:
+                p = m_data[0]
                 u_vacia = buscar_hueco_vacio()
                 u_99 = buscar_proxima_99()
                 st.markdown(f'<div class="sugerencia-box">📍 LIBRE: <b>{u_vacia}</b> | PRÓXIMA 99: <b>{u_99}</b></div>', unsafe_allow_html=True)
                 
                 with st.form("f_carga", clear_on_submit=True):
-                    st.write(f"### {p['nombre']} (ID: {p['cod_int']})")
+                    st.write(f"### {p['nombre']}")
+                    st.write(f"**Código Interno:** {p['cod_int']}")
                     c1, c2 = st.columns(2)
                     q = c1.number_input("CANTIDAD", min_value=1, step=1, value=int(st.session_state.transfer_data['cantidad']) if st.session_state.transfer_data else 1)
                     v_raw = c1.text_input("VENCIMIENTO (MMAA)", value=st.session_state.transfer_data['fecha'].replace("/","") if st.session_state.transfer_data else "", max_chars=4)
@@ -168,17 +173,19 @@ with t1:
                             st.session_state.transfer_data = None
                             st.rerun()
 
-# --- TAB STOCK / PASES ---
+# --- TAB STOCK / PASES (Buscador con lógica de Código Interno Exacto) ---
 with t2:
     bus_s = st.text_input("🔎 BUSCAR EN STOCK", key="bus_s")
     if bus_s:
         if bus_s.isdigit():
-            s = supabase.table("inventario").select("*").or_(f"cod_int.eq.{bus_s},barras.eq.{bus_s}").execute()
+            s_raw = supabase.table("inventario").select("*").or_(f"cod_int.eq.{bus_s},barras.eq.{bus_s}").execute()
+            s_data = [i for i in s_raw.data if str(i['cod_int']) == bus_s or str(i['barras']) == bus_s]
         else:
-            s = supabase.table("inventario").select("*").ilike("nombre", f"%{bus_s}%").execute()
+            s_raw = supabase.table("inventario").select("*").ilike("nombre", f"%{bus_s}%").execute()
+            s_data = s_raw.data
             
-        if s.data:
-            df = pd.DataFrame(s.data).sort_values(by='ubicacion')
+        if s_data:
+            df = pd.DataFrame(s_data).sort_values(by='ubicacion')
             st.markdown(f'<div style="background-color:#21618C; padding:15px; border-radius:10px; text-align:center; color:white;"><h2>TOTAL: {int(df["cantidad"].sum())}</h2></div>', unsafe_allow_html=True)
             for _, r in df.iterrows():
                 curr_q = int(r['cantidad'])
@@ -188,7 +195,7 @@ with t2:
                     st.markdown(f"""
                         <div class="stock-card">
                             <b style="font-size:22px;">{r["nombre"]}</b><br>
-                            ID: <span style="color:#AEB6BF;">{r["cod_int"]}</span> | 
+                            COD INT: <span style="color:#AEB6BF;">{r["cod_int"]}</span> | 
                             Q: <span style="color:#F1C40F; font-size:24px;">{curr_q}</span><br>
                             UBI: {r["ubicacion"]} | {r["deposito"]} | VENCE: {r["fecha"]}
                         </div>
@@ -229,22 +236,28 @@ with t3:
         dfp['cantidad'] = dfp['cantidad'].astype(int)
         st.dataframe(dfp, use_container_width=True, hide_index=True)
 
-# --- TAB USUARIOS (SOLO ADMIN) ---
+# --- TAB USUARIOS ---
 if es_admin_maestro:
     with t_extra[0]:
         st.header("👥 Gestión de Personal")
         
         with st.form("nuevo_usuario"):
             st.write("### Agregar Nuevo Usuario")
-            n_user = st.text_input("Nombre de Usuario")
+            n_user = st.text_input("Nombre de Usuario").lower()
             n_pass = st.text_input("Contraseña")
             if st.form_submit_button("➕ REGISTRAR"):
                 if n_user and n_pass:
-                    st.session_state.usuarios_db[n_user] = n_pass
-                    st.success(f"Usuario {n_user} creado correctamente.")
+                    supabase.table("usuarios").insert({"usuario": n_user, "clave": n_pass}).execute()
+                    st.success(f"Usuario {n_user} guardado.")
                     st.rerun()
         
         st.write("---")
-        st.write("### Usuarios Actuales")
-        for u, k in st.session_state.usuarios_db.items():
-            st.write(f"👤 **{u}** | Clave: {k}")
+        st.write("### Usuarios Registrados")
+        res_list = supabase.table("usuarios").select("*").execute()
+        if res_list.data:
+            for u in res_list.data:
+                col_u, col_b = st.columns([4, 1])
+                col_u.write(f"👤 **{u['usuario'].upper()}** | Clave: {u['clave']}")
+                if col_b.button("🗑️", key=f"del_{u['id']}"):
+                    supabase.table("usuarios").delete().eq("id", u['id']).execute()
+                    st.rerun()
