@@ -80,7 +80,7 @@ tabs_list = ["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"]
 if es_admin_maestro: tabs_list.append("👥 USUARIOS")
 t1, t2, t3, *t_extra = st.tabs(tabs_list)
 
-# --- ENTRADAS (RESTAURADO EL SELECTBOX) ---
+# --- ENTRADAS ---
 with t1:
     if es_autorizado:
         val_pasado = str(st.session_state.transfer_data['cod_int']) if st.session_state.transfer_data else ""
@@ -94,7 +94,6 @@ with t1:
                 m_data = m_raw.data
             
             if m_data:
-                # AQUÍ SE RESTAURÓ EL DESPLEGABLE DE SELECCIÓN
                 if len(m_data) > 1:
                     opciones_p = {f"{i['nombre']} (ID: {i['cod_int']})": i for i in m_data}
                     p_sel = st.selectbox("Seleccione el producto exacto:", list(opciones_p.keys()))
@@ -114,10 +113,18 @@ with t1:
                     v_raw = c1.text_input("VENCIMIENTO (MMAA)", value=f_v, max_chars=4)
                     dep = c2.selectbox("DEPÓSITO", ["depo1", "depo2"])
                     dest = c2.selectbox("DESTINO", [f"UBI LIBRE ({u_vacia})", f"SERIE 99 ({u_99})", "MANUAL"])
-                    man = st.text_input("SI ES MANUAL:")
+                    # MANUAL CON FORMATO AUTOMÁTICO XX-XXXX
+                    man_raw = st.text_input("SI ES MANUAL (EJ: 011A):").upper().replace("-", "")
                     
                     if st.form_submit_button("⚡ REGISTRAR"):
-                        ubi_f = u_vacia if "LIBRE" in dest else (u_99 if "99" in dest else man.upper())
+                        if "LIBRE" in dest:
+                            ubi_f = u_vacia
+                        elif "99" in dest:
+                            ubi_f = u_99
+                        else:
+                            # Agrega el guion automáticamente: 011A -> 01-1A
+                            ubi_f = f"{man_raw[:2]}-{man_raw[2:]}" if len(man_raw) > 2 else man_raw
+                        
                         fv = f"{v_raw[:2]}/{v_raw[2:]}"
                         ch = supabase.table("inventario").select("*").eq("cod_int", p['cod_int']).eq("ubicacion", ubi_f).eq("fecha", fv).eq("deposito", dep).execute()
                         if ch.data:
