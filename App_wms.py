@@ -10,64 +10,64 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 st.set_page_config(page_title="LOGIEZE PRO", layout="wide")
 
-# --- ESTILOS PREMIUM LOGIEZE (CORREGIDO PARA EVITAR DESFASES) ---
+# --- ESTILOS OPTIMIZADOS (EQUILIBRIO ENTRE TAMAÑO Y ESPACIO) ---
 st.markdown("""
     <style>
     .main { background-color: #0E1117; }
     
-    /* Botón de Registro Gigante */
+    /* Botón de Registro - Ajustado para no desfasar */
     div.stButton > button:first-child {
         background-color: #2ECC71 !important; 
         color: white !important; 
-        height: 85px !important; 
-        font-size: 28px !important;
+        height: 75px !important; 
+        font-size: 24px !important;
         font-weight: bold !important; 
-        border-radius: 15px !important; 
+        border-radius: 12px !important; 
         border: none !important; 
-        box-shadow: 0px 4px 15px rgba(46, 204, 113, 0.4) !important;
-        margin-top: 20px !important;
+        margin-top: 15px !important;
     }
 
-    /* Inputs y Selectores Grandes */
+    /* Inputs y Selectores - Tamaño optimizado para Mobile */
     .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] {
-        font-size: 24px !important; 
-        height: 65px !important; 
+        font-size: 20px !important; 
+        height: 55px !important; 
         background-color: #1A1C23 !important; 
         color: #F1C40F !important; 
         border: 1px solid #34495E !important;
     }
 
-    /* Etiquetas de los campos */
+    /* Etiquetas - Un poco más compactas */
     label { 
-        font-size: 22px !important; 
+        font-size: 18px !important; 
         font-weight: bold !important; 
         color: #ECF0F1 !important; 
-        padding-bottom: 10px !important;
+        padding-bottom: 5px !important;
     }
 
     /* Tabs */
-    .stTabs [data-baseweb="tab"] { font-size: 22px; font-weight: bold; padding: 20px; }
+    .stTabs [data-baseweb="tab"] { font-size: 18px; font-weight: bold; padding: 15px; }
     .stTabs [aria-selected="true"] { color: #2ECC71 !important; border-bottom-color: #2ECC71 !important; }
 
-    /* Bloque de Lógica de Ubicación */
+    /* Bloque de Lógica de Ubicación - Más compacto */
     .sugerencia-box {
         background-color: #1B2631; 
-        padding: 25px; 
-        border-radius: 15px;
-        border-left: 12px solid #3498DB; 
-        margin-bottom: 30px;
+        padding: 15px; 
+        border-radius: 12px;
+        border-left: 8px solid #3498DB; 
+        margin-bottom: 20px;
     }
 
     /* Tarjetas de Stock */
     .stock-card {
         background-color: #16191E; 
-        padding: 25px; 
-        border-radius: 20px;
-        border-left: 12px solid #2980B9; 
-        margin-bottom: 20px;
+        padding: 18px; 
+        border-radius: 15px;
+        border-left: 10px solid #2980B9; 
+        margin-bottom: 15px;
     }
 
-    h1 { text-align: center; color: #2ECC71; font-size: 75px !important; font-weight: 800; margin-bottom: 20px; }
+    h1 { text-align: center; color: #2ECC71; font-size: 55px !important; font-weight: 800; margin-bottom: 15px; }
+    h3 { font-size: 22px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -132,8 +132,8 @@ with tab1:
                     
                     st.markdown(f"""
                         <div class="sugerencia-box">
-                            <h3 style='margin:0; color:#3498DB; font-size:26px;'>🔹 Lógica de Ubicación Sugerida</h3>
-                            <p style='font-size:24px; margin:10px 0;'>La ubicación 99 calculada es: <b style='color:#F1C40F;'>{ubi_auto}</b></p>
+                            <h4 style='margin:0; color:#3498DB;'>🔹 Sugerencia 99</h4>
+                            <p style='font-size:20px; margin:5px 0;'>Ubicación calculada: <b style='color:#F1C40F;'>{ubi_auto}</b></p>
                         </div>
                     """, unsafe_allow_html=True)
 
@@ -142,28 +142,28 @@ with tab1:
 
                     # Formulario Organizado
                     with st.form("form_registro", clear_on_submit=True):
-                        st.markdown(f"### Cargando: {item_sel['nombre']}")
+                        st.write(f"**Cargando:** {item_sel['nombre']}")
                         
                         col1, col2 = st.columns(2)
                         with col1:
                             f_can = st.number_input("CANTIDAD", min_value=0.0, step=1.0)
-                            f_venc_raw = st.text_input("VENCIMIENTO (MMAA)", max_chars=4, placeholder="Ej: 1225")
+                            f_venc_raw = st.text_input("VENCIMIENTO (MMAA)", max_chars=4)
                         
                         with col2:
                             f_dep = st.selectbox("DEPÓSITO", ["DEPO 1", "DEPO 2"])
                             op_ubi = [f"AUTOMÁTICA ({ubi_auto})"]
                             if not df_ubi_exist.empty:
                                 for _, r in df_ubi_exist.iterrows():
-                                    op_ubi.append(f"EXISTENTE: {r['ubicacion']} | {r['deposito']} | Stock: {r['cantidad']}")
+                                    op_ubi.append(f"EXISTE: {r['ubicacion']} | {r['deposito']} | Q:{r['cantidad']}")
                             op_ubi.append("OTRA (MANUAL)")
                             sel_modo_ubi = st.selectbox("DESTINO", op_ubi)
                         
-                        f_ubi_manual = st.text_input("UBICACIÓN MANUAL (Solo si eligió OTRA):", value="")
+                        f_ubi_manual = st.text_input("UBICACIÓN MANUAL (Si eligió OTRA):")
                         
                         if st.form_submit_button("⚡ REGISTRAR CARGA"):
                             if f_can > 0 and len(f_venc_raw) == 4:
                                 if "AUTOMÁTICA" in sel_modo_ubi: f_ubi_final = ubi_auto
-                                elif "EXISTENTE:" in sel_modo_ubi: f_ubi_final = sel_modo_ubi.split(": ")[1].split(" |")[0]
+                                elif "EXISTE:" in sel_modo_ubi: f_ubi_final = sel_modo_ubi.split(": ")[1].split(" |")[0]
                                 else: f_ubi_final = f_ubi_manual.upper().strip()
 
                                 f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
@@ -175,24 +175,23 @@ with tab1:
                                 else:
                                     supabase.table("inventario").insert({"cod_int": cod_sel, "cantidad": f_can, "nombre": item_sel['nombre'], "barras": item_sel['barras'], "fecha": f_venc, "ubicacion": f_ubi_final, "deposito": f_dep}).execute()
                                 
-                                st.balloons()
-                                st.success(f"Ingresado en {f_ubi_final}")
+                                st.success(f"¡Cargado en {f_ubi_final}!")
                                 st.rerun()
 
 with tab2:
-    bus_d = st.text_input("🔎 BUSCADOR DE STOCK (Exacto)", key="bus_d")
+    bus_d = st.text_input("🔎 BUSCADOR (Exacto)", key="bus_d")
     if bus_d:
         res_d = supabase.table("inventario").select("*").or_(f"cod_int.eq.{bus_d},barras.eq.{bus_d},nombre.ilike.%{bus_d}%").execute()
         df = pd.DataFrame(res_d.data)
         if not df.empty:
             df = df[df['cantidad'] > 0].sort_values(by=['ubicacion'])
-            st.markdown(f"<div style='background-color:#2980B9; padding:20px; border-radius:15px; text-align:center;'><h2>STOCK TOTAL: {df['cantidad'].sum()}</h2></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='background-color:#2980B9; padding:15px; border-radius:12px; text-align:center;'><h2>STOCK: {df['cantidad'].sum()}</h2></div>", unsafe_allow_html=True)
             for _, r in df.iterrows():
                 with st.container():
-                    st.markdown(f"""<div class="stock-card"><h3>{r['nombre']}</h3><p style='font-size:24px;'><b>CANT: {r['cantidad']}</b> | UBI: {r['ubicacion']} | {r['deposito']}</p></div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<div class="stock-card"><h3>{r['nombre']}</h3><p><b>CANT: {r['cantidad']}</b> | UBI: {r['ubicacion']}<br>{r['deposito']}</p></div>""", unsafe_allow_html=True)
                     if es_autorizado:
                         col_a, col_b = st.columns([2,1])
-                        baja = col_a.number_input(f"Retirar de ID {r['id']}", min_value=0.1, max_value=float(r['cantidad']), key=f"n_{r['id']}")
+                        baja = col_a.number_input(f"Baja ID {r['id']}", min_value=0.1, max_value=float(r['cantidad']), key=f"n_{r['id']}")
                         if col_b.button("SALIDA", key=f"btn_{r['id']}"):
                             nueva_q = float(r['cantidad']) - baja
                             if nueva_q <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
@@ -200,7 +199,7 @@ with tab2:
                             st.rerun()
 
 with tab3:
-    st.subheader("Planilla General Cloud")
+    st.subheader("Planilla General")
     res_inv = supabase.table("inventario").select("*").order("id", desc=True).execute()
     if res_inv.data:
         st.dataframe(pd.DataFrame(res_inv.data), use_container_width=True, hide_index=True)
