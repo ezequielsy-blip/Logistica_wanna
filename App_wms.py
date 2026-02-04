@@ -34,7 +34,7 @@ st.markdown("""
 # --- LÓGICA DE UBICACIONES ---
 def buscar_hueco_vacio():
     try:
-        res = supabase.table("inventario").select("ubicacion").eq("deposito", "DEPO 1").gt("cantidad", 0).execute()
+        res = supabase.table("inventario").select("ubicacion").eq("deposito", "depo1").gt("cantidad", 0).execute()
         ocupadas = [r['ubicacion'] for r in res.data] if res.data else []
         for e in range(1, 28):
             for n in range(1, 7):
@@ -80,7 +80,7 @@ tabs_list = ["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"]
 if es_admin_maestro: tabs_list.append("👥 USUARIOS")
 t1, t2, t3, *t_extra = st.tabs(tabs_list)
 
-# --- ENTRADAS (CORRECCIÓN GUION MANUAL) ---
+# --- ENTRADAS ---
 with t1:
     if es_autorizado:
         val_pasado = str(st.session_state.transfer_data['cod_int']) if st.session_state.transfer_data else ""
@@ -94,12 +94,7 @@ with t1:
                 m_data = m_raw.data
             
             if m_data:
-                if len(m_data) > 1:
-                    opciones_p = {f"{i['nombre']} (ID: {i['cod_int']})": i for i in m_data}
-                    p_sel = st.selectbox("Seleccione:", list(opciones_p.keys()))
-                    p = opciones_p[p_sel]
-                else: p = m_data[0]
-
+                p = m_data[0]
                 u_vacia, u_99 = buscar_hueco_vacio(), buscar_proxima_99()
                 st.markdown(f'<div class="sugerencia-box">📍 LIBRE: {u_vacia} | PRÓXIMA 99: {u_99}</div>', unsafe_allow_html=True)
                 
@@ -115,20 +110,13 @@ with t1:
                     man = st.text_input("SI ES MANUAL:")
                     
                     if st.form_submit_button("⚡ REGISTRAR"):
-                        if "LIBRE" in dest: ubi_f = u_vacia
-                        elif "99" in dest: ubi_f = u_99
-                        else:
-                            # CORRECCIÓN: Si el usuario pone "051A", se convierte en "05-1A"
-                            txt = man.upper().replace("-", "")
-                            if len(txt) >= 3: ubi_f = f"{txt[:2]}-{txt[2:]}"
-                            else: ubi_f = txt
-                        
+                        ubi_f = u_vacia if "LIBRE" in dest else (u_99 if "99" in dest else man.upper())
                         fv = f"{v_raw[:2]}/{v_raw[2:]}"
                         ch = supabase.table("inventario").select("*").eq("cod_int", p['cod_int']).eq("ubicacion", ubi_f).eq("fecha", fv).eq("deposito", dep).execute()
                         if ch.data:
                             supabase.table("inventario").update({"cantidad": int(ch.data[0]['cantidad']) + q}).eq("id", ch.data[0]['id']).execute()
                         else:
-                            supabase.table("inventario").insert({"cod_int":p['cod_int'], "nombre":p['nombre'], "cantidad":q, "fecha":fv, "ubicacion":ubi_f, "deposito":dep, "barras":p['barras']}).execute()
+                            supabase.table("inventario").insert({"cod_int":p['cod_int'], "nombre":p['nombre'], "cantidad":q, "fecha":fv, "ubicacion":ubi_f, "deposito":dep, "barras":p.get('barras', '')}).execute()
                         st.session_state.transfer_data = None
                         st.rerun()
 
@@ -144,14 +132,11 @@ with t2:
             
         if s_data:
             df = pd.DataFrame(s_data)
-            total_stock = int(df["cantidad"].sum())
-            st.markdown(f'<div style="background-color:#21618C; padding:15px; border-radius:10px; text-align:center; color:white; margin-bottom:15px;"><h2>STOCK TOTAL: {total_stock}</h2></div>', unsafe_allow_html=True)
-            
+            st.markdown(f'<div style="background-color:#21618C; padding:15px; border-radius:10px; text-align:center; color:white; margin-bottom:15px;"><h2>STOCK TOTAL: {int(df["cantidad"].sum())}</h2></div>', unsafe_allow_html=True)
             for r in s_data:
                 curr_q = int(r['cantidad'])
                 with st.container():
                     st.markdown(f'<div class="stock-card"><b>{r["nombre"]}</b> | ID: {r["cod_int"]} | Q: {curr_q}<br>UBI: {r["ubicacion"]} | {r["deposito"]} | VENCE: {r["fecha"]}</div>', unsafe_allow_html=True)
-                    
                     if es_autorizado:
                         with st.expander("🛠️ EDITAR LOTE (ADMIN)"):
                             st.markdown('<div class="edit-box">', unsafe_allow_html=True)
@@ -176,8 +161,26 @@ with t2:
                             st.session_state.transfer_data = {'cod_int':r['cod_int'], 'cantidad':qm, 'fecha':r['fecha']}
                             st.rerun()
 
-# --- PLANILLA ---
+# --- PLANILLA (SOLO AGREGADO EL BOTÓN DE BARRAS) ---
 with t3:
+    if es_admin_maestro:
+        if st.button("🏷️ COMPLETAR BARRAS DESDE MAESTRA", type="secondary"):
+            # Buscar items sin barras
+            inv_sin_b = supabase.table("inventario").select("id, cod_int").filter("barras", "is", "null").execute()
+            if inv_sin_b.data:
+                # Traer toda la maestra para cruzar
+                m_data = supabase.table("maestra").select("cod_int, barras").execute()
+                m_dict = {str(x['cod_int']): x['barras'] for x in m_data.data if x['barras']}
+                actualizados = 0
+                for item in inv_sin_b.data:
+                    c_int = str(item['cod_int'])
+                    if c_int in m_dict:
+                        supabase.table("inventario").update({"barras": m_dict[c_int]}).eq("id", item['id']).execute()
+                        actualizados += 1
+                st.success(f"Proceso terminado. Se actualizaron {actualizados} códigos."); st.rerun()
+            else:
+                st.info("No hay códigos de barra vacíos en la planilla.")
+
     p_data = supabase.table("inventario").select("*").order("id", desc=True).execute().data
     if p_data: st.dataframe(pd.DataFrame(p_data), use_container_width=True, hide_index=True)
 
@@ -185,25 +188,15 @@ with t3:
 if es_admin_maestro:
     with t_extra[0]:
         st.header("👥 Gestión Usuarios")
-        if st.button("🔄 ACTUALIZAR LISTA", type="secondary", key="ref_u"):
-            st.rerun()
         with st.form("nu", clear_on_submit=True):
             nu, np = st.text_input("Usuario"), st.text_input("Clave")
             if st.form_submit_button("➕ REGISTRAR"):
-                if nu and np:
-                    try:
-                        supabase.table("usuarios").insert({"usuario": nu.lower(), "clave": np}).execute()
-                        st.success(f"Usuario {nu} registrado.")
-                        st.rerun()
-                    except Exception:
-                        st.error("Error al registrar.")
-        try:
-            u_list = supabase.table("usuarios").select("*").execute().data
-            if u_list:
-                for u in u_list:
-                    col_u, col_b = st.columns([4, 1])
-                    col_u.write(f"👤 {u['usuario']}")
-                    if col_b.button("🗑️", key=f"del_{u['id']}"):
-                        supabase.table("usuarios").delete().eq("id", u['id']).execute()
-                        st.rerun()
-        except Exception: pass
+                try: supabase.table("usuarios").insert({"usuario": nu.lower(), "clave": np}).execute(); st.rerun()
+                except: st.error("Error al registrar")
+        u_list = supabase.table("usuarios").select("*").execute().data
+        if u_list:
+            for u in u_list:
+                col_u, col_b = st.columns([4, 1])
+                col_u.write(f"👤 {u['usuario']}")
+                if col_b.button("🗑️", key=f"del_{u['id']}"):
+                    supabase.table("usuarios").delete().eq("id", u['id']).execute(); st.rerun()
