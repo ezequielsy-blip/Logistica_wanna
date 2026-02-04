@@ -101,7 +101,7 @@ with tab1:
     if es_autorizado:
         init_bus = st.session_state.transfer_data['cod_int'] if st.session_state.transfer_data else ""
         if st.session_state.transfer_data:
-            st.warning(f"🔄 MODO PASO: Transfiriendo {st.session_state.transfer_data['cantidad']} unidades.")
+            st.warning(f"🔄 MODO PASO: Transfiriendo {int(st.session_state.transfer_data['cantidad'])} unidades.")
 
         bus_m = st.text_input("🔍 ESCANEAR O BUSCAR", value=init_bus, key="entrada_bus")
         
@@ -117,18 +117,20 @@ with tab1:
                 st.markdown(f'<div class="sugerencia-box">📍 <b>HUECO LIBRE:</b> {ubi_vacia}<br>📍 <b>SERIE 99:</b> {ubi_99}</div>', unsafe_allow_html=True)
 
                 with st.form("form_carga", clear_on_submit=True):
-                    def_q = float(st.session_state.transfer_data['cantidad']) if st.session_state.transfer_data else 0.0
+                    def_q = int(st.session_state.transfer_data['cantidad']) if st.session_state.transfer_data else 0
                     def_v = st.session_state.transfer_data['fecha'].replace("/", "") if st.session_state.transfer_data else ""
                     def_d_idx = 1 if st.session_state.transfer_data and st.session_state.transfer_data['deposito_orig'] == "DEPO 1" else 0
                     
                     st.write(f"### {prod['nombre']}")
                     c1, c2 = st.columns(2)
-                    f_can = c1.number_input("CANTIDAD", min_value=0.0, value=def_q)
+                    f_can = c1.number_input("CANTIDAD", min_value=0, value=def_q, step=1)
                     f_venc_raw = c1.text_input("VENCIMIENTO (MMAA)", value=def_v, max_chars=4)
                     f_dep = c2.selectbox("DEPÓSITO", ["DEPO 1", "DEPO 2"], index=def_d_idx)
                     
-                    res_e = supabase.table("inventario").select("*").eq("cod_int", prod['cod_int']).execute()
+                    # CORRECCIÓN: Búsqueda de ubicaciones existentes para el desplegable
+                    res_e = supabase.table("inventario").select("ubicacion, deposito").eq("cod_int", prod['cod_int']).gt("cantidad", 0).execute()
                     df_e = pd.DataFrame(res_e.data)
+                    
                     op_ubi = [f"FÍSICA LIBRE ({ubi_vacia})", f"SIGUIENTE 99 ({ubi_99})"]
                     if not df_e.empty:
                         for _, l in df_e.iterrows():
@@ -149,7 +151,7 @@ with tab1:
                             match = supabase.table("inventario").select("*").eq("cod_int", prod['cod_int']).eq("ubicacion", f_ubi).eq("fecha", f_venc).eq("deposito", f_dep).execute()
                             
                             if match.data:
-                                supabase.table("inventario").update({"cantidad": float(match.data[0]['cantidad']) + f_can}).eq("id", match.data[0]['id']).execute()
+                                supabase.table("inventario").update({"cantidad": int(match.data[0]['cantidad']) + f_can}).eq("id", match.data[0]['id']).execute()
                             else:
                                 supabase.table("inventario").insert({"cod_int": prod['cod_int'], "nombre": prod['nombre'], "cantidad": f_can, "fecha": f_venc, "ubicacion": f_ubi, "deposito": f_dep, "barras": prod['barras']}).execute()
                             
@@ -165,20 +167,20 @@ with tab2:
         df_s = pd.DataFrame(res_s.data)
         if not df_s.empty:
             df_s = df_s[df_s['cantidad'] > 0].sort_values(by=['ubicacion'])
-            st.markdown(f'<div style="background-color:#21618C; padding:10px; border-radius:10px; text-align:center; color:white;"><h3>TOTAL: {df_s["cantidad"].sum()}</h3></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="background-color:#21618C; padding:10px; border-radius:10px; text-align:center; color:white;"><h3>TOTAL: {int(df_s["cantidad"].sum())}</h3></div>', unsafe_allow_html=True)
             for _, r in df_s.iterrows():
                 with st.container():
-                    st.markdown(f'<div class="stock-card"><b>{r["nombre"]}</b><br>Q: {r["cantidad"]} | UBI: {r["ubicacion"]} | {r["deposito"]} | {r["fecha"]}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="stock-card"><b>{r["nombre"]}</b><br>Q: {int(r["cantidad"])} | UBI: {r["ubicacion"]} | {r["deposito"]} | {r["fecha"]}</div>', unsafe_allow_html=True)
                     if es_autorizado:
-                        cant_mov = st.number_input(f"Cantidad a mover (ID:{r['id']})", min_value=0.1, max_value=float(r['cantidad']), key=f"q_{r['id']}")
+                        cant_mov = st.number_input(f"Cantidad a mover (ID:{r['id']})", min_value=1, max_value=int(r['cantidad']), key=f"q_{r['id']}", step=1)
                         c1, c2 = st.columns(2)
                         if c1.button("SALIDA", key=f"s_{r['id']}"):
-                            nueva_q = float(r['cantidad']) - cant_mov
+                            nueva_q = int(r['cantidad']) - cant_mov
                             if nueva_q <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
                             else: supabase.table("inventario").update({"cantidad": nueva_q}).eq("id", r['id']).execute()
                             st.rerun()
                         if c2.button("PASAR", key=f"p_{r['id']}"):
-                            nueva_q = float(r['cantidad']) - cant_mov
+                            nueva_q = int(r['cantidad']) - cant_mov
                             if nueva_q <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
                             else: supabase.table("inventario").update({"cantidad": nueva_q}).eq("id", r['id']).execute()
                             st.session_state.transfer_data = {'cod_int': r['cod_int'], 'cantidad': cant_mov, 'fecha': r['fecha'], 'deposito_orig': r['deposito']}
@@ -187,4 +189,8 @@ with tab2:
 # --- TAB 3: PLANILLA ---
 with tab3:
     res_p = supabase.table("inventario").select("*").order("id", desc=True).execute()
-    if res_p.data: st.dataframe(pd.DataFrame(res_p.data), use_container_width=True, hide_index=True)
+    if res_p.data:
+        df_planilla = pd.DataFrame(res_p.data)
+        # Convertir columna cantidad a entero para la vista
+        df_planilla['cantidad'] = df_planilla['cantidad'].astype(int)
+        st.dataframe(df_planilla, use_container_width=True, hide_index=True)
