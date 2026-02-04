@@ -9,45 +9,37 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 st.set_page_config(page_title="LOGIEZE Master", layout="wide")
 
-# --- GESTIÓN DE ESTADO ---
 if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = None
 
-# --- ESTILOS (Recuadros grandes, botones en línea y modo oscuro) ---
+# --- ESTILOS (Recuadros, Botones Grandes y UI) ---
 st.markdown("""
     <style>
     .main { background-color: #0F1116; }
     [data-testid="column"] { display: inline-block !important; width: 48% !important; min-width: 48% !important; }
-    
-    /* Botones Grandes */
     div.stButton > button {
         width: 100%; height: 80px !important; font-size: 24px !important;
-        font-weight: 700 !important; border-radius: 15px !important; 
-        color: white !important;
+        font-weight: 700 !important; border-radius: 15px !important; color: white !important;
     }
-    
-    /* Colores Específicos */
-    div.stForm button { background-color: #1E8449 !important; } /* Registrar */
-    div[data-testid="column"]:nth-of-type(1) button { background-color: #2E4053 !important; } /* Salida */
-    div[data-testid="column"]:nth-of-type(2) button { background-color: #1B2631 !important; } /* Pasar */
-
-    /* Inputs Gigantes */
+    div.stForm button { background-color: #1E8449 !important; }
+    div[data-testid="column"]:nth-of-type(1) button { background-color: #2E4053 !important; }
+    div[data-testid="column"]:nth-of-type(2) button { background-color: #1B2631 !important; }
     .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] {
         font-size: 22px !important; height: 60px !important; 
         background-color: #1A1C23 !important; color: #ECF0F1 !important;
         border: 2px solid #34495E !important; border-radius: 10px !important;
     }
-
-    h1 { text-align: center; color: #FFFFFF; font-size: 60px !important; font-weight: 800; margin-bottom: 25px; }
-    
+    h1 { text-align: center; color: #FFFFFF; font-size: 60px !important; font-weight: 800; }
     .sugerencia-box { 
         background-color: #1C2833; padding: 25px; border-radius: 15px; 
-        border-left: 12px solid #3498DB; margin-bottom: 25px; color: #D5DBDB; font-size: 20px;
+        border-left: 12px solid #3498DB; margin-bottom: 25px; color: #D5DBDB;
     }
-    
     .stock-card { 
         background-color: #17202A; padding: 20px; border-radius: 15px; 
         border-left: 10px solid #2C3E50; margin-bottom: 15px; color: #EBEDEF;
+    }
+    .edit-box {
+        background-color: #212F3C; padding: 15px; border-radius: 10px; border: 1px dashed #F1C40F; margin-top: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -76,7 +68,6 @@ def sugerencia_99_proxima():
         res_99 = supabase.table("inventario").select("ubicacion").ilike("ubicacion", "99-%").order("id", desc=True).limit(1).execute()
         if not res_99.data: return "99-01A"
         ubi_str = str(res_99.data[0]['ubicacion']).upper()
-        # Lógica de secuencia 99 +1 abcd
         partes = ubi_str.split("-")
         cuerpo = partes[1]
         letra_actual = cuerpo[-1]
@@ -103,7 +94,6 @@ tab1, tab2, tab3 = st.tabs(["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILL
 # --- TAB ENTRADAS ---
 with tab1:
     if es_autorizado:
-        # Recuperar datos si viene de un PASO
         init_bus = st.session_state.transfer_data['cod_int'] if st.session_state.transfer_data else ""
         if st.session_state.transfer_data:
             st.info(f"🔄 MODO PASO: Moviendo {int(st.session_state.transfer_data['cantidad'])} unidades")
@@ -122,7 +112,6 @@ with tab1:
                 st.markdown(f'<div class="sugerencia-box">📍 <b>UBI VACÍA:</b> {ubi_vacia} | <b>SIGUIENTE 99:</b> {ubi_99}</div>', unsafe_allow_html=True)
 
                 with st.form("form_carga", clear_on_submit=True):
-                    # Forzar Cantidades Enteras
                     def_q = int(st.session_state.transfer_data['cantidad']) if st.session_state.transfer_data else 0
                     def_v = st.session_state.transfer_data['fecha'].replace("/", "") if st.session_state.transfer_data else ""
                     def_d_idx = 1 if st.session_state.transfer_data and st.session_state.transfer_data['deposito_orig'] == "DEPO 1" else 0
@@ -130,12 +119,9 @@ with tab1:
                     st.write(f"### {prod['nombre']}")
                     c1, c2 = st.columns(2)
                     f_can = c1.number_input("CANTIDAD (Entero)", min_value=0, value=def_q, step=1)
-                    # Formato mm/aa automático se asume por ingreso manual mm aa
                     f_venc_raw = c1.text_input("VENCIMIENTO (MMAA)", value=def_v, max_chars=4)
-                    
                     f_dep = c2.selectbox("DEPÓSITO", ["DEPO 1", "DEPO 2"], index=def_d_idx)
                     
-                    # BUSCAR UBICACIONES EXISTENTES PARA SUMAR
                     res_e = supabase.table("inventario").select("ubicacion, deposito").eq("cod_int", prod['cod_int']).gt("cantidad", 0).execute()
                     op_ubi = [f"UBI VACÍA ({ubi_vacia})", f"PROXIMA 99 ({ubi_99})"]
                     if res_e.data:
@@ -148,31 +134,23 @@ with tab1:
 
                     if st.form_submit_button("⚡ REGISTRAR CARGA"):
                         if f_can > 0 and len(f_venc_raw) == 4:
-                            # Definir Ubi
                             if "UBI VACÍA" in sel_ubi: f_ubi = ubi_vacia
                             elif "PROXIMA 99" in sel_ubi: f_ubi = ubi_99
                             elif "EXISTE EN:" in sel_ubi: f_ubi = sel_ubi.split(": ")[1].split(" |")[0]
                             else: f_ubi = f_ubi_manual.upper()
                             
                             f_venc = f"{f_venc_raw[:2]}/{f_venc_raw[2:]}"
-                            
-                            # Registro / Actualización
                             match = supabase.table("inventario").select("*").eq("cod_int", prod['cod_int']).eq("ubicacion", f_ubi).eq("fecha", f_venc).eq("deposito", f_dep).execute()
                             
                             if match.data:
                                 supabase.table("inventario").update({"cantidad": int(match.data[0]['cantidad']) + f_can}).eq("id", match.data[0]['id']).execute()
                             else:
-                                supabase.table("inventario").insert({
-                                    "cod_int": prod['cod_int'], "nombre": prod['nombre'], 
-                                    "cantidad": f_can, "fecha": f_venc, 
-                                    "ubicacion": f_ubi, "deposito": f_dep, "barras": prod['barras']
-                                }).execute()
+                                supabase.table("inventario").insert({"cod_int": prod['cod_int'], "nombre": prod['nombre'], "cantidad": f_can, "fecha": f_venc, "ubicacion": f_ubi, "deposito": f_dep, "barras": prod['barras']}).execute()
                             
                             st.session_state.transfer_data = None
-                            st.success("✅ ¡Cargado con éxito!")
-                            st.rerun()
+                            st.success("✅ ¡Cargado con éxito!"); st.rerun()
 
-# --- TAB STOCK / PASES ---
+# --- TAB STOCK / PASES (CON EDICIÓN DE ADMIN) ---
 with tab2:
     bus_s = st.text_input("🔎 BUSCADOR STOCK", key="bus_s")
     if bus_s:
@@ -190,7 +168,23 @@ with tab2:
                     </div>""", unsafe_allow_html=True)
                     
                     if es_autorizado:
-                        # Asegurar que el max_value no sea 0 para evitar el error de las capturas
+                        # SECCIÓN DE EDICIÓN DIRECTA
+                        with st.expander("🛠️ CORREGIR DATOS (ADMIN)"):
+                            st.markdown('<div class="edit-box">', unsafe_allow_html=True)
+                            c_edit1, c_edit2 = st.columns(2)
+                            new_q = c_edit1.number_input("Nueva Cantidad", value=int(r['cantidad']), step=1, key=f"edit_q_{r['id']}")
+                            # Quitar "/" para editar y volver a ponerlo
+                            clean_venc = r['fecha'].replace("/", "")
+                            new_v = c_edit2.text_input("Nuevo Venc (MMAA)", value=clean_venc, max_chars=4, key=f"edit_v_{r['id']}")
+                            
+                            if st.button("💾 GUARDAR CORRECCIÓN", key=f"btn_edit_{r['id']}"):
+                                if len(new_v) == 4:
+                                    f_venc_edit = f"{new_v[:2]}/{new_v[2:]}"
+                                    supabase.table("inventario").update({"cantidad": new_q, "fecha": f_venc_edit}).eq("id", r['id']).execute()
+                                    st.success("Corregido"); st.rerun()
+                            st.markdown('</div>', unsafe_allow_html=True)
+
+                        # SECCIÓN DE MOVIMIENTOS (SALIDA/PASAR)
                         limite = int(r['cantidad']) if int(r['cantidad']) > 0 else 1
                         cant_mov = st.number_input(f"Mover (ID:{r['id']})", min_value=1, max_value=limite, step=1, key=f"q_{r['id']}")
                         
@@ -202,15 +196,10 @@ with tab2:
                             st.rerun()
                         
                         if col_p.button("PASAR", key=f"p_{r['id']}"):
-                            # Restar del origen
                             nueva_q = int(r['cantidad']) - cant_mov
                             if nueva_q <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
                             else: supabase.table("inventario").update({"cantidad": nueva_q}).eq("id", r['id']).execute()
-                            # Preparar traspaso para Tab 1
-                            st.session_state.transfer_data = {
-                                'cod_int': r['cod_int'], 'cantidad': cant_mov, 
-                                'fecha': r['fecha'], 'deposito_orig': r['deposito']
-                            }
+                            st.session_state.transfer_data = {'cod_int': r['cod_int'], 'cantidad': cant_mov, 'fecha': r['fecha'], 'deposito_orig': r['deposito']}
                             st.rerun()
 
 # --- TAB PLANILLA ---
