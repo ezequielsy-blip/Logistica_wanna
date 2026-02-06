@@ -36,8 +36,8 @@ def buscar_hueco_vacio():
     try:
         res = supabase.table("inventario").select("ubicacion").eq("deposito", "depo1").gt("cantidad", 0).execute()
         ocupadas = [r['ubicacion'] for r in res.data] if res.data else []
-        for e in range(1, 28):
-            for n in range(1, 7):
+        for e in range(1, 27):
+            for n in range(1, 5):
                 for l in ['A', 'B', 'C', 'D', 'E']:
                     ubi = f"{str(e).zfill(2)}-{n}{l}"
                     if ubi not in ocupadas: return ubi
