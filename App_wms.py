@@ -19,21 +19,30 @@ st.markdown("""
     .main { background-color: #FFFFFF; }
     h1 { text-align: center; color: #1E40AF; font-size: 50px !important; font-weight: 800; }
 
-    /* Botones Gigantes */
+    /* Botones Gigantes (Generales) */
     div.stButton > button {
         width: 100%; height: 85px !important; font-size: 24px !important;
         font-weight: 700 !important; border-radius: 15px !important;
         background-color: #3B82F6 !important; color: white !important;
     }
 
-    /* Inputs y Selectbox (Sin cortes) */
+    /* BOTONES PEQUEÑOS PARA STOCK (Uno al lado del otro) */
+    [data-testid="column"] div.stButton > button {
+        height: 60px !important; font-size: 18px !important;
+        background-color: #1E40AF !important;
+    }
+
+    /* Inputs y Selectbox mejorados para no cortarse */
     .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] {
         font-size: 22px !important; height: 70px !important;
         background-color: #F9FAF7 !important; border: 2px solid #BFDBFE !important;
         border-radius: 10px !important;
     }
     
-    div[data-baseweb="select"] > div { height: 70px !important; display: flex; align-items: center; }
+    div[data-baseweb="select"] > div { 
+        height: auto !important; min-height: 70px !important; 
+        display: flex; align-items: center; 
+    }
 
     .sugerencia-box {
         background-color: #F0F9FF; padding: 20px; border-radius: 15px;
@@ -81,32 +90,47 @@ t1, t2, t3 = st.tabs(["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"])
 # --- ENTRADAS ---
 with t1:
     if es_autorizado:
-        bus = st.text_input("🔍 BUSCAR PRODUCTO", key="ent_bus")
+        val_pasado = str(st.session_state.transfer_data['cod_int']) if st.session_state.transfer_data else ""
+        bus = st.text_input("🔍 BUSCAR PRODUCTO", value=val_pasado, key="ent_bus")
         if bus:
             m_raw = supabase.table("maestra").select("*").execute()
             m_data = [i for i in m_raw.data if str(i.get('cod_int')) == bus or str(i.get('barras')) == bus or bus.lower() in i.get('nombre').lower()]
+            
             if m_data:
-                p = m_data[0]
+                # --- RESTAURADO: DESPLEGABLE SI HAY VARIOS PRODUCTOS ---
+                if len(m_data) > 1:
+                    opciones_p = {f"{i['nombre']} (ID: {i['cod_int']})": i for i in m_data}
+                    p_sel = st.selectbox("Seleccione el producto exacto:", list(opciones_p.keys()))
+                    p = opciones_p[p_sel]
+                else:
+                    p = m_data[0]
+
                 u_99 = buscar_proxima_99()
                 st.markdown(f'<div class="sugerencia-box">📍 PRÓXIMA 99: {u_99}</div>', unsafe_allow_html=True)
+                
                 with st.form("f_carga", clear_on_submit=True):
                     st.write(f"### {p['nombre']}")
-                    q = st.number_input("CANTIDAD", min_value=1, value=1)
-                    v_raw = st.text_input("VENCE (MMAA)", max_chars=4)
-                    dep = st.selectbox("DEPÓSITO", ["depo1", "depo2"])
-                    dest = st.selectbox("DESTINO", [f"SERIE 99 ({u_99})", "MANUAL"])
+                    q_v = int(st.session_state.transfer_data['cantidad']) if st.session_state.transfer_data else 1
+                    f_v = st.session_state.transfer_data['fecha'].replace("/","") if st.session_state.transfer_data else ""
+                    
+                    c_f1, c_f2 = st.columns(2)
+                    q = c_f1.number_input("CANTIDAD", min_value=1, value=q_v)
+                    v_raw = c_f1.text_input("VENCE (MMAA)", value=f_v, max_chars=4)
+                    dep = c_f2.selectbox("DEPÓSITO", ["depo1", "depo2"])
+                    dest = c_f2.selectbox("DESTINO", [f"SERIE 99 ({u_99})", "MANUAL"])
                     man_raw = st.text_input("MANUAL (EJ: 011A)").upper().replace("-", "")
+                    
                     if st.form_submit_button("⚡ REGISTRAR"):
                         ubi_f = u_99 if "99" in dest else (f"{man_raw[:2]}-{man_raw[2:]}" if len(man_raw) > 2 else man_raw)
                         fv = f"{v_raw[:2]}/{v_raw[2:]}" if len(v_raw)==4 else "00/00"
                         supabase.table("inventario").insert({"cod_int": p['cod_int'], "nombre": p['nombre'], "cantidad": q, "fecha": fv, "ubicacion": ubi_f, "deposito": dep}).execute()
+                        st.session_state.transfer_data = None
                         st.rerun()
 
-# --- STOCK / PASES (CORREGIDO) ---
+# --- STOCK / PASES ---
 with t2:
     bus_s = st.text_input("🔎 BUSCAR EN STOCK", key="bus_s")
     if bus_s:
-        # Búsqueda directa en Supabase para asegurar que traiga resultados
         if bus_s.isdigit():
             res_s = supabase.table("inventario").select("*").eq("cod_int", bus_s).execute()
         else:
@@ -122,8 +146,10 @@ with t2:
                 </div>""", unsafe_allow_html=True)
                 
                 if es_autorizado:
+                    qm = st.number_input(f"Cant. a mover", min_value=1, max_value=curr_q, value=1, key=f"q_{r['id']}")
+                    
+                    # --- BOTONES EN PARALELO ---
                     col_sal, col_pas = st.columns(2)
-                    qm = st.number_input(f"Cant. a mover ({r['id']})", min_value=1, max_value=curr_q, value=1, key=f"q_{r['id']}")
                     if col_sal.button("SALIDA", key=f"s_{r['id']}"):
                         if curr_q - qm <= 0: supabase.table("inventario").delete().eq("id", r['id']).execute()
                         else: supabase.table("inventario").update({"cantidad": curr_q - qm}).eq("id", r['id']).execute()
@@ -133,8 +159,6 @@ with t2:
                         else: supabase.table("inventario").update({"cantidad": curr_q - qm}).eq("id", r['id']).execute()
                         st.session_state.transfer_data = {'cod_int':r['cod_int'], 'cantidad':qm, 'fecha':r['fecha']}
                         st.rerun()
-        else:
-            st.warning("No se encontraron lotes con ese nombre o ID.")
 
 # --- PLANILLA ---
 with t3:
