@@ -14,80 +14,62 @@ if "transfer_data" not in st.session_state:
     st.session_state.transfer_data = None
 
 # --- ESTILOS ---
+# --- ESTILOS OPTIMIZADOS PARA CELULAR ---
 st.markdown("""
     <style>
-    /* Fondo Principal: Blanco / Gris muy claro */
     .main { background-color: #F8FAFC; }
     
-    [data-testid="column"] { display: inline-block !important; width: 48% !important; min-width: 48% !important; }
-    
-    /* Botones Principales: Azul con texto blanco */
+    /* HACER BOTONES MÁS GRANDES Y ALTOS */
     div.stButton > button { 
-        width: 100%; 
-        height: 85px !important; 
-        font-size: 26px !important; 
-        font-weight: 700 !important; 
+        width: 100% !important; 
+        height: 90px !important; /* Aumentado de 85 a 90 */
+        font-size: 28px !important; /* Letra más grande */
+        font-weight: 800 !important; 
         border-radius: 15px !important; 
-        background-color: #1E40AF !important; /* Azul Principal */
-        color: white !important; 
-        border: none !important;
+        margin-bottom: 10px !important;
     }
-    
-    /* Botones Secundarios: Gris claro con texto azul */
-    .block-container div.stButton > button[kind="secondary"] { 
-        background-color: #E5E7EB !important; 
-        height: 65px !important; 
-        color: #1E40AF !important; 
-        border: 1px solid #D1D5DB !important;
+
+    /* DESPLEGABLES (Selectbox) MÁS GRANDES */
+    .stSelectbox div[data-baseweb="select"] {
+        font-size: 24px !important;
+        height: 75px !important; /* Altura ideal para el pulgar */
+        display: flex;
+        align-items: center;
     }
-    
-    /* Botones de Formulario y Columnas: Variaciones de Azul y Gris */
-    div.stForm button { background-color: #3B82F6 !important; } /* Azul más claro */
-    div[data-testid="column"]:nth-of-type(1) button { background-color: #1E40AF !important; }
-    div[data-testid="column"]:nth-of-type(2) button { background-color: #475569 !important; } /* Gris azulado */
-    
-    /* Entradas de texto: Fondo blanco, borde azul claro */
-    .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] { 
-        font-size: 22px !important; 
-        height: 60px !important; 
+
+    /* ENTRADAS DE TEXTO Y NÚMEROS GIGANTES */
+    .stTextInput input, .stNumberInput input { 
+        font-size: 26px !important; /* Letra muy clara */
+        height: 75px !important; 
         background-color: #FFFFFF !important; 
         color: #1E293B !important; 
-        border: 2px solid #BFDBFE !important; /* Azul claro */
-        border-radius: 10px !important; 
+        border: 2px solid #BFDBFE !important; 
+        border-radius: 12px !important; 
     }
-    
-    /* Título: Azul fuerte */
-    h1 { text-align: center; color: #1E40AF; font-size: 60px !important; font-weight: 800; }
-    
-    /* Caja de Sugerencia (Sector 99): Azul claro con borde fuerte */
-    .sugerencia-box { 
-        background-color: #EFF6FF; 
-        padding: 25px; 
-        border-radius: 15px; 
-        border-left: 12px solid #3B82F6; 
-        margin-bottom: 25px; 
-        color: #1E40AF; 
-        font-size: 20px; 
+
+    /* TABS (Pestañas) MÁS ANCHAS */
+    button[data-baseweb="tab"] {
+        height: 70px !important;
+        font-size: 20px !important;
+        font-weight: bold !important;
     }
-    
-    /* Tarjetas de Stock: Gris suave */
+
+    /* AJUSTE DE COLUMNAS PARA MÓVIL */
+    [data-testid="column"] { 
+        width: 100% !important; /* En celular, mejor una debajo de otra */
+        min-width: 100% !important; 
+        margin-bottom: 15px;
+    }
+
+    /* TÍTULOS Y ETIQUETAS */
+    h1 { font-size: 50px !important; color: #1E40AF; }
+    label p { font-size: 22px !important; font-weight: bold !important; color: #1E40AF !important; }
+
+    /* TARJETAS DE STOCK MÁS LEGIBLES */
     .stock-card { 
-        background-color: #FFFFFF; 
-        padding: 20px; 
-        border-radius: 15px; 
-        border-left: 10px solid #94A3B8; 
-        margin-bottom: 15px; 
-        color: #1E293B;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    
-    /* Caja de Edición: Borde azul punteado */
-    .edit-box { 
-        background-color: #F1F5F9; 
-        padding: 15px; 
-        border-radius: 10px; 
-        border: 2px dashed #3B82F6; 
-        margin-top: 10px; 
+        font-size: 22px !important;
+        line-height: 1.5;
+        padding: 25px !important;
     }
     </style>
     """, unsafe_allow_html=True)
