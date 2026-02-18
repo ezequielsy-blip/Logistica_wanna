@@ -16,21 +16,81 @@ if "transfer_data" not in st.session_state:
 # --- ESTILOS ---
 st.markdown("""
     <style>
-    .main { background-color: #0F1116; }
+    /* Fondo Principal: Blanco / Gris muy claro */
+    .main { background-color: #F8FAFC; }
+    
     [data-testid="column"] { display: inline-block !important; width: 48% !important; min-width: 48% !important; }
-    div.stButton > button { width: 100%; height: 85px !important; font-size: 26px !important; font-weight: 700 !important; border-radius: 15px !important; color: white !important; }
-    .block-container div.stButton > button[kind="secondary"] { background-color: #D4AC0D !important; height: 65px !important; color: black !important; }
-    div.stForm button { background-color: #1E8449 !important; }
-    div[data-testid="column"]:nth-of-type(1) button { background-color: #2E4053 !important; }
-    div[data-testid="column"]:nth-of-type(2) button { background-color: #1B2631 !important; }
-    .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] { font-size: 22px !important; height: 60px !important; background-color: #1A1C23 !important; color: #ECF0F1 !important; border: 2px solid #34495E !important; border-radius: 10px !important; }
-    h1 { text-align: center; color: #FFFFFF; font-size: 60px !important; font-weight: 800; }
-    .sugerencia-box { background-color: #1C2833; padding: 25px; border-radius: 15px; border-left: 12px solid #3498DB; margin-bottom: 25px; color: #D5DBDB; font-size: 20px; }
-    .stock-card { background-color: #17202A; padding: 20px; border-radius: 15px; border-left: 10px solid #2C3E50; margin-bottom: 15px; color: #EBEDEF; }
-    .edit-box { background-color: #1B2631; padding: 15px; border-radius: 10px; border: 2px dashed #F1C40F; margin-top: 10px; }
+    
+    /* Botones Principales: Azul con texto blanco */
+    div.stButton > button { 
+        width: 100%; 
+        height: 85px !important; 
+        font-size: 26px !important; 
+        font-weight: 700 !important; 
+        border-radius: 15px !important; 
+        background-color: #1E40AF !important; /* Azul Principal */
+        color: white !important; 
+        border: none !important;
+    }
+    
+    /* Botones Secundarios: Gris claro con texto azul */
+    .block-container div.stButton > button[kind="secondary"] { 
+        background-color: #E5E7EB !important; 
+        height: 65px !important; 
+        color: #1E40AF !important; 
+        border: 1px solid #D1D5DB !important;
+    }
+    
+    /* Botones de Formulario y Columnas: Variaciones de Azul y Gris */
+    div.stForm button { background-color: #3B82F6 !important; } /* Azul más claro */
+    div[data-testid="column"]:nth-of-type(1) button { background-color: #1E40AF !important; }
+    div[data-testid="column"]:nth-of-type(2) button { background-color: #475569 !important; } /* Gris azulado */
+    
+    /* Entradas de texto: Fondo blanco, borde azul claro */
+    .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] { 
+        font-size: 22px !important; 
+        height: 60px !important; 
+        background-color: #FFFFFF !important; 
+        color: #1E293B !important; 
+        border: 2px solid #BFDBFE !important; /* Azul claro */
+        border-radius: 10px !important; 
+    }
+    
+    /* Título: Azul fuerte */
+    h1 { text-align: center; color: #1E40AF; font-size: 60px !important; font-weight: 800; }
+    
+    /* Caja de Sugerencia (Sector 99): Azul claro con borde fuerte */
+    .sugerencia-box { 
+        background-color: #EFF6FF; 
+        padding: 25px; 
+        border-radius: 15px; 
+        border-left: 12px solid #3B82F6; 
+        margin-bottom: 25px; 
+        color: #1E40AF; 
+        font-size: 20px; 
+    }
+    
+    /* Tarjetas de Stock: Gris suave */
+    .stock-card { 
+        background-color: #FFFFFF; 
+        padding: 20px; 
+        border-radius: 15px; 
+        border-left: 10px solid #94A3B8; 
+        margin-bottom: 15px; 
+        color: #1E293B;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    
+    /* Caja de Edición: Borde azul punteado */
+    .edit-box { 
+        background-color: #F1F5F9; 
+        padding: 15px; 
+        border-radius: 10px; 
+        border: 2px dashed #3B82F6; 
+        margin-top: 10px; 
+    }
     </style>
     """, unsafe_allow_html=True)
-
 # --- LÓGICA DE UBICACIONES ---
 def buscar_hueco_vacio():
     try:
