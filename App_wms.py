@@ -16,61 +16,105 @@ if "transfer_data" not in st.session_state:
 # --- ESTILOS ---
 # --- ESTILOS OPTIMIZADOS PARA CELULAR ---
 # --- ESTILOS CORREGIDOS (SIN DESFASE) ---
+# --- ESTILOS LOGIEZE: BLANCO, GRIS Y AZUL CLARO ---
 st.markdown("""
     <style>
-    .main { background-color: #F8FAFC; }
-
-    /* CONTENEDOR DE INPUTS: Forzamos la altura y alineación */
+    /* Fondo de la aplicación */
+    .main { background-color: #FFFFFF; }
+    
+    /* CONTENEDOR DE INPUTS (Buscadores y Selección) */
     div[data-baseweb="input"], div[data-baseweb="select"] {
         height: 70px !important;
         display: flex !important;
         align-items: center !important;
-        background-color: white !important;
+        background-color: #F9FAF7 !important; /* Gris muy tenue */
+        border: 2px solid #BFDBFE !important; /* Azul claro */
         border-radius: 12px !important;
     }
 
-    /* EL TEXTO DENTRO DE LOS INPUTS */
+    /* TEXTO DENTRO DE LOS INPUTS */
     .stTextInput input, .stNumberInput input, .stSelectbox div[role="button"] {
         font-size: 24px !important;
-        line-height: 70px !important; /* Mismo alto que el contenedor para centrar */
+        line-height: 70px !important;
         height: 70px !important;
-        color: #1E293B !important;
+        color: #1E3A8A !important; /* Azul oscuro para lectura */
         padding: 0px 15px !important;
     }
 
-    /* BOTONES GIGANTES */
+    /* BOTONES GIGANTES (LOGIEZE AZUL) */
     div.stButton > button {
         width: 100% !important;
         height: 85px !important;
         font-size: 26px !important;
         font-weight: 800 !important;
         border-radius: 15px !important;
+        background-color: #3B82F6 !important; /* Azul claro/medio brillante */
+        color: #FFFFFF !important;
+        border: none !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+    }
+    
+    /* BOTÓN SECUNDARIO (ACTUALIZAR) */
+    .block-container div.stButton > button[kind="secondary"] {
+        background-color: #E5E7EB !important; /* Gris claro */
+        color: #1E40AF !important; /* Texto Azul */
+        height: 65px !important;
     }
 
-    /* ETIQUETAS (Nombres de los campos) */
+    /* ETIQUETAS DE LOS CAMPOS */
     .stWidgetLabel p {
         font-size: 22px !important;
         margin-bottom: 10px !important;
-        color: #1E40AF !important;
+        color: #64748B !important; /* Gris azulado */
         font-weight: bold !important;
     }
 
-    /* ARREGLO DE COLUMNAS PARA MÓVIL (Evita que se amontonen) */
+    /* TABS (PESTAÑAS) */
+    button[data-baseweb="tab"] {
+        height: 70px !important;
+        background-color: #F3F4F6 !important;
+        border-radius: 10px 10px 0 0 !important;
+        margin-right: 5px !important;
+    }
+    button[data-baseweb="tab"] p {
+        font-size: 20px !important;
+        color: #1E40AF !important;
+    }
+    
+    /* ESTADO SELECCIONADO DE LAS PESTAÑAS */
+    button[aria-selected="true"] {
+        background-color: #BFDBFE !important; /* Azul claro al seleccionar */
+        border-bottom: 4px solid #1E40AF !important;
+    }
+
+    /* COLUMNAS PARA MÓVIL */
     [data-testid="column"] {
         width: 100% !important;
         min-width: 100% !important;
         margin-bottom: 20px !important;
     }
 
-    /* AJUSTE PARA LAS TABS */
-    button[data-baseweb="tab"] {
-        height: 60px !important;
+    /* TÍTULO PRINCIPAL */
+    h1 { 
+        text-align: center; 
+        color: #1E40AF; 
+        font-size: 55px !important; 
+        font-weight: 850;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
     }
-    button[data-baseweb="tab"] p {
-        font-size: 18px !important;
+
+    /* TARJETAS DE STOCK */
+    .stock-card { 
+        background-color: #F8FAFC;
+        border-left: 10px solid #3B82F6;
+        padding: 25px !important;
+        font-size: 22px !important;
+        color: #1E293B;
+        border-radius: 12px;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
     }
     </style>
     """, unsafe_allow_html=True)
