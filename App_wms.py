@@ -15,61 +15,62 @@ if "transfer_data" not in st.session_state:
 
 # --- ESTILOS ---
 # --- ESTILOS OPTIMIZADOS PARA CELULAR ---
+# --- ESTILOS CORREGIDOS (SIN DESFASE) ---
 st.markdown("""
     <style>
     .main { background-color: #F8FAFC; }
-    
-    /* HACER BOTONES MÁS GRANDES Y ALTOS */
-    div.stButton > button { 
-        width: 100% !important; 
-        height: 90px !important; /* Aumentado de 85 a 90 */
-        font-size: 28px !important; /* Letra más grande */
-        font-weight: 800 !important; 
-        border-radius: 15px !important; 
-        margin-bottom: 10px !important;
-    }
 
-    /* DESPLEGABLES (Selectbox) MÁS GRANDES */
-    .stSelectbox div[data-baseweb="select"] {
-        font-size: 24px !important;
-        height: 75px !important; /* Altura ideal para el pulgar */
-        display: flex;
-        align-items: center;
-    }
-
-    /* ENTRADAS DE TEXTO Y NÚMEROS GIGANTES */
-    .stTextInput input, .stNumberInput input { 
-        font-size: 26px !important; /* Letra muy clara */
-        height: 75px !important; 
-        background-color: #FFFFFF !important; 
-        color: #1E293B !important; 
-        border: 2px solid #BFDBFE !important; 
-        border-radius: 12px !important; 
-    }
-
-    /* TABS (Pestañas) MÁS ANCHAS */
-    button[data-baseweb="tab"] {
+    /* CONTENEDOR DE INPUTS: Forzamos la altura y alineación */
+    div[data-baseweb="input"], div[data-baseweb="select"] {
         height: 70px !important;
-        font-size: 20px !important;
+        display: flex !important;
+        align-items: center !important;
+        background-color: white !important;
+        border-radius: 12px !important;
+    }
+
+    /* EL TEXTO DENTRO DE LOS INPUTS */
+    .stTextInput input, .stNumberInput input, .stSelectbox div[role="button"] {
+        font-size: 24px !important;
+        line-height: 70px !important; /* Mismo alto que el contenedor para centrar */
+        height: 70px !important;
+        color: #1E293B !important;
+        padding: 0px 15px !important;
+    }
+
+    /* BOTONES GIGANTES */
+    div.stButton > button {
+        width: 100% !important;
+        height: 85px !important;
+        font-size: 26px !important;
+        font-weight: 800 !important;
+        border-radius: 15px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    /* ETIQUETAS (Nombres de los campos) */
+    .stWidgetLabel p {
+        font-size: 22px !important;
+        margin-bottom: 10px !important;
+        color: #1E40AF !important;
         font-weight: bold !important;
     }
 
-    /* AJUSTE DE COLUMNAS PARA MÓVIL */
-    [data-testid="column"] { 
-        width: 100% !important; /* En celular, mejor una debajo de otra */
-        min-width: 100% !important; 
-        margin-bottom: 15px;
+    /* ARREGLO DE COLUMNAS PARA MÓVIL (Evita que se amontonen) */
+    [data-testid="column"] {
+        width: 100% !important;
+        min-width: 100% !important;
+        margin-bottom: 20px !important;
     }
 
-    /* TÍTULOS Y ETIQUETAS */
-    h1 { font-size: 50px !important; color: #1E40AF; }
-    label p { font-size: 22px !important; font-weight: bold !important; color: #1E40AF !important; }
-
-    /* TARJETAS DE STOCK MÁS LEGIBLES */
-    .stock-card { 
-        font-size: 22px !important;
-        line-height: 1.5;
-        padding: 25px !important;
+    /* AJUSTE PARA LAS TABS */
+    button[data-baseweb="tab"] {
+        height: 60px !important;
+    }
+    button[data-baseweb="tab"] p {
+        font-size: 18px !important;
     }
     </style>
     """, unsafe_allow_html=True)
