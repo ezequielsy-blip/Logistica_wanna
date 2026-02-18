@@ -18,14 +18,14 @@ st.markdown("""
     .main { background-color: #FFFFFF; }
     h1 { text-align: center; color: #1E40AF; font-size: 50px !important; font-weight: 800; }
 
-    /* Botones Gigantes (Entradas/Actualizar) */
+    /* Botones Gigantes Principales */
     div.stButton > button {
         width: 100%; height: 85px !important; font-size: 24px !important;
         font-weight: 700 !important; border-radius: 15px !important;
         background-color: #3B82F6 !important; color: white !important;
     }
 
-    /* BOTONES PEQUEÑOS PARA STOCK (Lado a lado en móvil) */
+    /* BOTONES PEQUEÑOS PARA STOCK (Lado a lado) */
     [data-testid="column"] div.stButton > button {
         height: 55px !important; font-size: 16px !important;
         background-color: #1E40AF !important; padding: 5px !important;
@@ -81,21 +81,31 @@ with st.sidebar:
 
 t1, t2, t3 = st.tabs(["📥 ENTRADAS", "🔍 STOCK / PASES", "📊 PLANILLA"])
 
-# --- ENTRADAS (Búsqueda Precisa) ---
+# --- ENTRADAS (Búsqueda por Código Estricta) ---
 with t1:
     if es_autorizado:
         val_pasado = str(st.session_state.transfer_data['cod_int']) if st.session_state.transfer_data else ""
         bus = st.text_input("🔍 BUSCAR PRODUCTO", value=val_pasado, key="ent_bus")
         if bus:
             m_raw = supabase.table("maestra").select("*").execute()
-            # BUSQUEDA PRECISA: Si es número, busca coincidencia exacta primero
+            
+            # --- LÓGICA DE FILTRADO PRECISO ---
             if bus.isdigit():
-                m_data = [i for i in m_raw.data if str(i.get('cod_int')) == bus or str(i.get('barras')) == bus]
+                # SI ES NÚMERO: Busca SOLO en cod_int o barras que CONTENGAN ese número
+                m_data = [i for i in m_raw.data if bus in str(i.get('cod_int')) or bus in str(i.get('barras'))]
             else:
+                # SI ES TEXTO: Busca en el nombre
                 m_data = [i for i in m_raw.data if bus.lower() in i.get('nombre').lower()]
             
             if m_data:
-                p = m_data[0] # Toma el primero (el más exacto encontrado)
+                # Si hay más de uno con ese número de código, te deja elegir de la lista precisa
+                if len(m_data) > 1:
+                    opciones_p = {f"ID: {i['cod_int']} - {i['nombre']}": i for i in m_data}
+                    p_sel = st.selectbox("Seleccione el CÓDIGO exacto:", list(opciones_p.keys()))
+                    p = opciones_p[p_sel]
+                else:
+                    p = m_data[0]
+
                 u_99 = buscar_proxima_99()
                 st.markdown(f'<div class="sugerencia-box">📍 SUGERIDA: {u_99}</div>', unsafe_allow_html=True)
                 
@@ -118,17 +128,19 @@ with t1:
                         st.session_state.transfer_data = None
                         st.rerun()
 
-# --- STOCK / PASES (Botones Pequeños Lado a Lado) ---
+# --- STOCK / PASES (Botones Lado a Lado) ---
 with t2:
     bus_s = st.text_input("🔎 BUSCAR EN STOCK", key="bus_s")
     if bus_s:
+        # Búsqueda en Stock sigue la misma lógica de precisión
+        res_s_raw = supabase.table("inventario").select("*").execute()
         if bus_s.isdigit():
-            res_s = supabase.table("inventario").select("*").eq("cod_int", bus_s).execute()
+            s_data = [i for i in res_s_raw.data if bus_s in str(i['cod_int'])]
         else:
-            res_s = supabase.table("inventario").select("*").ilike("nombre", f"%{bus_s}%").execute()
+            s_data = [i for i in res_s_raw.data if bus_s.lower() in i['nombre'].lower()]
         
-        if res_s.data:
-            for r in res_s.data:
+        if s_data:
+            for r in s_data:
                 curr_q = int(r['cantidad'])
                 st.markdown(f'<div class="stock-card"><b>{r["nombre"]}</b> | Q: {curr_q}<br>UBI: {r["ubicacion"]} | VENCE: {r["fecha"]}</div>', unsafe_allow_html=True)
                 
