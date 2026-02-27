@@ -666,43 +666,89 @@ with tab_desp:
     if "pedido" not in st.session_state:
         st.session_state.pedido = []
 
-    # ── Agregar ítem manualmente ──────────────────────────────────────────────
-    with st.expander("➕ Agregar ítem manualmente"):
-        col_dc, col_dq = st.columns([2, 1])
-        with col_dc:
-            d_cod = st.text_input("Código interno:", key="d_cod")
-        with col_dq:
+    # ── Barra de acciones: pegar texto + guardar en nube ─────────────────────
+    col_acc1, col_acc2, col_acc3 = st.columns([2, 2, 1])
+
+    with col_acc1:
+        texto_pegado = st.text_area(
+            "📋 Pegar desde Excel (Codigo · Articulo · Cantidad · ...):",
+            placeholder="Seleccioná las filas en Excel y pegá acá (Ctrl+V)\nColumnas extra como U.Medida, Precio, Total se ignoran automáticamente.",
+            height=90, key="txt_pegar_excel", label_visibility="visible"
+        )
+        if st.button("📥 Cargar desde Excel", use_container_width=True, key="btn_cargar_excel"):
+            if texto_pegado.strip():
+                try:
+                    df_p = pd.read_csv(StringIO(texto_pegado), sep='\t', dtype=str).fillna("")
+                    df_p.columns = [str(c).strip().upper() for c in df_p.columns]
+                    col_cod  = next((c for c in ["CODIGO","CÓDIGO","COD","COD_INT"] if c in df_p.columns), None)
+                    col_cant = next((c for c in ["CANTIDAD","CANT","QTY"] if c in df_p.columns), None)
+                    col_nom  = next((c for c in ["ARTICULO","ARTÍCULO","NOMBRE","DESCRIPCION","DESCRIPCIÓN"] if c in df_p.columns), None)
+                    if not col_cod or not col_cant:
+                        st.error("No se encontraron columnas 'Codigo' y 'Cantidad'. Verificá el formato.")
+                    else:
+                        nuevos = 0
+                        for _, r in df_p.iterrows():
+                            cod  = str(r[col_cod]).strip()
+                            cant_str = str(r[col_cant]).strip()
+                            nom_excel = str(r[col_nom]).strip() if col_nom else ""
+                            if not cod or cod.upper() in ("NAN","","CODIGO","CÓDIGO"): continue
+                            if not cant_str or cant_str.upper() in ("NAN","","CANTIDAD"): continue
+                            try: cant_v = int(float(cant_str))
+                            except: continue
+                            prod = next((p for p in maestra if str(p['cod_int']) == cod), None)
+                            if not prod:
+                                prod = next((p for p in maestra if str(p.get('barras','')) == cod), None)
+                            nom = prod['nombre'] if prod else (nom_excel or "NO ENCONTRADO")
+                            st.session_state.pedido.append({"cod": cod, "cant": cant_v, "nombre": nom})
+                            nuevos += 1
+                        if nuevos:
+                            st.success(f"✅ {nuevos} ítems cargados (U.Medida, Precio y Total ignorados)")
+                            st.rerun()
+                        else:
+                            st.warning("No se encontraron filas válidas.")
+                except Exception as e:
+                    st.error(f"Error al procesar: {e}")
+            else:
+                st.warning("Pegá el contenido del Excel primero.")
+
+    with col_acc2:
+        st.markdown('<p class="sec-label">☁️ GUARDAR PEDIDO EN LA NUBE</p>', unsafe_allow_html=True)
+        nombre_ped = st.text_input(
+            "Nombre:", placeholder="ej: Pedido #45 · Cliente: XYZ",
+            key="nom_ped_guardar", label_visibility="collapsed"
+        )
+        if st.button("⬆ Guardar en nube para los chicos", use_container_width=True, key="btn_subir_ped"):
+            if not st.session_state.pedido:
+                st.warning("El pedido está vacío. Cargá ítems primero.")
+            elif not nombre_ped.strip():
+                st.warning("Escribí un nombre para identificar el pedido.")
+            else:
+                items_subir = [{"cod_int": it['cod'], "cantidad": it['cant'], "nombre": it['nombre']}
+                               for it in st.session_state.pedido]
+                try:
+                    sb.table("pedidos").insert({
+                        "nombre": nombre_ped.strip(),
+                        "fecha":  datetime.now().strftime("%d/%m/%Y %H:%M"),
+                        "items":  _json.dumps(items_subir),
+                        "estado": "pendiente"
+                    }).execute()
+                    cargar_pedidos_nube.clear()
+                    st.success(f"☁️ '{nombre_ped}' guardado — {len(items_subir)} ítems. Los chicos ya lo pueden ver.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+    with col_acc3:
+        st.markdown('<p class="sec-label">MANUAL</p>', unsafe_allow_html=True)
+        with st.expander("➕ Agregar ítem"):
+            d_cod  = st.text_input("Código:", key="d_cod")
             d_cant = st.number_input("Cantidad:", min_value=1, step=1, key="d_cant")
-        col_ba, col_bb = st.columns(2)
-        with col_ba:
-            if st.button("➕ Agregar al pedido", use_container_width=True, key="btn_add_ped"):
+            if st.button("Agregar", use_container_width=True, key="btn_add_ped"):
                 if d_cod.strip():
                     prod = next((p for p in maestra if str(p['cod_int']) == d_cod.strip()), None)
                     nom  = prod['nombre'] if prod else "NO ENCONTRADO"
                     st.session_state.pedido.append({"cod": d_cod.strip(), "cant": d_cant, "nombre": nom})
                     st.rerun()
-        with col_bb:
-            # Guardar pedido local en la nube
-            if st.session_state.pedido:
-                nombre_nuevo = st.text_input("Nombre del pedido:", placeholder="ej: Pedido #123", key="nom_ped_nuevo")
-                if st.button("⬆ Guardar en nube", use_container_width=True, key="btn_subir_ped"):
-                    if nombre_nuevo.strip():
-                        items_subir = [{"cod_int": it['cod'], "cantidad": it['cant'], "nombre": it['nombre']}
-                                       for it in st.session_state.pedido]
-                        try:
-                            sb.table("pedidos").insert({
-                                "nombre": nombre_nuevo.strip(),
-                                "fecha":  datetime.now().strftime("%d/%m/%Y %H:%M"),
-                                "items":  _json.dumps(items_subir),
-                                "estado": "pendiente"
-                            }).execute()
-                            cargar_pedidos_nube.clear()
-                            st.success(f"☁️ '{nombre_nuevo}' guardado en la nube.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error al guardar: {e}")
-                    else:
-                        st.warning("Escribí un nombre para el pedido.")
 
     # ── Mostrar ítems del pedido activo ───────────────────────────────────────
     if st.session_state.pedido:
