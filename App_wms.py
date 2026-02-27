@@ -409,7 +409,7 @@ with tab_mov:
         df_res = pd.DataFrame([{
             "Nombre": p['nombre'],
             "Código": p['cod_int'],
-            "Stock":  int(p.get('stock_total',0) or 0),
+            "Stock":  int(p.get('cantidad_total',0) or 0),
         } for p in productos_filtrados])
 
         st.dataframe(df_res, use_container_width=True, hide_index=True,
@@ -592,57 +592,166 @@ with tab_mov:
 # TAB DESPACHO
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_desp:
+    import json as _json
+
     st.markdown('<p class="sec-label">🚚 PICKING CONTROLADO</p>', unsafe_allow_html=True)
-    st.caption("Pegá ítems del pedido uno por uno o usá la carga manual.")
 
-    # Estado del pedido en session_state
+    # ── Panel de sincronización con la nube ───────────────────────────────────
+    st.markdown("""
+    <div style="background:#1E293B;border:1px solid #334155;border-radius:14px;
+                padding:14px 18px;margin-bottom:12px;">
+        <span style="font-size:11px;font-weight:700;color:#94A3B8;letter-spacing:2px;">
+            ☁️ PEDIDOS EN LA NUBE
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_s1, col_s2, col_s3 = st.columns([3, 1, 1])
+
+    # Cargar lista de pedidos pendientes de Supabase
+    @st.cache_data(ttl=30, show_spinner=False)
+    def cargar_pedidos_nube():
+        try:
+            return sb.table("pedidos").select("id,nombre,fecha,estado,items")                 .in_("estado", ["pendiente", "en_proceso"])                 .order("id", desc=True).limit(20).execute().data or []
+        except:
+            return []
+
+    pedidos_nube = cargar_pedidos_nube()
+
+    with col_s1:
+        if pedidos_nube:
+            opciones_pedidos = [f"#{p['id']}  {p['nombre']}  [{p.get('fecha','')}]  — {p.get('estado','')}"
+                                for p in pedidos_nube]
+            idx_ped_sel = st.selectbox("Pedidos disponibles:", range(len(opciones_pedidos)),
+                                       format_func=lambda i: opciones_pedidos[i],
+                                       key="sel_ped_nube", label_visibility="collapsed")
+        else:
+            st.info("☁️ Sin pedidos en la nube. Cargá uno desde la PC o crealo acá abajo.")
+            idx_ped_sel = None
+
+    with col_s2:
+        if pedidos_nube and idx_ped_sel is not None:
+            if st.button("⬇ Cargar pedido", use_container_width=True, key="btn_bajar_ped"):
+                ped = pedidos_nube[idx_ped_sel]
+                items_raw = ped.get('items') or []
+                if isinstance(items_raw, str):
+                    try: items_raw = _json.loads(items_raw)
+                    except: items_raw = []
+                if items_raw:
+                    st.session_state.pedido = [
+                        {"cod":  str(it.get('cod_int', it.get('codigo',''))),
+                         "cant": int(float(str(it.get('cantidad', it.get('cant', 0))))),
+                         "nombre": it.get('nombre',''),
+                         "ped_id": ped['id']}
+                        for it in items_raw
+                    ]
+                    # Marcar como en_proceso
+                    try:
+                        sb.table("pedidos").update({"estado":"en_proceso"}).eq("id", ped['id']).execute()
+                        cargar_pedidos_nube.clear()
+                    except: pass
+                    st.success(f"✅ '{ped['nombre']}' cargado — {len(items_raw)} ítems")
+                    st.rerun()
+                else:
+                    st.error("El pedido no tiene ítems.")
+
+    with col_s3:
+        if st.button("🔄 Actualizar lista", use_container_width=True, key="btn_ref_nube"):
+            cargar_pedidos_nube.clear()
+            st.rerun()
+
+    st.markdown("---")
+
+    # ── Estado del pedido local ───────────────────────────────────────────────
     if "pedido" not in st.session_state:
-        st.session_state.pedido = []  # list of {cod, cant, nombre}
+        st.session_state.pedido = []
 
-    # Agregar ítem
-    with st.expander("➕ Agregar ítem al pedido"):
-        col_dc, col_dq = st.columns([2,1])
+    # ── Agregar ítem manualmente ──────────────────────────────────────────────
+    with st.expander("➕ Agregar ítem manualmente"):
+        col_dc, col_dq = st.columns([2, 1])
         with col_dc:
             d_cod = st.text_input("Código interno:", key="d_cod")
         with col_dq:
             d_cant = st.number_input("Cantidad:", min_value=1, step=1, key="d_cant")
-        if st.button("Agregar al pedido", key="btn_add_ped"):
-            if d_cod.strip():
-                prod = next((p for p in maestra if str(p['cod_int']) == d_cod.strip()), None)
-                nom  = prod['nombre'] if prod else "NO ENCONTRADO"
-                st.session_state.pedido.append({"cod": d_cod.strip(), "cant": d_cant, "nombre": nom})
-                st.rerun()
+        col_ba, col_bb = st.columns(2)
+        with col_ba:
+            if st.button("➕ Agregar al pedido", use_container_width=True, key="btn_add_ped"):
+                if d_cod.strip():
+                    prod = next((p for p in maestra if str(p['cod_int']) == d_cod.strip()), None)
+                    nom  = prod['nombre'] if prod else "NO ENCONTRADO"
+                    st.session_state.pedido.append({"cod": d_cod.strip(), "cant": d_cant, "nombre": nom})
+                    st.rerun()
+        with col_bb:
+            # Guardar pedido local en la nube
+            if st.session_state.pedido:
+                nombre_nuevo = st.text_input("Nombre del pedido:", placeholder="ej: Pedido #123", key="nom_ped_nuevo")
+                if st.button("⬆ Guardar en nube", use_container_width=True, key="btn_subir_ped"):
+                    if nombre_nuevo.strip():
+                        items_subir = [{"cod_int": it['cod'], "cantidad": it['cant'], "nombre": it['nombre']}
+                                       for it in st.session_state.pedido]
+                        try:
+                            sb.table("pedidos").insert({
+                                "nombre": nombre_nuevo.strip(),
+                                "fecha":  datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                "items":  _json.dumps(items_subir),
+                                "estado": "pendiente"
+                            }).execute()
+                            cargar_pedidos_nube.clear()
+                            st.success(f"☁️ '{nombre_nuevo}' guardado en la nube.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error al guardar: {e}")
+                    else:
+                        st.warning("Escribí un nombre para el pedido.")
 
-    # Mostrar pedido
+    # ── Mostrar ítems del pedido activo ───────────────────────────────────────
     if st.session_state.pedido:
-        st.markdown('<p class="sec-label">📋 ÍTEMS DEL PEDIDO</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sec-label">📋 ÍTEMS DEL PEDIDO ACTIVO</p>', unsafe_allow_html=True)
+
         pedido_a_eliminar = None
         for i, item in enumerate(st.session_state.pedido):
-            col_pi, col_pb = st.columns([4,1])
+            col_pi, col_pb = st.columns([5, 1])
             with col_pi:
+                stock_disp = sum(float(l.get('cantidad',0)) for l in idx_inv.get(item['cod'],[]))
+                color_stock = "#10B981" if stock_disp >= item['cant'] else "#EF4444"
                 st.markdown(f"""
                 <div class="lote-card">
-                    <b style="font-size:15px;">{item['nombre']}</b><br>
-                    <span style="color:#94A3B8;font-size:13px;">Código: {item['cod']}</span>
-                    <span style="float:right;font-size:22px;font-weight:900;color:#10B981;">{item['cant']}</span>
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div>
+                            <b style="font-size:14px;">{item['nombre']}</b><br>
+                            <span style="color:#94A3B8;font-size:12px;">Cod: {item['cod']}</span>
+                        </div>
+                        <div style="text-align:right;">
+                            <span style="font-size:22px;font-weight:900;color:#10B981;">{item['cant']}</span>
+                            <br><span style="font-size:11px;color:{color_stock};">stock: {int(stock_disp)}</span>
+                        </div>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
             with col_pb:
-                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("<br><br>", unsafe_allow_html=True)
                 if st.button("✕", key=f"del_ped_{i}"):
                     pedido_a_eliminar = i
         if pedido_a_eliminar is not None:
             st.session_state.pedido.pop(pedido_a_eliminar); st.rerun()
 
-        # Seleccionar ítem a despachar
+        # ── Seleccionar ítem a despachar ──────────────────────────────────────
         st.markdown("---")
-        st.markdown('<p class="sec-label">SELECCIONAR ÍTEM A DESPACHAR</p>', unsafe_allow_html=True)
-        idx_desp = st.selectbox("Ítem:", range(len(st.session_state.pedido)),
-                                format_func=lambda i: f"{st.session_state.pedido[i]['nombre']} — {st.session_state.pedido[i]['cant']} uds",
-                                key="desp_sel")
+        st.markdown('<p class="sec-label">DESPACHAR ÍTEM</p>', unsafe_allow_html=True)
+
+        idx_desp = st.selectbox(
+            "Ítem a despachar:",
+            range(len(st.session_state.pedido)),
+            format_func=lambda i: (
+                f"{'✅' if sum(float(l.get('cantidad',0)) for l in idx_inv.get(st.session_state.pedido[i]['cod'],[])) >= st.session_state.pedido[i]['cant'] else '⚠️'}"
+                f"  {st.session_state.pedido[i]['nombre']}  —  {st.session_state.pedido[i]['cant']} uds"
+            ),
+            key="desp_sel",
+            label_visibility="collapsed"
+        )
         item_sel = st.session_state.pedido[idx_desp]
         cod_d    = item_sel['cod']
-        lotes_d  = [l for l in idx_inv.get(cod_d,[]) if float(l.get('cantidad',0)) > 0]
+        lotes_d  = [l for l in idx_inv.get(cod_d, []) if float(l.get('cantidad', 0)) > 0]
 
         if lotes_d:
             st.markdown('<p class="sec-label">LOTE A USAR</p>', unsafe_allow_html=True)
@@ -658,14 +767,17 @@ with tab_desp:
                 </div>
                 """, unsafe_allow_html=True)
 
-            lote_ops = [f"[{int(float(l.get('cantidad',0)))}] {l.get('ubicacion','')} — {l.get('fecha','')} — {l.get('deposito','')}" for l in lotes_d]
+            lote_ops = [
+                f"[{int(float(l.get('cantidad',0)))}] {l.get('ubicacion','')} — {l.get('fecha','')} — {l.get('deposito','')}"
+                for l in lotes_d
+            ]
             idx_ld = st.selectbox("Lote a descontar:", range(len(lote_ops)),
                                   format_func=lambda i: lote_ops[i], key="lote_desp")
             lote_d = lotes_d[idx_ld]
 
             if st.button("✅ DESCONTAR DEL LOTE", use_container_width=True, key="btn_desc"):
                 cant_p = float(item_sel['cant'])
-                cant_l = float(lote_d.get('cantidad',0))
+                cant_l = float(lote_d.get('cantidad', 0))
                 try:
                     if cant_l <= cant_p:
                         sb.table("inventario").delete().eq("id", lote_d['id']).execute()
@@ -674,7 +786,7 @@ with tab_desp:
                             st.session_state.pedido[idx_desp]['cant'] = int(pendiente)
                             registrar_historial("SALIDA", cod_d, item_sel['nombre'], cant_l, lote_d.get('ubicacion',''), usuario)
                             recalcular_maestra(cod_d, inventario)
-                            st.warning(f"Lote agotado. Quedan {int(pendiente)} unidades pendientes. Seleccioná otro lote.")
+                            st.warning(f"Lote agotado. Quedan {int(pendiente)} uds pendientes.")
                             refrescar(); st.rerun()
                         else:
                             st.session_state.pedido.pop(idx_desp)
@@ -690,12 +802,20 @@ with tab_desp:
                 except Exception as e:
                     st.error(f"Error: {e}")
         else:
-            st.warning("Sin stock disponible para este producto.")
+            st.warning(f"⚠️ Sin stock disponible para {item_sel['nombre']}.")
 
+        st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🗑️ Limpiar pedido completo", key="limpiar_ped"):
             st.session_state.pedido = []; st.rerun()
+
     else:
-        st.info("El pedido está vacío. Agregá ítems con el formulario de arriba.")
+        st.markdown("""
+        <div style="text-align:center;padding:40px 20px;color:#94A3B8;">
+            <div style="font-size:48px;margin-bottom:12px;">📋</div>
+            <div style="font-size:16px;font-weight:700;">Sin pedido activo</div>
+            <div style="font-size:13px;margin-top:6px;">Cargá un pedido desde la nube ☁️ o agregá ítems manualmente ➕</div>
+        </div>
+        """, unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
