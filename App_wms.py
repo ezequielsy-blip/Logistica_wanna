@@ -7,7 +7,6 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from supabase import create_client, Client
-from io import StringIO
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 SUPABASE_URL = "https://twnzmsrthinzbyoedwnc.supabase.co"
@@ -290,10 +289,35 @@ def recalcular_maestra(cod_int, inventario):
         st.error(f"Error recalcular: {e}")
     return total
 
-# ── SESIÓN ────────────────────────────────────────────────────────────────────
+# ── SESIÓN PERSISTENTE (localStorage via JS) ──────────────────────────────────
+# Guarda usuario/rol en el navegador para no pedir login en cada recarga
 if "usuario" not in st.session_state:
     st.session_state.usuario = None
     st.session_state.rol     = None
+    st.session_state._sess_cargada = False
+
+# Inyectar JS que guarda/recupera sesión en localStorage
+st.markdown("""
+<script>
+(function() {
+    // Al cargar: enviar sesión guardada a Streamlit via URL param
+    const u = localStorage.getItem('lz_usuario');
+    const r = localStorage.getItem('lz_rol');
+    if (u && r && !window.location.search.includes('lz_u=')) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('lz_u', u);
+        url.searchParams.set('lz_r', r);
+        window.location.replace(url.toString());
+    }
+})();
+</script>
+""", unsafe_allow_html=True)
+
+# Leer parámetros de URL si vienen del JS
+params = st.query_params
+if not st.session_state.usuario and 'lz_u' in params and 'lz_r' in params:
+    st.session_state.usuario = params['lz_u']
+    st.session_state.rol     = params['lz_r']
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # LOGIN
@@ -321,6 +345,8 @@ if not st.session_state.usuario:
                     if r:
                         st.session_state.usuario = r[0]['usuario']
                         st.session_state.rol     = r[0]['rol']
+                        _u = r[0]['usuario']; _r = r[0]['rol']
+                        st.markdown(f"<script>localStorage.setItem('lz_usuario','{_u}');localStorage.setItem('lz_rol','{_r}');</script>", unsafe_allow_html=True)
                         st.rerun()
                     else:
                         st.error("Usuario o clave incorrectos.")
@@ -334,7 +360,7 @@ if not st.session_state.usuario:
 
 usuario = st.session_state.usuario
 rol     = st.session_state.rol
-ROL_ICON = {"admin":"👑","operario":"🔧","visita":"👁️"}.get(rol,"👤")
+ROL_ICON = {"admin":"👑","operario":"🔧","visita":"👁️","vendedor":"🛒"}.get(rol,"👤")
 
 # Header
 col_h1, col_h2 = st.columns([3,1])
@@ -351,8 +377,11 @@ with col_h1:
 with col_h2:
     if st.button("⟳ Actualizar", use_container_width=True):
         refrescar()
-    if st.button("🚪 Salir", use_container_width=True):
-        st.session_state.usuario = None; st.rerun()
+    if st.button("🔄 Cambiar usuario", use_container_width=True):
+        st.session_state.usuario = None
+        st.session_state.rol = None
+        st.markdown("<script>localStorage.removeItem('lz_usuario');localStorage.removeItem('lz_rol');window.location.href=window.location.pathname;</script>", unsafe_allow_html=True)
+        st.rerun()
 
 # Cargar datos con spinner solo la primera vez
 with st.spinner("Cargando datos..."):
@@ -777,7 +806,7 @@ with tab_desp:
                 """, unsafe_allow_html=True)
             with col_pb:
                 st.markdown("<br><br>", unsafe_allow_html=True)
-                if st.button("✕", key=f"del_ped_{i}"):
+                if rol not in ("visita",) and st.button("✕", key=f"del_ped_{i}"):
                     pedido_a_eliminar = i
         if pedido_a_eliminar is not None:
             st.session_state.pedido.pop(pedido_a_eliminar); st.rerun()
@@ -822,7 +851,8 @@ with tab_desp:
                                   format_func=lambda i: lote_ops[i], key="lote_desp")
             lote_d = lotes_d[idx_ld]
 
-            if st.button("✅ DESCONTAR DEL LOTE", use_container_width=True, key="btn_desc"):
+            _puede_descontar = rol in ("admin", "operario")
+            if _puede_descontar and st.button("✅ DESCONTAR DEL LOTE", use_container_width=True, key="btn_desc"):
                 cant_p = float(item_sel['cant'])
                 cant_l = float(lote_d.get('cantidad', 0))
                 try:
@@ -844,6 +874,22 @@ with tab_desp:
 
                     registrar_historial("SALIDA", cod_d, item_sel['nombre'], cant_p, lote_d.get('ubicacion',''), usuario)
                     recalcular_maestra(cod_d, inventario)
+                    # Actualizar pedido en Supabase: sacar ítem ejecutado
+                    _ped_id = item_sel.get('ped_id')
+                    if _ped_id:
+                        try:
+                            import json as _j2
+                            _items_rest = [{"cod_int":it['cod'],"cantidad":it['cant'],"nombre":it['nombre']}
+                                           for it in st.session_state.pedido]
+                            if _items_rest:
+                                sb.table("pedidos").update({
+                                    "items": _j2.dumps(_items_rest),
+                                    "estado": "en_proceso"
+                                }).eq("id", _ped_id).execute()
+                            else:
+                                sb.table("pedidos").update({"estado":"completado"}).eq("id", _ped_id).execute()
+                            cargar_pedidos_nube.clear()
+                        except: pass
                     st.success(f"✅ {item_sel['nombre']} — {int(cant_p)} uds descontadas.")
                     refrescar(); st.rerun()
                 except Exception as e:
@@ -852,8 +898,21 @@ with tab_desp:
             st.warning(f"⚠️ Sin stock disponible para {item_sel['nombre']}.")
 
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🗑️ Limpiar pedido completo", key="limpiar_ped"):
-            st.session_state.pedido = []; st.rerun()
+        col_lp1, col_lp2 = st.columns(2)
+        with col_lp1:
+            if st.button("🗑️ Limpiar pedido local", key="limpiar_ped"):
+                st.session_state.pedido = []; st.rerun()
+        with col_lp2:
+            _ped_id_act = next((it.get('ped_id') for it in st.session_state.pedido if it.get('ped_id')), None)
+            if _ped_id_act and st.button("☁️ Marcar como completado", key="btn_completar_ped"):
+                try:
+                    sb.table("pedidos").update({"estado":"completado"}).eq("id", _ped_id_act).execute()
+                    cargar_pedidos_nube.clear()
+                    st.session_state.pedido = []
+                    st.success("✅ Pedido marcado como completado y removido de la lista.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
     else:
         st.markdown("""
@@ -947,7 +1006,7 @@ with tab_admin:
             col_au, col_ap, col_ar = st.columns(3)
             with col_au: nu = st.text_input("Usuario")
             with col_ap: np_ = st.text_input("Clave", type="password")
-            with col_ar: nr = st.selectbox("Rol", ["operario","admin","visita"])
+            with col_ar: nr = st.selectbox("Rol", ["operario","admin","visita","vendedor"])
             if st.form_submit_button("➕ Crear usuario", use_container_width=True):
                 if nu and np_:
                     try:
