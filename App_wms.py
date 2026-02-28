@@ -289,35 +289,19 @@ def recalcular_maestra(cod_int, inventario):
         st.error(f"Error recalcular: {e}")
     return total
 
-# ── SESIÓN PERSISTENTE (localStorage via JS) ──────────────────────────────────
-# Guarda usuario/rol en el navegador para no pedir login en cada recarga
+# ── SESIÓN PERSISTENTE vía query_params (sobrevive F5) ────────────────────────
+# La sesión se guarda en la URL (?lz_u=juan&lz_r=operario).
+# Al recargar los params siguen en la URL → no pide login.
+# Solo se borran cuando el usuario pulsa "Cambiar usuario".
+
 if "usuario" not in st.session_state:
     st.session_state.usuario = None
     st.session_state.rol     = None
-    st.session_state._sess_cargada = False
 
-# Inyectar JS que guarda/recupera sesión en localStorage
-st.markdown("""
-<script>
-(function() {
-    // Al cargar: enviar sesión guardada a Streamlit via URL param
-    const u = localStorage.getItem('lz_usuario');
-    const r = localStorage.getItem('lz_rol');
-    if (u && r && !window.location.search.includes('lz_u=')) {
-        const url = new URL(window.location.href);
-        url.searchParams.set('lz_u', u);
-        url.searchParams.set('lz_r', r);
-        window.location.replace(url.toString());
-    }
-})();
-</script>
-""", unsafe_allow_html=True)
-
-# Leer parámetros de URL si vienen del JS
-params = st.query_params
-if not st.session_state.usuario and 'lz_u' in params and 'lz_r' in params:
-    st.session_state.usuario = params['lz_u']
-    st.session_state.rol     = params['lz_r']
+_qp = st.query_params
+if not st.session_state.usuario and "lz_u" in _qp and "lz_r" in _qp:
+    st.session_state.usuario = _qp["lz_u"]
+    st.session_state.rol     = _qp["lz_r"]
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # LOGIN
@@ -338,15 +322,18 @@ if not st.session_state.usuario:
         clave   = st.text_input("CLAVE",   placeholder="••••••••",            label_visibility="collapsed", type="password", key="l_pwd")
         if st.button("ENTRAR  →", use_container_width=True):
             if usuario == "admin" and clave == "70797474":
-                st.session_state.usuario = "admin"; st.session_state.rol = "admin"; st.rerun()
+                st.session_state.usuario = "admin"; st.session_state.rol = "admin"
+                st.query_params["lz_u"] = "admin"
+                st.query_params["lz_r"] = "admin"
+                st.rerun()
             else:
                 try:
                     r = sb.table("usuarios").select("*").eq("usuario", usuario.lower().strip()).eq("clave", clave).execute().data
                     if r:
                         st.session_state.usuario = r[0]['usuario']
                         st.session_state.rol     = r[0]['rol']
-                        _u = r[0]['usuario']; _r = r[0]['rol']
-                        st.markdown(f"<script>localStorage.setItem('lz_usuario','{_u}');localStorage.setItem('lz_rol','{_r}');</script>", unsafe_allow_html=True)
+                        st.query_params["lz_u"] = r[0]['usuario']
+                        st.query_params["lz_r"] = r[0]['rol']
                         st.rerun()
                     else:
                         st.error("Usuario o clave incorrectos.")
@@ -379,8 +366,8 @@ with col_h2:
         refrescar()
     if st.button("🔄 Cambiar usuario", use_container_width=True):
         st.session_state.usuario = None
-        st.session_state.rol = None
-        st.markdown("<script>localStorage.removeItem('lz_usuario');localStorage.removeItem('lz_rol');window.location.href=window.location.pathname;</script>", unsafe_allow_html=True)
+        st.session_state.rol     = None
+        st.query_params.clear()
         st.rerun()
 
 # Cargar datos con spinner solo la primera vez
