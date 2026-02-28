@@ -1,4 +1,4 @@
-"""
+k"""
 LOGIEZE WEB — versión Streamlit para celular
 Instalar:  pip install streamlit supabase pandas openpyxl
 Correr:    streamlit run logieze_web.py
@@ -456,7 +456,7 @@ with tab_mov:
         df_res = pd.DataFrame([{
             "Nombre": p['nombre'],
             "Código": p['cod_int'],
-            "Stock":  int(p.get('cantidad_total',0) or 0),
+            "Stock":  int(p.get('stock_total',0) or 0),
         } for p in productos_filtrados])
 
         st.dataframe(df_res, use_container_width=True, hide_index=True,
