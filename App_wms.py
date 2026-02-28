@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from supabase import create_client, Client
+from io import StringIO
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 SUPABASE_URL = "https://twnzmsrthinzbyoedwnc.supabase.co"
