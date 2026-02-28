@@ -1,4 +1,4 @@
-k"""
+"""
 LOGIEZE WEB — versión Streamlit para celular
 Instalar:  pip install streamlit supabase pandas openpyxl
 Correr:    streamlit run logieze_web.py
