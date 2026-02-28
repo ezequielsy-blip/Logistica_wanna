@@ -7,7 +7,6 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from supabase import create_client, Client
-from io import StringIO
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 SUPABASE_URL = "https://twnzmsrthinzbyoedwnc.supabase.co"
@@ -234,6 +233,35 @@ def refrescar():
     cargar_inventario.clear()
     cargar_historial_cache.clear()
     st.rerun()
+
+def _wa_config():
+    """Devuelve (numero, apikey) desde Supabase config, o ('','') si no hay."""
+    try:
+        r1 = sb.table("config").select("valor").eq("clave","wa_numero").execute().data
+        r2 = sb.table("config").select("valor").eq("clave","wa_apikey").execute().data
+        return (r1[0]['valor'] if r1 else "", r2[0]['valor'] if r2 else "")
+    except:
+        return ("", "")
+
+def _enviar_whatsapp(numero, apikey, mensaje, callback_ok=None, callback_err=None):
+    """Envia mensaje via CallMeBot."""
+    import urllib.request, urllib.parse, threading
+    def _send():
+        try:
+            num_limpio = "+" + numero.replace("+","").replace(" ","").replace("-","")
+            msg_enc = urllib.parse.quote(mensaje, safe='')
+            url = (f"https://api.callmebot.com/whatsapp.php"
+                   f"?phone={num_limpio}&text={msg_enc}&apikey={apikey}")
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                body = resp.read().decode("utf-8", errors="ignore")
+            if "queued" in body.lower() or resp.status == 200:
+                if callback_ok: callback_ok()
+            else:
+                if callback_err: callback_err(body[:100])
+        except Exception as e:
+            if callback_err: callback_err(str(e)[:100])
+    threading.Thread(target=_send, daemon=True).start()
 
 # ── UTILIDADES ────────────────────────────────────────────────────────────────
 def parsear_fecha(texto):
@@ -751,6 +779,17 @@ with tab_desp:
                         "estado": "pendiente"
                     }).execute()
                     cargar_pedidos_nube.clear()
+                    # Notificar al admin por WhatsApp
+                    _wa_num, _wa_key = _wa_config()
+                    if _wa_num and _wa_key:
+                        _msg = (
+                            f"PEDIDO NUEVO - LOGIEZE"
+                            f" | Vendedor: {usuario}"
+                            f" | Pedido: {nombre_ped.strip()}"
+                            f" | Items: {len(items_subir)}"
+                            f" | {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+                        )
+                        _enviar_whatsapp(_wa_num, _wa_key, _msg)
                     st.success(f"☁️ '{nombre_ped}' guardado — {len(items_subir)} ítems. Los chicos ya lo pueden ver.")
                     st.rerun()
                 except Exception as e:
@@ -1003,6 +1042,85 @@ with tab_admin:
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error: {e}")
+
+        st.markdown("---")
+        st.markdown('<p class="sec-label">📱 NOTIFICACIONES WHATSAPP</p>', unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background:rgba(37,211,102,0.08);border:1px solid rgba(37,211,102,0.3);
+                    border-radius:12px;padding:12px 16px;margin-bottom:10px;font-size:12px;color:#94A3B8;">
+            Recibis un WhatsApp cuando un vendedor carga un pedido nuevo.<br>
+            <b style="color:#25D366">Activar CallMeBot:</b> manda el mensaje
+            <code>I allow callmebot to send me messages</code> al <b>+34 644 97 74 26</b> por WhatsApp.
+            Despues de unos minutos te responden con tu API Key.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Leer config actual
+        try:
+            _wa_num_db = sb.table("config").select("valor").eq("clave","wa_numero").execute().data
+            _wa_key_db = sb.table("config").select("valor").eq("clave","wa_apikey").execute().data
+            _wa_num_actual = _wa_num_db[0]["valor"] if _wa_num_db else ""
+            _wa_key_actual = _wa_key_db[0]["valor"] if _wa_key_db else ""
+        except:
+            _wa_num_actual = _wa_key_actual = ""
+
+        with st.form("form_wa"):
+            col_wn, col_wk = st.columns(2)
+            with col_wn:
+                wa_num = st.text_input("Tu numero WhatsApp:", value=_wa_num_actual,
+                                       placeholder="+5491112345678")
+            with col_wk:
+                wa_key = st.text_input("API Key de CallMeBot:", value=_wa_key_actual,
+                                       placeholder="123456")
+            col_ws, col_wt = st.columns(2)
+            with col_ws:
+                if st.form_submit_button("💾 Guardar numero", use_container_width=True):
+                    if wa_num.strip() and wa_key.strip():
+                        try:
+                            sb.table("config").upsert(
+                                {"clave": "wa_numero", "valor": wa_num.strip()},
+                                on_conflict="clave"
+                            ).execute()
+                            sb.table("config").upsert(
+                                {"clave": "wa_apikey", "valor": wa_key.strip()},
+                                on_conflict="clave"
+                            ).execute()
+                            # Verificar
+                            check = sb.table("config").select("valor").eq("clave","wa_numero").execute().data
+                            if check and check[0]["valor"] == wa_num.strip():
+                                st.success(f"✅ Guardado correctamente: {wa_num.strip()}")
+                            else:
+                                st.warning("No se pudo verificar el guardado. Revisa los permisos RLS en Supabase (ejecuta fix_rls_config.sql).")
+                        except Exception as e:
+                            err = str(e)
+                            if "rls" in err.lower() or "policy" in err.lower() or "42501" in err:
+                                st.error("Sin permisos (RLS activo). Ejecuta el SQL de fix_rls_config.sql en Supabase.")
+                            elif "42P01" in err or "does not exist" in err.lower():
+                                st.error("Tabla config no existe. Ejecuta fix_tabla_config.sql en Supabase.")
+                            else:
+                                st.error(f"Error: {err}")
+                    else:
+                        st.warning("Completa numero y API key.")
+            with col_wt:
+                if st.form_submit_button("🔔 Probar ahora", use_container_width=True):
+                    if _wa_num_actual and _wa_key_actual:
+                        resultado = {"ok": False, "err": ""}
+                        import time
+                        def _ok(): resultado["ok"] = True
+                        def _err(e): resultado["err"] = e
+                        _enviar_whatsapp(_wa_num_actual, _wa_key_actual,
+                            "LOGIEZE - Prueba de notificacion exitosa!",
+                            callback_ok=_ok, callback_err=_err)
+                        time.sleep(2)  # esperar respuesta
+                        if resultado["ok"]:
+                            st.success("Mensaje enviado. Revisa tu WhatsApp.")
+                        else:
+                            st.warning(f"Enviado (verificar WhatsApp). Respuesta: {resultado['err'] or 'OK'}")
+                    else:
+                        st.warning("Guarda el numero y API key primero.")
+
+        if _wa_num_actual:
+            st.caption(f"Numero activo: {_wa_num_actual}")
 
         st.markdown("---")
         st.markdown('<p class="sec-label">⚠️ ZONA PELIGROSA</p>', unsafe_allow_html=True)
