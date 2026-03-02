@@ -1137,10 +1137,23 @@ with tab_asist:
         return t.lower().strip()
 
     def _num(txt):
-        """Extrae el primer número del texto. Soporta palabras numéricas."""
-        nums = _re.findall(r'\d+(?:[.,]\d+)?', txt)
-        if nums:
-            return float(nums[0].replace(',','.'))
+        """Extrae cantidad del texto, ignorando números que son códigos de producto o ubicaciones."""
+        # Obtener todos los códigos de producto existentes para no confundirlos con cantidades
+        codigos_existentes = {str(p.get('cod_int','')) for p in maestra}
+
+        # Primero eliminar todas las ubicaciones del texto para que sus números no confundan
+        txt_sin_ubis = _re.sub(r'\b[0-9]{1,2}[-_][0-9A-Za-z]{1,4}\b', '', txt)
+
+        # Extraer números del texto limpio
+        nums = _re.findall(r'\d+(?:[.,]\d+)?', txt_sin_ubis)
+
+        for num_str in nums:
+            # Ignorar si es un código de producto conocido
+            if num_str in codigos_existentes:
+                continue
+            return float(num_str.replace(',','.'))
+
+        # Palabras numéricas como fallback
         tabla = {
             'un':1,'una':1,'dos':2,'tres':3,'cuatro':4,'cinco':5,
             'seis':6,'siete':7,'ocho':8,'nueve':9,'diez':10,'once':11,
@@ -1438,10 +1451,12 @@ with tab_asist:
                      if str(l.get("ubicacion","")).upper() == ubi_orig), None)
         if not lote:
             return None, f"❌ No hay lote de *{nom}* en {ubi_orig}."
-        disp     = float(lote.get("cantidad", 0) or 0)
-        cant_mov = cant if cant > 0 else disp
-        if cant_mov > disp:
-            return None, f"❌ Solo hay {int(disp)} uds en {ubi_orig}."
+        disp = float(lote.get("cantidad", 0) or 0)
+        # Si no especificó cantidad, o especificó más de lo disponible → mover TODO
+        if cant == 0 or cant > disp:
+            cant_mov = disp
+        else:
+            cant_mov = cant
         nueva = disp - cant_mov
         if nueva <= 0:
             sb.table("inventario").delete().eq("id", lote["id"]).execute()
