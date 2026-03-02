@@ -1135,22 +1135,33 @@ with tab_admin:
             _gk_val = _gk[0]["valor"] if _gk else ""
         except:
             _gk_val = ""
-        with st.form("form_groq_key"):
-            _new_gk = st.text_input("Groq API Key (gratis):", value=_gk_val,
-                                     placeholder="gsk_...", type="password")
-            if st.form_submit_button("💾 Guardar API Key", use_container_width=True):
-                if _new_gk.strip():
-                    try:
-                        ex = sb.table("config").select("id").eq("clave","groq_key").execute().data
-                        if ex:
-                            sb.table("config").update({"valor":_new_gk.strip()}).eq("clave","groq_key").execute()
-                        else:
-                            sb.table("config").insert({"clave":"groq_key","valor":_new_gk.strip()}).execute()
-                        st.success("✅ API Key guardada.")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                else:
-                    st.warning("Ingresá la API key.")
+        _new_gk = st.text_input("Groq API Key (gratis):", value="",
+                                 placeholder="Pegá tu key acá: gsk_...",
+                                 type="password", key="groq_key_input")
+        if st.button("💾 Guardar API Key", use_container_width=True, key="btn_save_groq"):
+            # Limpiar AGRESIVAMENTE: quitar espacios, newlines, tabs, comillas
+            _clean = _new_gk
+            for ch in [" ", "\n", "\r", "\t", '"', "'"]:
+                _clean = _clean.replace(ch, "")
+            _clean = _clean.strip()
+            if _clean:
+                try:
+                    ex = sb.table("config").select("id").eq("clave","groq_key").execute().data
+                    if ex:
+                        sb.table("config").update({"valor": _clean}).eq("clave","groq_key").execute()
+                    else:
+                        sb.table("config").insert({"clave":"groq_key","valor": _clean}).execute()
+                    # Verificar que se guardó bien
+                    check = sb.table("config").select("valor").eq("clave","groq_key").execute().data
+                    saved = check[0]["valor"] if check else ""
+                    if saved == _clean:
+                        st.success(f"✅ Guardada. Empieza con: {_clean[:8]}... ({len(_clean)} caracteres)")
+                    else:
+                        st.error(f"Se guardó diferente. Guardado: '{saved[:12]}...'")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+            else:
+                st.warning("Pegá la API key primero.")
 
         st.markdown("---")
         st.markdown('<p class="sec-label">⚠️ ZONA PELIGROSA</p>', unsafe_allow_html=True)
@@ -1211,7 +1222,12 @@ with tab_asist:
     # Leer API key
     try:
         _gk = sb.table("config").select("valor").eq("clave","groq_key").execute().data
-        GROQ_KEY = _gk[0]["valor"].strip() if _gk else ""
+        _raw = _gk[0]["valor"] if _gk else ""
+        # Limpiar agresivamente al leer también
+        GROQ_KEY = _raw
+        for _ch in [" ", "\n", "\r", "\t", '"', "'"]:
+            GROQ_KEY = GROQ_KEY.replace(_ch, "")
+        GROQ_KEY = GROQ_KEY.strip()
     except:
         GROQ_KEY = ""
 
@@ -1273,10 +1289,9 @@ with tab_asist:
     def _groq(user_msg):
         import json as _j, urllib.request as _ur
 
-        # Verificar key limpia
-        key = GROQ_KEY.strip().strip('"').strip("'")
-        if not key.startswith("gsk_"):
-            raise Exception("API Key inválida — debe empezar con gsk_. Actualizala en ADMIN.")
+        key = GROQ_KEY
+        if not key:
+            raise Exception("No hay API Key guardada. Ir a ADMIN → Asistente IA.")
 
         # Contexto relevante para ESTA consulta
         _inv_txt, _hist_txt = _ctx(user_msg)
