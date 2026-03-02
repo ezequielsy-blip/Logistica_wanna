@@ -1135,33 +1135,22 @@ with tab_admin:
             _gk_val = _gk[0]["valor"] if _gk else ""
         except:
             _gk_val = ""
-        _new_gk = st.text_input("Groq API Key (gratis):", value="",
-                                 placeholder="Pegá tu key acá: gsk_...",
-                                 type="password", key="groq_key_input")
-        if st.button("💾 Guardar API Key", use_container_width=True, key="btn_save_groq"):
-            # Limpiar AGRESIVAMENTE: quitar espacios, newlines, tabs, comillas
-            _clean = _new_gk
-            for ch in [" ", "\n", "\r", "\t", '"', "'"]:
-                _clean = _clean.replace(ch, "")
-            _clean = _clean.strip()
-            if _clean:
-                try:
-                    ex = sb.table("config").select("id").eq("clave","groq_key").execute().data
-                    if ex:
-                        sb.table("config").update({"valor": _clean}).eq("clave","groq_key").execute()
-                    else:
-                        sb.table("config").insert({"clave":"groq_key","valor": _clean}).execute()
-                    # Verificar que se guardó bien
-                    check = sb.table("config").select("valor").eq("clave","groq_key").execute().data
-                    saved = check[0]["valor"] if check else ""
-                    if saved == _clean:
-                        st.success(f"✅ Guardada. Empieza con: {_clean[:8]}... ({len(_clean)} caracteres)")
-                    else:
-                        st.error(f"Se guardó diferente. Guardado: '{saved[:12]}...'")
-                except Exception as e:
-                    st.error(f"Error: {e}")
-            else:
-                st.warning("Pegá la API key primero.")
+        with st.form("form_groq_key"):
+            _new_gk = st.text_input("Groq API Key (gratis):", value=_gk_val,
+                                     placeholder="gsk_...", type="password")
+            if st.form_submit_button("💾 Guardar API Key", use_container_width=True):
+                if _new_gk.strip():
+                    try:
+                        ex = sb.table("config").select("id").eq("clave","groq_key").execute().data
+                        if ex:
+                            sb.table("config").update({"valor":_new_gk.strip()}).eq("clave","groq_key").execute()
+                        else:
+                            sb.table("config").insert({"clave":"groq_key","valor":_new_gk.strip()}).execute()
+                        st.success("✅ API Key guardada.")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+                else:
+                    st.warning("Ingresá la API key.")
 
         st.markdown("---")
         st.markdown('<p class="sec-label">⚠️ ZONA PELIGROSA</p>', unsafe_allow_html=True)
@@ -1222,12 +1211,7 @@ with tab_asist:
     # Leer API key
     try:
         _gk = sb.table("config").select("valor").eq("clave","groq_key").execute().data
-        _raw = _gk[0]["valor"] if _gk else ""
-        # Limpiar agresivamente al leer también
-        GROQ_KEY = _raw
-        for _ch in [" ", "\n", "\r", "\t", '"', "'"]:
-            GROQ_KEY = GROQ_KEY.replace(_ch, "")
-        GROQ_KEY = GROQ_KEY.strip()
+        GROQ_KEY = _gk[0]["valor"].strip() if _gk else ""
     except:
         GROQ_KEY = ""
 
@@ -1250,70 +1234,57 @@ with tab_asist:
         st.session_state.chat_hist = []
 
     # Contexto inventario compacto
-    def _buscar_en_inventario(query):
-        """Busca productos relevantes para la consulta del usuario."""
-        q = query.upper()
-        resultados = []
-        for p in maestra:
-            nom = str(p.get("nombre","")).upper()
-            cod = str(p.get("cod_int",""))
-            if q in nom or q in cod or any(
-                q in str(w) for w in q.split() if len(w)>2
-            ):
-                resultados.append(p)
-        # Si no encontró nada específico, devolver todos
-        return resultados if resultados else maestra
-
-    def _ctx(query=""):
-        """Genera contexto de inventario relevante para la consulta."""
-        # Si la query menciona un código o nombre específico, filtrar
-        productos = _buscar_en_inventario(query) if query else maestra
-
+    def _ctx():
         rows = []
-        for p in productos:
+        for p in maestra:
             cod = str(p.get("cod_int",""))
             stk = int(float(p.get("cantidad_total") or 0))
             lts = " | ".join(
-                f"{l.get('ubicacion','')}:{int(float(l.get('cantidad',0) or 0))} vto:{l.get('fecha','')}"
-                for l in idx_inv.get(cod,[])[:5]
+                f"{l.get('ubicacion','')}:{int(float(l.get('cantidad',0)))} vto:{l.get('fecha','')}"
+                for l in idx_inv.get(cod,[])[:4]
             )
             rows.append(f"{p.get('nombre','')} [cod:{cod} total:{stk}] {lts}")
-
-        h = cargar_historial_cache()[:8]
+        h = cargar_historial_cache()[:10]
         hist = "\n".join(
-            f"{x.get('tipo','')} {x.get('nombre','')} x{x.get('cantidad','')} ubi:{x.get('ubicacion','')}"
+            f"{x.get('tipo','')} {x.get('nombre','')} x{x.get('cantidad','')} ubi:{x.get('ubicacion','')} por:{x.get('usuario','')}"
             for x in h
         )
         return "\n".join(rows), hist
 
+    _inv_txt, _hist_txt = _ctx()
+
+    SYSTEM = f"""Sos el asistente inteligente de LOGIEZE, sistema de gestión de inventario.
+Usuario: {usuario} | Rol: {rol} | {datetime.now().strftime('%d/%m/%Y %H:%M')}
+
+INVENTARIO COMPLETO:
+{_inv_txt}
+
+ÚLTIMOS MOVIMIENTOS:
+{_hist_txt}
+
+CAPACIDADES:
+- Respondés cualquier pregunta sobre el inventario con datos reales
+- Ejecutás acciones reales (salida, entrada, mover, corregir stock)
+- Charlás de cualquier tema libremente
+
+ACCIONES — cuando el usuario pide ejecutar algo, respondé SOLO con este JSON exacto:
+{{"accion":"salida","params":{{"cod_int":"X","cantidad":N,"ubicacion":"XX"}},"confirmacion":"descripcion"}}
+{{"accion":"entrada","params":{{"cod_int":"X","cantidad":N,"ubicacion":"XX","fecha_vto":"MM/AA"}},"confirmacion":"descripcion"}}
+{{"accion":"mover","params":{{"cod_int":"X","cantidad":N,"ubicacion_origen":"XX","ubicacion_destino":"YY"}},"confirmacion":"descripcion"}}
+{{"accion":"corregir","params":{{"cod_int":"X","ubicacion":"XX","cantidad_nueva":N}},"confirmacion":"descripcion"}}
+
+REGLAS:
+- Si es consulta o charla → respondé en texto, SIN JSON
+- Si es acción → respondé SOLO el JSON, sin texto extra
+- Buscá productos por nombre aproximado si no dan código exacto
+- Roles visita/vendedor NO pueden ejecutar acciones de escritura
+- Español rioplatense, amigable y directo
+"""
+
     def _groq(user_msg):
         import json as _j, urllib.request as _ur
-
-        key = GROQ_KEY
-        if not key:
-            raise Exception("No hay API Key guardada. Ir a ADMIN → Asistente IA.")
-
-        # Contexto relevante para ESTA consulta
-        _inv_txt, _hist_txt = _ctx(user_msg)
-
-        system = (
-            f"Sos el asistente inteligente de LOGIEZE.\n"
-            f"Usuario: {usuario} | Rol: {rol} | {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-            f"INVENTARIO (productos relevantes para esta consulta):\n{_inv_txt}\n\n"
-            f"ÚLTIMOS MOVIMIENTOS:\n{_hist_txt}\n\n"
-            "Podés responder consultas de inventario con datos reales, ejecutar acciones Y charlar libremente.\n\n"
-            "Si el usuario pide EJECUTAR algo, respondé SOLO con este JSON (sin texto extra):\n"
-            '{"accion":"salida","params":{"cod_int":"X","cantidad":N,"ubicacion":"XX"},"confirmacion":"descripcion"}\n'
-            '{"accion":"entrada","params":{"cod_int":"X","cantidad":N,"ubicacion":"XX","fecha_vto":"MM/AA"},"confirmacion":"descripcion"}\n'
-            '{"accion":"mover","params":{"cod_int":"X","cantidad":N,"ubicacion_origen":"XX","ubicacion_destino":"YY"},"confirmacion":"descripcion"}\n'
-            '{"accion":"corregir","params":{"cod_int":"X","ubicacion":"XX","cantidad_nueva":N},"confirmacion":"descripcion"}\n\n'
-            "Si es consulta o charla → texto libre, SIN JSON.\n"
-            "Buscá por nombre aproximado si no dan código exacto.\n"
-            "Español rioplatense, amigable y directo."
-        )
-
-        msgs = [{"role":"system","content": system}]
-        for m in st.session_state.chat_hist[-12:]:
+        msgs = [{"role":"system","content": SYSTEM}]
+        for m in st.session_state.chat_hist[-20:]:
             msgs.append({"role": "user" if m["rol"]=="user" else "assistant",
                          "content": m["texto"]})
         msgs.append({"role":"user","content": user_msg})
@@ -1324,22 +1295,14 @@ with tab_asist:
             "temperature": 0.6,
             "max_tokens": 1024
         }).encode()
-
         req = _ur.Request(
             "https://api.groq.com/openai/v1/chat/completions",
             data=payload,
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json"
-            }
+            headers={"Authorization": f"Bearer {GROQ_KEY}",
+                     "Content-Type": "application/json"}
         )
-        with _ur.urlopen(req, timeout=25) as r:
-            data = _j.loads(r.read())
-
-        if "error" in data:
-            raise Exception(data["error"].get("message", str(data["error"])))
-
-        return data["choices"][0]["message"]["content"]
+        with _ur.urlopen(req, timeout=20) as r:
+            return _j.loads(r.read())["choices"][0]["message"]["content"]
 
     def _ejecutar(accion, params):
         cod  = str(params.get("cod_int","")).strip()
@@ -1501,16 +1464,10 @@ with tab_asist:
 
             except Exception as e:
                 err = str(e)
-                if "401" in err or "403" in err or "inválida" in err.lower():
-                    msg_e = "❌ API Key inválida o vencida. Ir a ADMIN → Asistente IA y cargar la key nuevamente (empieza con gsk_)."
-                elif "429" in err:
-                    msg_e = "⚠️ Groq al límite momentáneamente. Esperá unos segundos e intentá de nuevo."
-                elif "timeout" in err.lower():
-                    msg_e = "⏱️ Tardó demasiado. Intentá de nuevo."
-                elif "gsk_" in err:
-                    msg_e = err
-                else:
-                    msg_e = f"❌ Error: {err[:200]}"
+                if "401" in err: msg_e = "API Key inválida. Actualizala en ADMIN → Asistente IA."
+                elif "429" in err: msg_e = "Límite de Groq alcanzado momentáneamente. Esperá unos segundos."
+                elif "timeout" in err.lower(): msg_e = "Tardó demasiado. Intentá de nuevo."
+                else: msg_e = f"Error: {err[:150]}"
                 st.session_state.chat_hist.append({"rol":"assistant","texto":msg_e,"ok":False})
 
         st.rerun()
