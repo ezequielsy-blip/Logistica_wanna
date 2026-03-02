@@ -317,6 +317,25 @@ def recalcular_maestra(cod_int, inventario):
     except Exception as e:
         st.error(f"Error recalcular: {e}")
     return total
+def _auditar_stock_total(cod_int):
+    """
+    Función de precisión para el Operario Gemini: 
+    Suma todas las unidades de un código en todos los depósitos.
+    """
+    try:
+        res = supabase.table("inventario").select("cantidad").eq("cod_int", cod_int).execute()
+        if res.data:
+            total = sum(item['cantidad'] for item in res.data)
+            return total
+        return 0
+    except Exception:
+        return 0
+
+# Esta línea es para que el 'Megazord' la use en la interfaz
+def get_megazord_total(cod_int):
+    total = _auditar_stock_total(cod_int)
+    return f"TOTAL MEGAZORD: {total} unidades"
+
 
 # ── SESIÓN PERSISTENTE vía query_params (sobrevive F5) ────────────────────────
 # La sesión se guarda en la URL (?lz_u=juan&lz_r=operario).
