@@ -1016,7 +1016,388 @@ with tab_plan:
 with tab_admin:
     if rol != "admin":
         st.warning("🔒 Solo disponible para administradores.")
-    elsue)
+    else:
+        st.markdown('<p class="sec-label">👤 GESTIÓN DE USUARIOS</p>', unsafe_allow_html=True)
+
+        try:
+            usuarios_db = sb.table("usuarios").select("*").execute().data or []
+            if usuarios_db:
+                df_u = pd.DataFrame(usuarios_db)[["usuario","rol"]]
+                df_u.columns = ["USUARIO","ROL"]
+                st.dataframe(df_u, use_container_width=True, hide_index=True)
+        except: pass
+
+        st.markdown("---")
+        st.markdown('<p class="sec-label">CREAR USUARIO</p>', unsafe_allow_html=True)
+        with st.form("form_crear_usuario"):
+            col_au, col_ap, col_ar = st.columns(3)
+            with col_au: nu = st.text_input("Usuario")
+            with col_ap: np_ = st.text_input("Clave", type="password")
+            with col_ar: nr = st.selectbox("Rol", ["operario","admin","visita","vendedor"])
+            if st.form_submit_button("➕ Crear usuario", use_container_width=True):
+                if nu and np_:
+                    try:
+                        sb.table("usuarios").insert({"usuario": nu.lower().strip(), "clave": np_, "rol": nr}).execute()
+                        st.success("✅ Usuario creado.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+        st.markdown("---")
+        st.markdown('<p class="sec-label">📱 NOTIFICACIONES WHATSAPP</p>', unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background:rgba(37,211,102,0.08);border:1px solid rgba(37,211,102,0.3);
+                    border-radius:12px;padding:12px 16px;margin-bottom:10px;font-size:12px;color:#94A3B8;">
+            Recibis un WhatsApp cuando un vendedor carga un pedido nuevo.<br>
+            <b style="color:#25D366">Activar CallMeBot:</b> manda el mensaje
+            <code>I allow callmebot to send me messages</code> al <b>+34 644 97 74 26</b> por WhatsApp.
+            Despues de unos minutos te responden con tu API Key.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Leer config actual
+        try:
+            _wa_num_db = sb.table("config").select("valor").eq("clave","wa_numero").execute().data
+            _wa_key_db = sb.table("config").select("valor").eq("clave","wa_apikey").execute().data
+            _wa_num_actual = _wa_num_db[0]["valor"] if _wa_num_db else ""
+            _wa_key_actual = _wa_key_db[0]["valor"] if _wa_key_db else ""
+        except:
+            _wa_num_actual = _wa_key_actual = ""
+
+        with st.form("form_wa"):
+            col_wn, col_wk = st.columns(2)
+            with col_wn:
+                wa_num = st.text_input("Tu numero WhatsApp:", value=_wa_num_actual,
+                                       placeholder="+5491112345678")
+            with col_wk:
+                wa_key = st.text_input("API Key de CallMeBot:", value=_wa_key_actual,
+                                       placeholder="123456")
+            col_ws, col_wt = st.columns(2)
+            with col_ws:
+                if st.form_submit_button("💾 Guardar numero", use_container_width=True):
+                    if wa_num.strip() and wa_key.strip():
+                        try:
+                            sb.table("config").upsert(
+                                {"clave": "wa_numero", "valor": wa_num.strip()},
+                                on_conflict="clave"
+                            ).execute()
+                            sb.table("config").upsert(
+                                {"clave": "wa_apikey", "valor": wa_key.strip()},
+                                on_conflict="clave"
+                            ).execute()
+                            # Verificar
+                            check = sb.table("config").select("valor").eq("clave","wa_numero").execute().data
+                            if check and check[0]["valor"] == wa_num.strip():
+                                st.success(f"✅ Guardado correctamente: {wa_num.strip()}")
+                            else:
+                                st.warning("No se pudo verificar el guardado. Revisa los permisos RLS en Supabase (ejecuta fix_rls_config.sql).")
+                        except Exception as e:
+                            err = str(e)
+                            if "rls" in err.lower() or "policy" in err.lower() or "42501" in err:
+                                st.error("Sin permisos (RLS activo). Ejecuta el SQL de fix_rls_config.sql en Supabase.")
+                            elif "42P01" in err or "does not exist" in err.lower():
+                                st.error("Tabla config no existe. Ejecuta fix_tabla_config.sql en Supabase.")
+                            else:
+                                st.error(f"Error: {err}")
+                    else:
+                        st.warning("Completa numero y API key.")
+            with col_wt:
+                if st.form_submit_button("🔔 Probar ahora", use_container_width=True):
+                    if _wa_num_actual and _wa_key_actual:
+                        resultado = {"ok": False, "err": ""}
+                        import time
+                        def _ok(): resultado["ok"] = True
+                        def _err(e): resultado["err"] = e
+                        _enviar_whatsapp(_wa_num_actual, _wa_key_actual,
+                            "LOGIEZE - Prueba de notificacion exitosa!",
+                            callback_ok=_ok, callback_err=_err)
+                        time.sleep(2)  # esperar respuesta
+                        if resultado["ok"]:
+                            st.success("Mensaje enviado. Revisa tu WhatsApp.")
+                        else:
+                            st.warning(f"Enviado (verificar WhatsApp). Respuesta: {resultado['err'] or 'OK'}")
+                    else:
+                        st.warning("Guarda el numero y API key primero.")
+
+        if _wa_num_actual:
+            st.caption(f"Numero activo: {_wa_num_actual}")
+
+        st.markdown("---")
+        st.markdown('<p class="sec-label">🤖 ASISTENTE IA — GROQ API KEY</p>', unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.3);
+                    border-radius:10px;padding:10px 14px;font-size:12px;color:#94A3B8;margin-bottom:8px;">
+            <b style="color:#F97316;">Obtener API Key gratis:</b> console.groq.com → API Keys → Create API Key  (100% gratis, sin tarjeta)
+        </div>
+        """, unsafe_allow_html=True)
+        try:
+            _gk = sb.table("config").select("valor").eq("clave","groq_key").execute().data
+            _gk_val = _gk[0]["valor"] if _gk else ""
+        except:
+            _gk_val = ""
+        with st.form("form_groq_key"):
+            _new_gk = st.text_input("Groq API Key (gratis):", value=_gk_val,
+                                     placeholder="gsk_...", type="password")
+            if st.form_submit_button("💾 Guardar API Key", use_container_width=True):
+                if _new_gk.strip():
+                    try:
+                        ex = sb.table("config").select("id").eq("clave","groq_key").execute().data
+                        if ex:
+                            sb.table("config").update({"valor":_new_gk.strip()}).eq("clave","groq_key").execute()
+                        else:
+                            sb.table("config").insert({"clave":"groq_key","valor":_new_gk.strip()}).execute()
+                        st.success("✅ API Key guardada.")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+                else:
+                    st.warning("Ingresá la API key.")
+
+        st.markdown("---")
+        st.markdown('<p class="sec-label">⚠️ ZONA PELIGROSA</p>', unsafe_allow_html=True)
+        tabla_wipe = st.selectbox("Tabla a borrar:", ["inventario","maestra","historial"], key="wipe_t")
+        confirmar  = st.text_input("Escribí CONFIRMAR para habilitar el borrado:", key="wipe_conf")
+        if confirmar == "CONFIRMAR":
+            if st.button(f"🗑️ BORRAR TODA LA TABLA '{tabla_wipe}'", type="primary", use_container_width=True):
+                try:
+                    id_col = "id" if tabla_wipe in ["inventario","historial"] else "cod_int"
+                    sb.table(tabla_wipe).delete().neq(id_col, -999).execute()
+                    st.success("Tabla borrada.")
+                    refrescar()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB ASISTENTE IA — GROQ (Llama 3.3 70B) — sin límites prácticos, gratis
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_asist:
+
+    st.markdown("""
+    <style>
+    .msg-user{background:linear-gradient(135deg,#1D4ED8,#2563EB);color:#fff;
+        border-radius:18px 18px 4px 18px;padding:10px 16px;margin:4px 0 4px 60px;
+        font-size:14px;line-height:1.6;}
+    .msg-bot{background:#1E293B;color:#F1F5F9;border-radius:4px 18px 18px 18px;
+        border:1px solid #334155;padding:10px 16px;margin:4px 60px 4px 0;
+        font-size:14px;line-height:1.6;white-space:pre-wrap;}
+    .msg-ok{background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);
+        border-radius:8px;padding:5px 12px;margin:2px 60px 6px 0;
+        font-size:12px;color:#10B981;font-family:monospace;}
+    .msg-err{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);
+        border-radius:8px;padding:5px 12px;margin:2px 60px 6px 0;
+        font-size:12px;color:#EF4444;}
+    .chat-lbl{font-size:11px;color:#475569;margin:6px 4px 1px;}
+    </style>""", unsafe_allow_html=True)
+
+    # Header
+    hc1, hc2 = st.columns([4,1])
+    with hc1:
+        st.markdown("""
+        <div style="display:flex;align-items:center;gap:12px;padding:4px 0 8px">
+            <div style="font-size:36px">🦙</div>
+            <div>
+                <div style="font-size:17px;font-weight:900;color:#F1F5F9;letter-spacing:1px">
+                    ASISTENTE LOGIEZE</div>
+                <div style="font-size:12px;color:#64748B">
+                    Groq · Llama 3.3 70B · Sin límites · Inventario inteligente · Chat libre</div>
+            </div>
+        </div>""", unsafe_allow_html=True)
+    with hc2:
+        if st.button("🗑️ Nuevo chat", use_container_width=True, key="clear_chat"):
+            st.session_state.chat_hist = []
+            st.rerun()
+
+    # Leer API key
+    try:
+        _gk = sb.table("config").select("valor").eq("clave","groq_key").execute().data
+        GROQ_KEY = _gk[0]["valor"].strip() if _gk else ""
+    except:
+        GROQ_KEY = ""
+
+    if not GROQ_KEY:
+        st.markdown("""
+        <div style="background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.3);
+                    border-radius:12px;padding:20px;text-align:center;margin:20px 0">
+            <div style="font-size:40px;margin-bottom:8px">🔑</div>
+            <div style="font-size:15px;font-weight:700;color:#F97316">Se necesita una API Key de Groq</div>
+            <div style="font-size:13px;color:#94A3B8;margin-top:8px">
+                <b>Gratis, sin tarjeta de crédito:</b><br>
+                1. Entrá a <b>console.groq.com</b><br>
+                2. Clic en <b>API Keys → Create API Key</b><br>
+                3. Copiá la key y pegala en <b>ADMIN → Asistente IA</b>
+            </div>
+        </div>""", unsafe_allow_html=True)
+        st.stop()
+
+    if "chat_hist" not in st.session_state:
+        st.session_state.chat_hist = []
+
+    # Contexto inventario compacto
+    def _ctx():
+        rows = []
+        for p in maestra:
+            cod = str(p.get("cod_int",""))
+            stk = int(float(p.get("cantidad_total") or 0))
+            lts = " | ".join(
+                f"{l.get('ubicacion','')}:{int(float(l.get('cantidad',0)))} vto:{l.get('fecha','')}"
+                for l in idx_inv.get(cod,[])[:4]
+            )
+            rows.append(f"{p.get('nombre','')} [cod:{cod} total:{stk}] {lts}")
+        h = cargar_historial_cache()[:10]
+        hist = "\n".join(
+            f"{x.get('tipo','')} {x.get('nombre','')} x{x.get('cantidad','')} ubi:{x.get('ubicacion','')} por:{x.get('usuario','')}"
+            for x in h
+        )
+        return "\n".join(rows), hist
+
+    _inv_txt, _hist_txt = _ctx()
+
+    SYSTEM = f"""Sos el asistente inteligente de LOGIEZE, sistema de gestión de inventario.
+Usuario: {usuario} | Rol: {rol} | {datetime.now().strftime('%d/%m/%Y %H:%M')}
+
+INVENTARIO COMPLETO:
+{_inv_txt}
+
+ÚLTIMOS MOVIMIENTOS:
+{_hist_txt}
+
+CAPACIDADES:
+- Respondés cualquier pregunta sobre el inventario con datos reales
+- Ejecutás acciones reales (salida, entrada, mover, corregir stock)
+- Charlás de cualquier tema libremente
+
+ACCIONES — cuando el usuario pide ejecutar algo, respondé SOLO con este JSON exacto:
+{{"accion":"salida","params":{{"cod_int":"X","cantidad":N,"ubicacion":"XX"}},"confirmacion":"descripcion"}}
+{{"accion":"entrada","params":{{"cod_int":"X","cantidad":N,"ubicacion":"XX","fecha_vto":"MM/AA"}},"confirmacion":"descripcion"}}
+{{"accion":"mover","params":{{"cod_int":"X","cantidad":N,"ubicacion_origen":"XX","ubicacion_destino":"YY"}},"confirmacion":"descripcion"}}
+{{"accion":"corregir","params":{{"cod_int":"X","ubicacion":"XX","cantidad_nueva":N}},"confirmacion":"descripcion"}}
+
+REGLAS:
+- Si es consulta o charla → respondé en texto, SIN JSON
+- Si es acción → respondé SOLO el JSON, sin texto extra
+- Buscá productos por nombre aproximado si no dan código exacto
+- Roles visita/vendedor NO pueden ejecutar acciones de escritura
+- Español rioplatense, amigable y directo
+"""
+
+    def _groq(user_msg):
+        import json as _j, urllib.request as _ur
+        msgs = [{"role":"system","content": SYSTEM}]
+        for m in st.session_state.chat_hist[-20:]:
+            msgs.append({"role": "user" if m["rol"]=="user" else "assistant",
+                         "content": m["texto"]})
+        msgs.append({"role":"user","content": user_msg})
+
+        payload = _j.dumps({
+            "model": "llama-3.3-70b-versatile",
+            "messages": msgs,
+            "temperature": 0.6,
+            "max_tokens": 1024
+        }).encode()
+        req = _ur.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=payload,
+            headers={"Authorization": f"Bearer {GROQ_KEY}",
+                     "Content-Type": "application/json"}
+        )
+        with _ur.urlopen(req, timeout=20) as r:
+            return _j.loads(r.read())["choices"][0]["message"]["content"]
+
+    def _ejecutar(accion, params):
+        cod  = str(params.get("cod_int","")).strip()
+        cant = float(params.get("cantidad", params.get("cantidad_nueva", 0)))
+        ubi  = str(params.get("ubicacion","")).upper().strip()
+
+        prod = next((p for p in maestra if str(p.get("cod_int",""))==cod), None)
+        if not prod:
+            prod = next((p for p in maestra if cod.upper() in str(p.get("nombre","")).upper()), None)
+            if prod: cod = str(prod["cod_int"])
+        if not prod:
+            return False, f"No encontré producto '{cod}'"
+        nom = prod["nombre"]
+
+        if accion == "salida":
+            lotes_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
+            lote = next((l for l in lotes_p if str(l.get("ubicacion","")).upper()==ubi), None)
+            if not lote:
+                lote = next((l for l in lotes_p if float(l.get("cantidad",0))>=cant), None)
+                if not lote:
+                    return False, f"Sin stock. Total: {int(sum(float(l.get('cantidad',0)) for l in lotes_p))} uds"
+                ubi = str(lote.get("ubicacion",""))
+            disp = float(lote.get("cantidad",0))
+            if disp < cant:
+                return False, f"Solo hay {int(disp)} uds en {ubi}"
+            nueva = disp - cant
+            if nueva <= 0:
+                sb.table("inventario").delete().eq("id",lote["id"]).execute()
+            else:
+                sb.table("inventario").update({"cantidad":nueva}).eq("id",lote["id"]).execute()
+            registrar_historial("SALIDA",cod,nom,cant,ubi,usuario)
+            recalcular_maestra(cod,inventario); refrescar()
+            return True, f"Salida: {int(cant)} uds de {nom} desde {ubi}. Quedan {int(nueva)} uds."
+
+        elif accion == "entrada":
+            fv = params.get("fecha_vto","")
+            lu = [l for l in inventario if str(l.get("cod_int",""))==cod and str(l.get("ubicacion","")).upper()==ubi]
+            if lu:
+                sb.table("inventario").update({"cantidad":float(lu[0].get("cantidad",0))+cant}).eq("id",lu[0]["id"]).execute()
+            else:
+                sb.table("inventario").insert({"cod_int":cod,"nombre":nom,"cantidad":cant,"ubicacion":ubi,"fecha":fv,"deposito":"PRINCIPAL"}).execute()
+            registrar_historial("ENTRADA",cod,nom,cant,ubi,usuario)
+            recalcular_maestra(cod,inventario); refrescar()
+            return True, f"Entrada: {int(cant)} uds de {nom} en {ubi}."
+
+        elif accion == "mover":
+            ud = str(params.get("ubicacion_destino","")).upper()
+            lotes_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
+            lote = next((l for l in lotes_p if str(l.get("ubicacion","")).upper()==ubi), None)
+            if not lote: return False, f"Sin lote de {nom} en {ubi}"
+            disp = float(lote.get("cantidad",0))
+            cm = cant if cant>0 else disp
+            if cm>disp: return False, f"Solo hay {int(disp)} uds"
+            nv = disp-cm
+            if nv<=0: sb.table("inventario").delete().eq("id",lote["id"]).execute()
+            else: sb.table("inventario").update({"cantidad":nv}).eq("id",lote["id"]).execute()
+            sb.table("inventario").insert({"cod_int":cod,"nombre":nom,"cantidad":cm,"ubicacion":ud,"fecha":lote.get("fecha",""),"deposito":lote.get("deposito","PRINCIPAL")}).execute()
+            registrar_historial("MOVIMIENTO",cod,nom,cm,f"{ubi}→{ud}",usuario)
+            recalcular_maestra(cod,inventario); refrescar()
+            return True, f"Movido: {int(cm)} uds de {nom}: {ubi} → {ud}."
+
+        elif accion == "corregir":
+            cn = float(params.get("cantidad_nueva",cant))
+            lotes_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
+            lote = next((l for l in lotes_p if str(l.get("ubicacion","")).upper()==ubi), None)
+            if not lote and lotes_p: lote=lotes_p[0]; ubi=str(lote.get("ubicacion",""))
+            if not lote: return False, f"Sin lotes de {nom}"
+            ant = float(lote.get("cantidad",0))
+            sb.table("inventario").update({"cantidad":cn}).eq("id",lote["id"]).execute()
+            registrar_historial("CORRECCIÓN",cod,nom,cn-ant,ubi,usuario)
+            recalcular_maestra(cod,inventario); refrescar()
+            return True, f"Corregido {nom} en {ubi}: {int(ant)} → {int(cn)} uds."
+
+        return False, "Acción desconocida"
+
+    # Mostrar chat
+    if not st.session_state.chat_hist:
+        st.markdown("""
+        <div style="text-align:center;padding:40px 0 20px">
+            <div style="font-size:52px">🦙</div>
+            <div style="font-size:16px;font-weight:700;color:#94A3B8;margin-top:10px">
+                Hola! Soy tu asistente de inventario.</div>
+            <div style="font-size:13px;color:#64748B;margin-top:10px;line-height:2.2">
+                <code>¿Cuánto stock hay del código 147?</code><br>
+                <code>Sacá 10 unidades de Ibuprofeno de 01-1A</code><br>
+                <code>¿Qué productos tienen menos de 5 unidades?</code><br>
+                <code>Mové el lote de ABC de 02-3B a 05-1A</code><br>
+                <code>Dame un resumen del inventario</code>
+            </div>
+        </div>""", unsafe_allow_html=True)
+    else:
+        for msg in st.session_state.chat_hist:
+            if msg["rol"] == "user":
+                st.markdown(f'<div class="chat-lbl" style="text-align:right">{usuario} 👤</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="msg-user">{msg["texto"]}</div>', unsafe_allow_html=True)
             else:
                 st.markdown('<div class="chat-lbl">🦙 Asistente</div>', unsafe_allow_html=True)
                 st.markdown(f'<div class="msg-bot">{msg["texto"]}</div>', unsafe_allow_html=True)
