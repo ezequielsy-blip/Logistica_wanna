@@ -1166,37 +1166,57 @@ with tab_asist:
     # Palabras a ignorar en búsqueda de productos
     _STOPWORDS = {
         'del','los','las','una','con','por','que','hay','uds','uni','para',
-        'desde','hasta','sacar','agregar','mover','poner','unidades','stock',
+        'desde','hasta','sacar','agregar','mover','move','poner','unidades','stock',
         'codigo','producto','lote','cuanto','cuantos','queda','quedan','hay',
         'dame','muestrame','mostrame','ver','listar','buscar','consultar',
-        'registrar','anota','anotar','donde','esta','ubicacion','tenemos'
+        'registrar','anota','anotar','donde','esta','ubicacion','tenemos',
+        'de','al','el','la','en','a','y','o','e','si','no','ni','sea'
     }
+
+    def _limpiar_txt_para_producto(txt):
+        """Extrae solo el contenido entre comillas si existe, sino usa todo."""
+        # Si hay comillas dobles, usar el contenido entre ellas
+        m = _re.search(r'"([^"]+)"', txt)
+        if m:
+            return m.group(1)
+        # Si hay comillas simples
+        m = _re.search(r"'([^']+)'", txt)
+        if m:
+            return m.group(1)
+        # Remover ubicaciones del texto antes de buscar producto
+        txt_limpio = _re.sub(r'\b[0-9]{1,2}[-_][0-9A-Za-z]{1,3}[A-Za-z]?\b', '', txt)
+        # Remover números sueltos (cantidades)
+        txt_limpio = _re.sub(r'\b\d+\b', '', txt_limpio)
+        return txt_limpio
 
     def _buscar_prod(query):
         """Busca producto por código exacto, número o nombre aproximado."""
         q = _n(query)
-        # 1. Código exacto
+        # 1. Código exacto en query completo
         for p in maestra:
             if str(p.get("cod_int","")).lower() == q:
                 return p
-        # 2. Primer número como código
-        nums = _re.findall(r'\b\d+\b', query)
+        # 2. Primer número como código (solo números cortos, no partes de ubicaciones)
+        nums = _re.findall(r'(?<![0-9\-])\b(\d{1,6})\b(?![\-])', query)
         for num in nums:
             for p in maestra:
                 if str(p.get("cod_int","")) == num:
                     return p
-        # 3. Nombre exacto
+        # 3. Usar texto limpio (entre comillas o sin ubicaciones/números)
+        txt_prod = _limpiar_txt_para_producto(query)
+        q_prod = _n(txt_prod)
+        # 4. Nombre exacto
         for p in maestra:
-            if _n(p.get("nombre","")) == q:
+            if _n(p.get("nombre","")) == q_prod:
                 return p
-        # 4. Todas las palabras clave presentes en el nombre
-        palabras = [w for w in q.split() if len(w) > 2 and w not in _STOPWORDS]
+        # 5. Todas las palabras clave presentes en el nombre
+        palabras = [w for w in q_prod.split() if len(w) > 2 and w not in _STOPWORDS]
         if palabras:
             for p in maestra:
                 nom = _n(p.get("nombre",""))
                 if all(w in nom for w in palabras):
                     return p
-        # 5. Mayor score por coincidencia parcial
+        # 6. Mayor score por coincidencia parcial
         if palabras:
             candidatos = []
             for p in maestra:
@@ -1247,10 +1267,10 @@ with tab_asist:
             return 'entrada'
 
         if any(w in n for w in [
-            'mover','mueve','movi','trasladar','traslada','reubicar','reubica',
+            'mover','mueve','movi','move ','move"','trasladar','traslada','reubicar','reubica',
             'cambiar de lugar','cambiar ubicacion','pasar a','llevar a',
-            'mandar a','manda a','transferir','transfer'
-        ]):
+            'mandar a','manda a','transferir','transfer','reubicar'
+        ]) or n.startswith('move') or ' move ' in n:
             return 'mover'
 
         if any(w in n for w in [
@@ -1764,6 +1784,110 @@ with tab_asist:
 
     # ── INPUT ─────────────────────────────────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── AUDIO: transcripción via Web Speech API ───────────────────────────────
+    st.markdown("""
+    <style>
+    #audio-bar {
+        display:flex; align-items:center; gap:10px;
+        background:#1E293B; border:1px solid #334155;
+        border-radius:14px; padding:8px 14px; margin-bottom:8px;
+    }
+    #mic-btn {
+        background:linear-gradient(135deg,#3B82F6,#06B6D4);
+        color:white; border:none; border-radius:50%;
+        width:44px; height:44px; font-size:20px; cursor:pointer;
+        flex-shrink:0; transition:all .2s;
+    }
+    #mic-btn.recording {
+        background:linear-gradient(135deg,#EF4444,#F59E0B);
+        animation: pulse-mic 1s infinite;
+    }
+    @keyframes pulse-mic {
+        0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}
+        50%{box-shadow:0 0 0 10px rgba(239,68,68,0)}
+    }
+    #audio-status {
+        font-size:12px; color:#94A3B8; font-weight:600;
+    }
+    #audio-status.active { color:#10B981; }
+    </style>
+
+    <div id="audio-bar">
+        <button id="mic-btn" onclick="toggleMic()" title="Hablar">🎤</button>
+        <span id="audio-status">Presioná el micrófono para hablar</span>
+    </div>
+
+    <script>
+    let recognition = null;
+    let isRecording = false;
+
+    function toggleMic() {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            document.getElementById('audio-status').textContent =
+                '❌ Tu navegador no soporta micrófono. Usá Chrome en Android.';
+            return;
+        }
+        if (isRecording) {
+            recognition.stop();
+            return;
+        }
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SpeechRecognition();
+        recognition.lang = 'es-AR';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        recognition.onstart = () => {
+            isRecording = true;
+            document.getElementById('mic-btn').classList.add('recording');
+            document.getElementById('mic-btn').textContent = '⏹️';
+            document.getElementById('audio-status').textContent = '🔴 Escuchando...';
+            document.getElementById('audio-status').classList.add('active');
+        };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            document.getElementById('audio-status').textContent =
+                '✅ Transcripto: ' + transcript;
+            // Poner el texto en el input de Streamlit y simular Enter
+            const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+            let botInput = null;
+            inputs.forEach(inp => {
+                if (inp.placeholder && inp.placeholder.includes('Sacá')) botInput = inp;
+            });
+            if (botInput) {
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                    window.parent.HTMLInputElement.prototype, 'value').set;
+                nativeInputValueSetter.call(botInput, transcript);
+                botInput.dispatchEvent(new Event('input', { bubbles: true }));
+                // Simular Enter para enviar
+                setTimeout(() => {
+                    botInput.dispatchEvent(new KeyboardEvent('keydown', {
+                        key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true
+                    }));
+                }, 300);
+            }
+        };
+
+        recognition.onerror = (event) => {
+            document.getElementById('audio-status').textContent =
+                '❌ Error: ' + event.error + '. Intentá de nuevo.';
+        };
+
+        recognition.onend = () => {
+            isRecording = false;
+            document.getElementById('mic-btn').classList.remove('recording');
+            document.getElementById('mic-btn').textContent = '🎤';
+            document.getElementById('audio-status').classList.remove('active');
+        };
+
+        recognition.start();
+    }
+    </script>
+    """, unsafe_allow_html=True)
+
+    # ── INPUT DE TEXTO ────────────────────────────────────────────────────────
     ic1, ic2 = st.columns([5,1])
     with ic1:
         txt_in = st.text_input(
