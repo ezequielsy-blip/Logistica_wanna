@@ -1123,34 +1123,45 @@ with tab_admin:
             st.caption(f"Numero activo: {_wa_num_actual}")
 
         st.markdown("---")
-        st.markdown('<p class="sec-label">🤖 ASISTENTE IA — OPENAI API KEY</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sec-label">🤖 ASISTENTE IA — GEMINI API KEY</p>', unsafe_allow_html=True)
         st.markdown("""
         <div style="background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.3);
                     border-radius:10px;padding:10px 14px;font-size:12px;color:#94A3B8;margin-bottom:8px;">
-            <b style="color:#F97316;">Obtener API Key gratis:</b> console.groq.com → API Keys → Create API Key  (100% gratis, sin tarjeta)
+            <b style="color:#F97316;">Obtener API Key gratis:</b> aistudio.google.com → Get API Key → Create API Key
         </div>
         """, unsafe_allow_html=True)
         try:
-            _gk = sb.table("config").select("valor").eq("clave","openai_key").execute().data
+            _gk = sb.table("config").select("valor").eq("clave","gemini_key").execute().data
             _gk_val = _gk[0]["valor"] if _gk else ""
         except:
             _gk_val = ""
-        with st.form("form_openai_key"):
-            _new_gk = st.text_input("OpenAI API Key (gratis):", value=_gk_val,
-                                     placeholder="gsk_...", type="password")
-            if st.form_submit_button("💾 Guardar API Key", use_container_width=True):
-                if _new_gk.strip():
-                    try:
-                        ex = sb.table("config").select("id").eq("clave","openai_key").execute().data
-                        if ex:
-                            sb.table("config").update({"valor":_new_gk.strip()}).eq("clave","openai_key").execute()
-                        else:
-                            sb.table("config").insert({"clave":"openai_key","valor":_new_gk.strip()}).execute()
-                        st.success("✅ API Key guardada.")
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-                else:
-                    st.warning("Ingresá la API key.")
+        _new_gk = st.text_input("Groq API Key (gratis):", value="",
+                                 placeholder="Pegá tu key: AIzaSy...",
+                                 type="password", key="gemini_key_input")
+        if st.button("💾 Guardar API Key", use_container_width=True, key="btn_save_gemini"):
+            # Limpiar AGRESIVAMENTE: quitar espacios, newlines, tabs, comillas
+            _clean = _new_gk
+            for ch in [" ", "\n", "\r", "\t", '"', "'"]:
+                _clean = _clean.replace(ch, "")
+            _clean = _clean.strip()
+            if _clean:
+                try:
+                    ex = sb.table("config").select("id").eq("clave","gemini_key").execute().data
+                    if ex:
+                        sb.table("config").update({"valor": _clean}).eq("clave","gemini_key").execute()
+                    else:
+                        sb.table("config").insert({"clave":"gemini_key","valor": _clean}).execute()
+                    # Verificar que se guardó bien
+                    check = sb.table("config").select("valor").eq("clave","gemini_key").execute().data
+                    saved = check[0]["valor"] if check else ""
+                    if saved == _clean:
+                        st.success(f"✅ Guardada. Empieza con: {_clean[:8]}... ({len(_clean)} caracteres)")
+                    else:
+                        st.error(f"Se guardó diferente. Guardado: '{saved[:12]}...'")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+            else:
+                st.warning("Pegá la API key primero.")
 
         st.markdown("---")
         st.markdown('<p class="sec-label">⚠️ ZONA PELIGROSA</p>', unsafe_allow_html=True)
@@ -1169,7 +1180,7 @@ with tab_admin:
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB ASISTENTE IA — GROQ (Llama 3.3 70B) — sin límites prácticos, gratis
+# TAB ASISTENTE IA — GEMINI 2.0 Flash
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_asist:
 
@@ -1195,12 +1206,12 @@ with tab_asist:
     with hc1:
         st.markdown("""
         <div style="display:flex;align-items:center;gap:12px;padding:4px 0 8px">
-            <div style="font-size:36px">🦙</div>
+            <div style="font-size:36px">✨</div>
             <div>
                 <div style="font-size:17px;font-weight:900;color:#F1F5F9;letter-spacing:1px">
                     ASISTENTE LOGIEZE</div>
                 <div style="font-size:12px;color:#64748B">
-                    Groq · Llama 3.3 70B · Sin límites · Inventario inteligente · Chat libre</div>
+                    Gemini 2.0 Flash · Inventario inteligente · Chat libre</div>
             </div>
         </div>""", unsafe_allow_html=True)
     with hc2:
@@ -1210,12 +1221,17 @@ with tab_asist:
 
     # Leer API key
     try:
-        _gk = sb.table("config").select("valor").eq("clave","openai_key").execute().data
-        OPENAI_KEY = _gk[0]["valor"].strip() if _gk else ""
+        _gk = sb.table("config").select("valor").eq("clave","gemini_key").execute().data
+        _raw = _gk[0]["valor"] if _gk else ""
+        # Limpiar agresivamente al leer también
+        GEMINI_KEY = _raw
+        for _ch in [" ", "\n", "\r", "\t", '"', "'"]:
+            GEMINI_KEY = GEMINI_KEY.replace(_ch, "")
+        GEMINI_KEY = GEMINI_KEY.strip()
     except:
-        OPENAI_KEY = ""
+        GEMINI_KEY = ""
 
-    if not OPENAI_KEY:
+    if not GEMINI_KEY:
         st.markdown("""
         <div style="background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.3);
                     border-radius:12px;padding:20px;text-align:center;margin:20px 0">
@@ -1223,7 +1239,7 @@ with tab_asist:
             <div style="font-size:15px;font-weight:700;color:#F97316">Se necesita una API Key de Groq</div>
             <div style="font-size:13px;color:#94A3B8;margin-top:8px">
                 <b>Gratis, sin tarjeta de crédito:</b><br>
-                1. Entrá a <b>console.groq.com</b><br>
+                1. Entrá a <b>aistudio.google.com</b><br>
                 2. Clic en <b>API Keys → Create API Key</b><br>
                 3. Copiá la key y pegala en <b>ADMIN → Asistente IA</b>
             </div>
@@ -1234,75 +1250,93 @@ with tab_asist:
         st.session_state.chat_hist = []
 
     # Contexto inventario compacto
-    def _ctx():
-        rows = []
+    def _buscar_en_inventario(query):
+        """Busca productos relevantes para la consulta del usuario."""
+        q = query.upper()
+        resultados = []
         for p in maestra:
+            nom = str(p.get("nombre","")).upper()
+            cod = str(p.get("cod_int",""))
+            if q in nom or q in cod or any(
+                q in str(w) for w in q.split() if len(w)>2
+            ):
+                resultados.append(p)
+        # Si no encontró nada específico, devolver todos
+        return resultados if resultados else maestra
+
+    def _ctx(query=""):
+        """Genera contexto de inventario relevante para la consulta."""
+        # Si la query menciona un código o nombre específico, filtrar
+        productos = _buscar_en_inventario(query) if query else maestra
+
+        rows = []
+        for p in productos:
             cod = str(p.get("cod_int",""))
             stk = int(float(p.get("cantidad_total") or 0))
             lts = " | ".join(
-                f"{l.get('ubicacion','')}:{int(float(l.get('cantidad',0)))} vto:{l.get('fecha','')}"
-                for l in idx_inv.get(cod,[])[:4]
+                f"{l.get('ubicacion','')}:{int(float(l.get('cantidad',0) or 0))} vto:{l.get('fecha','')}"
+                for l in idx_inv.get(cod,[])[:5]
             )
             rows.append(f"{p.get('nombre','')} [cod:{cod} total:{stk}] {lts}")
-        h = cargar_historial_cache()[:10]
+
+        h = cargar_historial_cache()[:8]
         hist = "\n".join(
-            f"{x.get('tipo','')} {x.get('nombre','')} x{x.get('cantidad','')} ubi:{x.get('ubicacion','')} por:{x.get('usuario','')}"
+            f"{x.get('tipo','')} {x.get('nombre','')} x{x.get('cantidad','')} ubi:{x.get('ubicacion','')}"
             for x in h
         )
         return "\n".join(rows), hist
 
-    _inv_txt, _hist_txt = _ctx()
-
-    SYSTEM = f"""Sos el asistente inteligente de LOGIEZE, sistema de gestión de inventario.
-Usuario: {usuario} | Rol: {rol} | {datetime.now().strftime('%d/%m/%Y %H:%M')}
-
-INVENTARIO COMPLETO:
-{_inv_txt}
-
-ÚLTIMOS MOVIMIENTOS:
-{_hist_txt}
-
-CAPACIDADES:
-- Respondés cualquier pregunta sobre el inventario con datos reales
-- Ejecutás acciones reales (salida, entrada, mover, corregir stock)
-- Charlás de cualquier tema libremente
-
-ACCIONES — cuando el usuario pide ejecutar algo, respondé SOLO con este JSON exacto:
-{{"accion":"salida","params":{{"cod_int":"X","cantidad":N,"ubicacion":"XX"}},"confirmacion":"descripcion"}}
-{{"accion":"entrada","params":{{"cod_int":"X","cantidad":N,"ubicacion":"XX","fecha_vto":"MM/AA"}},"confirmacion":"descripcion"}}
-{{"accion":"mover","params":{{"cod_int":"X","cantidad":N,"ubicacion_origen":"XX","ubicacion_destino":"YY"}},"confirmacion":"descripcion"}}
-{{"accion":"corregir","params":{{"cod_int":"X","ubicacion":"XX","cantidad_nueva":N}},"confirmacion":"descripcion"}}
-
-REGLAS:
-- Si es consulta o charla → respondé en texto, SIN JSON
-- Si es acción → respondé SOLO el JSON, sin texto extra
-- Buscá productos por nombre aproximado si no dan código exacto
-- Roles visita/vendedor NO pueden ejecutar acciones de escritura
-- Español rioplatense, amigable y directo
-"""
-
-    def _openai(user_msg):
+    def _llamar_gemini(user_msg):
+        """Llama a Gemini 2.0 Flash con contexto de inventario relevante."""
         import json as _j, urllib.request as _ur
-        msgs = [{"role":"system","content": SYSTEM}]
-        for m in st.session_state.chat_hist[-20:]:
-            msgs.append({"role": "user" if m["rol"]=="user" else "assistant",
-                         "content": m["texto"]})
-        msgs.append({"role":"user","content": user_msg})
+
+        key = GEMINI_KEY.strip()
+        if not key:
+            raise Exception("Sin API Key. Cargala en ADMIN → Asistente IA.")
+
+        # Contexto inteligente — solo productos relevantes para esta consulta
+        _inv_txt, _hist_txt = _ctx(user_msg)
+
+        system_txt = (
+            f"Sos el asistente inteligente de LOGIEZE, sistema de gestion de inventario.\n"
+            f"Usuario: {usuario} | Rol: {rol} | {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            f"INVENTARIO ACTUAL:\n{_inv_txt}\n\n"
+            f"ULTIMOS MOVIMIENTOS:\n{_hist_txt}\n\n"
+            "Podes responder consultas del inventario con datos reales, ejecutar acciones Y charlar de cualquier tema.\n\n"
+            "Cuando el usuario pide EJECUTAR algo sobre el inventario, responde SOLO con este JSON (sin texto extra):\n"
+            '{"accion":"salida","params":{"cod_int":"X","cantidad":N,"ubicacion":"XX"},"confirmacion":"descripcion"}\n'
+            '{"accion":"entrada","params":{"cod_int":"X","cantidad":N,"ubicacion":"XX","fecha_vto":"MM/AA"},"confirmacion":"descripcion"}\n'
+            '{"accion":"mover","params":{"cod_int":"X","cantidad":N,"ubicacion_origen":"XX","ubicacion_destino":"YY"},"confirmacion":"descripcion"}\n'
+            '{"accion":"corregir","params":{"cod_int":"X","ubicacion":"XX","cantidad_nueva":N},"confirmacion":"descripcion"}\n\n'
+            "Si es consulta o charla libre -> responde en texto, SIN JSON.\n"
+            "Busca productos por nombre aproximado si no dan codigo exacto.\n"
+            "Espanol rioplatense, amigable y directo."
+        )
+
+        # Formato Gemini: system como primer turno user/model
+        contents = [
+            {"role": "user",  "parts": [{"text": system_txt}]},
+            {"role": "model", "parts": [{"text": "Listo! Estoy conectado al inventario de LOGIEZE."}]}
+        ]
+        for m in st.session_state.chat_hist[-16:]:
+            r = "user" if m["rol"] == "user" else "model"
+            contents.append({"role": r, "parts": [{"text": m["texto"]}]})
+        contents.append({"role": "user", "parts": [{"text": user_msg}]})
 
         payload = _j.dumps({
-            "model": "llama-3.3-70b-versatile",
-            "messages": msgs,
-            "temperature": 0.6,
-            "max_tokens": 1024
+            "contents": contents,
+            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1500}
         }).encode()
-        req = _ur.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
-            data=payload,
-            headers={"Authorization": f"Bearer {OPENAI_KEY}",
-                     "Content-Type": "application/json"}
-        )
-        with _ur.urlopen(req, timeout=20) as r:
-            return _j.loads(r.read())["choices"][0]["message"]["content"]
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key}"
+        req = _ur.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        with _ur.urlopen(req, timeout=30) as r:
+            data = _j.loads(r.read())
+
+        if "error" in data:
+            raise Exception(data["error"].get("message", str(data["error"])))
+
+        return data["candidates"][0]["content"]["parts"][0]["text"]
 
     def _ejecutar(accion, params):
         cod  = str(params.get("cod_int","")).strip()
@@ -1424,9 +1458,9 @@ REGLAS:
     ic1, ic2 = st.columns([5,1])
     with ic1:
         txt = st.text_input("msg", label_visibility="collapsed",
-                            placeholder="Escribí tu mensaje...", key="groq_input")
+                            placeholder="Escribí tu mensaje...", key="gemini_input")
     with ic2:
-        send = st.button("➤ Enviar", use_container_width=True, type="primary", key="groq_send")
+        send = st.button("➤ Enviar", use_container_width=True, type="primary", key="gemini_send")
 
     _final = _qmsg or (txt.strip() if send and txt else None)
 
@@ -1434,9 +1468,9 @@ REGLAS:
         import json as _jj, re as _re
         st.session_state.chat_hist.append({"rol":"user","texto":_final})
 
-        with st.spinner("🦙 Pensando..."):
+        with st.spinner("✨ Gemini está pensando..."):
             try:
-                resp = _openai(_final)
+                resp = _llamar_gemini(_final)
 
                 # Detectar JSON de acción
                 m = _re.search(r'\{[^{}]*"accion"[^{}]*\}', resp, _re.DOTALL)
@@ -1464,10 +1498,16 @@ REGLAS:
 
             except Exception as e:
                 err = str(e)
-                if "401" in err: msg_e = "API Key inválida. Actualizala en ADMIN → Asistente IA."
-                elif "429" in err: msg_e = "Límite de Groq alcanzado momentáneamente. Esperá unos segundos."
-                elif "timeout" in err.lower(): msg_e = "Tardó demasiado. Intentá de nuevo."
-                else: msg_e = f"Error: {err[:150]}"
+                if "401" in err or "403" in err or "inválida" in err.lower():
+                    msg_e = "❌ API Key inválida. Ir a ADMIN → Asistente IA y cargar la key de Gemini (empieza con AIzaSy)."
+                elif "429" in err:
+                    msg_e = "⚠️ Límite de Gemini alcanzado momentáneamente. Esperá unos segundos e intentá de nuevo."
+                elif "timeout" in err.lower():
+                    msg_e = "⏱️ Tardó demasiado. Intentá de nuevo."
+                elif "AIzaSy" in err:
+                    msg_e = err
+                else:
+                    msg_e = f"❌ Error: {err[:200]}"
                 st.session_state.chat_hist.append({"rol":"assistant","texto":msg_e,"ok":False})
 
         st.rerun()
