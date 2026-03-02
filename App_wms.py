@@ -1281,69 +1281,28 @@ REGLAS:
 - Español rioplatense, amigable y directo
 """
 
-    def _groq_request(user_msg, api_key):
+    def _groq(user_msg):
         import json as _j, urllib.request as _ur
-        
-        # Leemos el contexto del inventario para la IA
-        contexto_inv = "\n".join([f"{p['nombre']} [cod:{p['cod_int']}] - Stock:{p['cantidad_total']}" for p in maestra[:20]])
-        
-        system_prompt = f"Eres el asistente de LOGIEZE. Inventario actual:\n{contexto_inv}"
-        
-        msgs = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_msg}
-        ]
+        msgs = [{"role":"system","content": SYSTEM}]
+        for m in st.session_state.chat_hist[-20:]:
+            msgs.append({"role": "user" if m["rol"]=="user" else "assistant",
+                         "content": m["texto"]})
+        msgs.append({"role":"user","content": user_msg})
 
         payload = _j.dumps({
             "model": "llama-3.3-70b-versatile",
             "messages": msgs,
-            "temperature": 0.6
+            "temperature": 0.6,
+            "max_tokens": 1024
         }).encode()
-        
-        # Headers para evitar el 403 Forbidden
         req = _ur.Request(
             "https://api.groq.com/openai/v1/chat/completions",
             data=payload,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-                "Accept": "application/json"
-            }
+            headers={"Authorization": f"Bearer {GROQ_KEY}",
+                     "Content-Type": "application/json"}
         )
-        
-        try:
-            with _ur.urlopen(req, timeout=20) as r:
-                return _j.loads(r.read())["choices"][0]["message"]["content"]
-        except Exception as e:
-            return f"Error de conexión: {str(e)}"
-
-    # UI del Chat
-    if "chat_hist" not in st.session_state: st.session_state.chat_hist = []
-    
-    # Obtener API Key de la base de datos
-    try:
-        gk_data = sb.table("config").select("valor").eq("clave","groq_key").execute().data
-        GROQ_API_KEY = gk_data[0]["valor"] if gk_data else ""
-    except: GROQ_API_KEY = ""
-
-    if not GROQ_API_KEY:
-        st.warning("Configura la Groq API Key en la pestaña ADMIN.")
-    else:
-        for m in st.session_state.chat_hist:
-            clase = "msg-user" if m["rol"] == "user" else "msg-bot"
-            st.markdown(f'<div class="{clase}">{m["texto"]}</div>', unsafe_allow_html=True)
-
-        user_input = st.chat_input("Preguntame sobre el stock...")
-        if user_input:
-            st.session_state.chat_hist.append({"rol": "user", "texto": user_input})
-            with st.spinner("Pensando..."):
-                respuesta = _groq_request(user_input, GROQ_API_KEY)
-                st.session_state.chat_hist.append({"rol": "bot", "texto": respuesta})
-            st.rerun()
-
-with tab_plan:
-    st.dataframe(pd.DataFrame(inventario), use_container_width=True)
+        with _ur.urlopen(req, timeout=20) as r:
+            return _j.loads(r.read())["choices"][0]["message"]["content"]
 
     def _ejecutar(accion, params):
         cod  = str(params.get("cod_int","")).strip()
