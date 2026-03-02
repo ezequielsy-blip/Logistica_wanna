@@ -1234,57 +1234,71 @@ with tab_asist:
         st.session_state.chat_hist = []
 
     # Contexto inventario compacto
-    def _ctx():
-        rows = []
+    def _buscar_en_inventario(query):
+        """Busca productos relevantes para la consulta del usuario."""
+        q = query.upper()
+        resultados = []
         for p in maestra:
+            nom = str(p.get("nombre","")).upper()
+            cod = str(p.get("cod_int",""))
+            if q in nom or q in cod or any(
+                q in str(w) for w in q.split() if len(w)>2
+            ):
+                resultados.append(p)
+        # Si no encontró nada específico, devolver todos
+        return resultados if resultados else maestra
+
+    def _ctx(query=""):
+        """Genera contexto de inventario relevante para la consulta."""
+        # Si la query menciona un código o nombre específico, filtrar
+        productos = _buscar_en_inventario(query) if query else maestra
+
+        rows = []
+        for p in productos:
             cod = str(p.get("cod_int",""))
             stk = int(float(p.get("cantidad_total") or 0))
             lts = " | ".join(
-                f"{l.get('ubicacion','')}:{int(float(l.get('cantidad',0)))} vto:{l.get('fecha','')}"
-                for l in idx_inv.get(cod,[])[:4]
+                f"{l.get('ubicacion','')}:{int(float(l.get('cantidad',0) or 0))} vto:{l.get('fecha','')}"
+                for l in idx_inv.get(cod,[])[:5]
             )
             rows.append(f"{p.get('nombre','')} [cod:{cod} total:{stk}] {lts}")
-        h = cargar_historial_cache()[:10]
+
+        h = cargar_historial_cache()[:8]
         hist = "\n".join(
-            f"{x.get('tipo','')} {x.get('nombre','')} x{x.get('cantidad','')} ubi:{x.get('ubicacion','')} por:{x.get('usuario','')}"
+            f"{x.get('tipo','')} {x.get('nombre','')} x{x.get('cantidad','')} ubi:{x.get('ubicacion','')}"
             for x in h
         )
         return "\n".join(rows), hist
 
-    _inv_txt, _hist_txt = _ctx()
-
-    SYSTEM = f"""Sos el asistente inteligente de LOGIEZE, sistema de gestión de inventario.
-Usuario: {usuario} | Rol: {rol} | {datetime.now().strftime('%d/%m/%Y %H:%M')}
-
-INVENTARIO COMPLETO:
-{_inv_txt}
-
-ÚLTIMOS MOVIMIENTOS:
-{_hist_txt}
-
-CAPACIDADES:
-- Respondés cualquier pregunta sobre el inventario con datos reales
-- Ejecutás acciones reales (salida, entrada, mover, corregir stock)
-- Charlás de cualquier tema libremente
-
-ACCIONES — cuando el usuario pide ejecutar algo, respondé SOLO con este JSON exacto:
-{{"accion":"salida","params":{{"cod_int":"X","cantidad":N,"ubicacion":"XX"}},"confirmacion":"descripcion"}}
-{{"accion":"entrada","params":{{"cod_int":"X","cantidad":N,"ubicacion":"XX","fecha_vto":"MM/AA"}},"confirmacion":"descripcion"}}
-{{"accion":"mover","params":{{"cod_int":"X","cantidad":N,"ubicacion_origen":"XX","ubicacion_destino":"YY"}},"confirmacion":"descripcion"}}
-{{"accion":"corregir","params":{{"cod_int":"X","ubicacion":"XX","cantidad_nueva":N}},"confirmacion":"descripcion"}}
-
-REGLAS:
-- Si es consulta o charla → respondé en texto, SIN JSON
-- Si es acción → respondé SOLO el JSON, sin texto extra
-- Buscá productos por nombre aproximado si no dan código exacto
-- Roles visita/vendedor NO pueden ejecutar acciones de escritura
-- Español rioplatense, amigable y directo
-"""
-
     def _groq(user_msg):
         import json as _j, urllib.request as _ur
-        msgs = [{"role":"system","content": SYSTEM}]
-        for m in st.session_state.chat_hist[-20:]:
+
+        # Verificar key limpia
+        key = GROQ_KEY.strip().strip('"').strip("'")
+        if not key.startswith("gsk_"):
+            raise Exception("API Key inválida — debe empezar con gsk_. Actualizala en ADMIN.")
+
+        # Contexto relevante para ESTA consulta
+        _inv_txt, _hist_txt = _ctx(user_msg)
+
+        system = (
+            f"Sos el asistente inteligente de LOGIEZE.\n"
+            f"Usuario: {usuario} | Rol: {rol} | {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            f"INVENTARIO (productos relevantes para esta consulta):\n{_inv_txt}\n\n"
+            f"ÚLTIMOS MOVIMIENTOS:\n{_hist_txt}\n\n"
+            "Podés responder consultas de inventario con datos reales, ejecutar acciones Y charlar libremente.\n\n"
+            "Si el usuario pide EJECUTAR algo, respondé SOLO con este JSON (sin texto extra):\n"
+            '{"accion":"salida","params":{"cod_int":"X","cantidad":N,"ubicacion":"XX"},"confirmacion":"descripcion"}\n'
+            '{"accion":"entrada","params":{"cod_int":"X","cantidad":N,"ubicacion":"XX","fecha_vto":"MM/AA"},"confirmacion":"descripcion"}\n'
+            '{"accion":"mover","params":{"cod_int":"X","cantidad":N,"ubicacion_origen":"XX","ubicacion_destino":"YY"},"confirmacion":"descripcion"}\n'
+            '{"accion":"corregir","params":{"cod_int":"X","ubicacion":"XX","cantidad_nueva":N},"confirmacion":"descripcion"}\n\n'
+            "Si es consulta o charla → texto libre, SIN JSON.\n"
+            "Buscá por nombre aproximado si no dan código exacto.\n"
+            "Español rioplatense, amigable y directo."
+        )
+
+        msgs = [{"role":"system","content": system}]
+        for m in st.session_state.chat_hist[-12:]:
             msgs.append({"role": "user" if m["rol"]=="user" else "assistant",
                          "content": m["texto"]})
         msgs.append({"role":"user","content": user_msg})
@@ -1295,14 +1309,22 @@ REGLAS:
             "temperature": 0.6,
             "max_tokens": 1024
         }).encode()
+
         req = _ur.Request(
             "https://api.groq.com/openai/v1/chat/completions",
             data=payload,
-            headers={"Authorization": f"Bearer {GROQ_KEY}",
-                     "Content-Type": "application/json"}
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json"
+            }
         )
-        with _ur.urlopen(req, timeout=20) as r:
-            return _j.loads(r.read())["choices"][0]["message"]["content"]
+        with _ur.urlopen(req, timeout=25) as r:
+            data = _j.loads(r.read())
+
+        if "error" in data:
+            raise Exception(data["error"].get("message", str(data["error"])))
+
+        return data["choices"][0]["message"]["content"]
 
     def _ejecutar(accion, params):
         cod  = str(params.get("cod_int","")).strip()
@@ -1464,10 +1486,16 @@ REGLAS:
 
             except Exception as e:
                 err = str(e)
-                if "401" in err: msg_e = "API Key inválida. Actualizala en ADMIN → Asistente IA."
-                elif "429" in err: msg_e = "Límite de Groq alcanzado momentáneamente. Esperá unos segundos."
-                elif "timeout" in err.lower(): msg_e = "Tardó demasiado. Intentá de nuevo."
-                else: msg_e = f"Error: {err[:150]}"
+                if "401" in err or "403" in err or "inválida" in err.lower():
+                    msg_e = "❌ API Key inválida o vencida. Ir a ADMIN → Asistente IA y cargar la key nuevamente (empieza con gsk_)."
+                elif "429" in err:
+                    msg_e = "⚠️ Groq al límite momentáneamente. Esperá unos segundos e intentá de nuevo."
+                elif "timeout" in err.lower():
+                    msg_e = "⏱️ Tardó demasiado. Intentá de nuevo."
+                elif "gsk_" in err:
+                    msg_e = err
+                else:
+                    msg_e = f"❌ Error: {err[:200]}"
                 st.session_state.chat_hist.append({"rol":"assistant","texto":msg_e,"ok":False})
 
         st.rerun()
