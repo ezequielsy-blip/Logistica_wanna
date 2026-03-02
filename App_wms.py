@@ -244,24 +244,33 @@ def _wa_config():
         return ("", "")
 
 def _enviar_whatsapp(numero, apikey, mensaje, callback_ok=None, callback_err=None):
-    """Envia mensaje via CallMeBot."""
     import urllib.request, urllib.parse, threading
     def _send():
         try:
-            num_limpio = "+" + numero.replace("+","").replace(" ","").replace("-","")
-            msg_enc = urllib.parse.quote(mensaje, safe='')
-            url = (f"https://api.callmebot.com/whatsapp.php"
-                   f"?phone={num_limpio}&text={msg_enc}&apikey={apikey}")
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            # Limpieza profunda del número
+            num_limpio = "".join(filter(str.isdigit, numero)) 
+            msg_enc = urllib.parse.quote(mensaje)
+            
+            # URL bien formada
+            url = f"https://api.callmebot.com/whatsapp.php?phone={num_limpio}&text={msg_enc}&apikey={apikey}"
+            
+            # Headers más completos para evitar el 403
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': '*/*'
+            }
+            
+            req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=15) as resp:
-                body = resp.read().decode("utf-8", errors="ignore")
-            if "queued" in body.lower() or resp.status == 200:
-                if callback_ok: callback_ok()
-            else:
-                if callback_err: callback_err(body[:100])
+                if resp.status == 200:
+                    if callback_ok: callback_ok()
+                else:
+                    if callback_err: callback_err(f"Status: {resp.status}")
         except Exception as e:
-            if callback_err: callback_err(str(e)[:100])
+            if callback_err: callback_err(str(e))
+            
     threading.Thread(target=_send, daemon=True).start()
+
 
 # ── UTILIDADES ────────────────────────────────────────────────────────────────
 def parsear_fecha(texto):
