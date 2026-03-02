@@ -317,25 +317,6 @@ def recalcular_maestra(cod_int, inventario):
     except Exception as e:
         st.error(f"Error recalcular: {e}")
     return total
-def _auditar_stock_total(cod_int):
-    """
-    Función de precisión para el Operario Gemini: 
-    Suma todas las unidades de un código en todos los depósitos.
-    """
-    try:
-        res = supabase.table("inventario").select("cantidad").eq("cod_int", cod_int).execute()
-        if res.data:
-            total = sum(item['cantidad'] for item in res.data)
-            return total
-        return 0
-    except Exception:
-        return 0
-
-# Esta línea es para que el 'Megazord' la use en la interfaz
-def get_megazord_total(cod_int):
-    total = _auditar_stock_total(cod_int)
-    return f"TOTAL MEGAZORD: {total} unidades"
-
 
 # ── SESIÓN PERSISTENTE vía query_params (sobrevive F5) ────────────────────────
 # La sesión se guarda en la URL (?lz_u=juan&lz_r=operario).
@@ -1142,7 +1123,7 @@ with tab_admin:
             st.caption(f"Numero activo: {_wa_num_actual}")
 
         st.markdown("---")
-        st.markdown('<p class="sec-label">🤖 ASISTENTE IA — GROQ API KEY</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sec-label">🤖 ASISTENTE IA — OPENAI API KEY</p>', unsafe_allow_html=True)
         st.markdown("""
         <div style="background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.3);
                     border-radius:10px;padding:10px 14px;font-size:12px;color:#94A3B8;margin-bottom:8px;">
@@ -1150,21 +1131,21 @@ with tab_admin:
         </div>
         """, unsafe_allow_html=True)
         try:
-            _gk = sb.table("config").select("valor").eq("clave","groq_key").execute().data
+            _gk = sb.table("config").select("valor").eq("clave","openai_key").execute().data
             _gk_val = _gk[0]["valor"] if _gk else ""
         except:
             _gk_val = ""
-        with st.form("form_groq_key"):
-            _new_gk = st.text_input("Groq API Key (gratis):", value=_gk_val,
+        with st.form("form_openai_key"):
+            _new_gk = st.text_input("OpenAI API Key (gratis):", value=_gk_val,
                                      placeholder="gsk_...", type="password")
             if st.form_submit_button("💾 Guardar API Key", use_container_width=True):
                 if _new_gk.strip():
                     try:
-                        ex = sb.table("config").select("id").eq("clave","groq_key").execute().data
+                        ex = sb.table("config").select("id").eq("clave","openai_key").execute().data
                         if ex:
-                            sb.table("config").update({"valor":_new_gk.strip()}).eq("clave","groq_key").execute()
+                            sb.table("config").update({"valor":_new_gk.strip()}).eq("clave","openai_key").execute()
                         else:
-                            sb.table("config").insert({"clave":"groq_key","valor":_new_gk.strip()}).execute()
+                            sb.table("config").insert({"clave":"openai_key","valor":_new_gk.strip()}).execute()
                         st.success("✅ API Key guardada.")
                     except Exception as e:
                         st.error(f"Error: {e}")
@@ -1229,12 +1210,12 @@ with tab_asist:
 
     # Leer API key
     try:
-        _gk = sb.table("config").select("valor").eq("clave","groq_key").execute().data
-        GROQ_KEY = _gk[0]["valor"].strip() if _gk else ""
+        _gk = sb.table("config").select("valor").eq("clave","openai_key").execute().data
+        OPENAI_KEY = _gk[0]["valor"].strip() if _gk else ""
     except:
-        GROQ_KEY = ""
+        OPENAI_KEY = ""
 
-    if not GROQ_KEY:
+    if not OPENAI_KEY:
         st.markdown("""
         <div style="background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.3);
                     border-radius:12px;padding:20px;text-align:center;margin:20px 0">
@@ -1300,7 +1281,7 @@ REGLAS:
 - Español rioplatense, amigable y directo
 """
 
-    def _groq(user_msg):
+    def _openai(user_msg):
         import json as _j, urllib.request as _ur
         msgs = [{"role":"system","content": SYSTEM}]
         for m in st.session_state.chat_hist[-20:]:
@@ -1317,7 +1298,7 @@ REGLAS:
         req = _ur.Request(
             "https://api.groq.com/openai/v1/chat/completions",
             data=payload,
-            headers={"Authorization": f"Bearer {GROQ_KEY}",
+            headers={"Authorization": f"Bearer {OPENAI_KEY}",
                      "Content-Type": "application/json"}
         )
         with _ur.urlopen(req, timeout=20) as r:
@@ -1455,7 +1436,7 @@ REGLAS:
 
         with st.spinner("🦙 Pensando..."):
             try:
-                resp = _groq(_final)
+                resp = _openai(_final)
 
                 # Detectar JSON de acción
                 m = _re.search(r'\{[^{}]*"accion"[^{}]*\}', resp, _re.DOTALL)
