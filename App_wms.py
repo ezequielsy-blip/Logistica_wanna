@@ -1123,29 +1123,29 @@ with tab_admin:
             st.caption(f"Numero activo: {_wa_num_actual}")
 
         st.markdown("---")
-        st.markdown('<p class="sec-label">🤖 ASISTENTE IA — GEMINI API KEY</p>', unsafe_allow_html=True)
+        st.markdown('<p class="sec-label">🤖 ASISTENTE IA — GROQ API KEY</p>', unsafe_allow_html=True)
         st.markdown("""
-        <div style="background:rgba(66,133,244,0.08);border:1px solid rgba(66,133,244,0.3);
+        <div style="background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.3);
                     border-radius:10px;padding:10px 14px;font-size:12px;color:#94A3B8;margin-bottom:8px;">
-            <b style="color:#4285F4;">Obtener API Key gratis:</b> aistudio.google.com → Get API Key → Create API Key
+            <b style="color:#F97316;">Obtener API Key gratis:</b> console.groq.com → API Keys → Create API Key  (100% gratis, sin tarjeta)
         </div>
         """, unsafe_allow_html=True)
         try:
-            _gk = sb.table("config").select("valor").eq("clave","gemini_key").execute().data
+            _gk = sb.table("config").select("valor").eq("clave","groq_key").execute().data
             _gk_val = _gk[0]["valor"] if _gk else ""
         except:
             _gk_val = ""
-        with st.form("form_gemini_key"):
-            _new_gk = st.text_input("Gemini API Key:", value=_gk_val,
-                                     placeholder="AIzaSy...", type="password")
+        with st.form("form_groq_key"):
+            _new_gk = st.text_input("Groq API Key (gratis):", value=_gk_val,
+                                     placeholder="gsk_...", type="password")
             if st.form_submit_button("💾 Guardar API Key", use_container_width=True):
                 if _new_gk.strip():
                     try:
-                        ex = sb.table("config").select("id").eq("clave","gemini_key").execute().data
+                        ex = sb.table("config").select("id").eq("clave","groq_key").execute().data
                         if ex:
-                            sb.table("config").update({"valor":_new_gk.strip()}).eq("clave","gemini_key").execute()
+                            sb.table("config").update({"valor":_new_gk.strip()}).eq("clave","groq_key").execute()
                         else:
-                            sb.table("config").insert({"clave":"gemini_key","valor":_new_gk.strip()}).execute()
+                            sb.table("config").insert({"clave":"groq_key","valor":_new_gk.strip()}).execute()
                         st.success("✅ API Key guardada.")
                     except Exception as e:
                         st.error(f"Error: {e}")
@@ -1168,261 +1168,229 @@ with tab_admin:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TAB ASISTENTE IA — GEMINI
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB ASISTENTE IA — GROQ (Llama 3.3 70B) — sin límites prácticos, gratis
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab_asist:
 
     st.markdown("""
     <style>
-    .msg-user {
-        background:linear-gradient(135deg,#1D4ED8,#2563EB);color:#fff;
-        border-radius:18px 18px 4px 18px;padding:10px 16px;
-        margin:4px 0 4px 80px;font-size:14px;line-height:1.6;
-    }
-    .msg-bot {
-        background:#1E293B;color:#F1F5F9;
-        border-radius:4px 18px 18px 18px;border:1px solid #334155;
-        padding:10px 16px;margin:4px 80px 4px 0;
-        font-size:14px;line-height:1.6;white-space:pre-wrap;
-    }
-    .msg-ok  { background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);
-               border-radius:8px;padding:5px 12px;margin:0 80px 6px 0;
-               font-size:12px;color:#10B981;font-family:monospace; }
-    .msg-err { background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);
-               border-radius:8px;padding:5px 12px;margin:0 80px 6px 0;
-               font-size:12px;color:#EF4444; }
-    .chat-lbl{ font-size:11px;color:#475569;margin:6px 4px 1px; }
-    </style>
-    """, unsafe_allow_html=True)
+    .msg-user{background:linear-gradient(135deg,#1D4ED8,#2563EB);color:#fff;
+        border-radius:18px 18px 4px 18px;padding:10px 16px;margin:4px 0 4px 60px;
+        font-size:14px;line-height:1.6;}
+    .msg-bot{background:#1E293B;color:#F1F5F9;border-radius:4px 18px 18px 18px;
+        border:1px solid #334155;padding:10px 16px;margin:4px 60px 4px 0;
+        font-size:14px;line-height:1.6;white-space:pre-wrap;}
+    .msg-ok{background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);
+        border-radius:8px;padding:5px 12px;margin:2px 60px 6px 0;
+        font-size:12px;color:#10B981;font-family:monospace;}
+    .msg-err{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);
+        border-radius:8px;padding:5px 12px;margin:2px 60px 6px 0;
+        font-size:12px;color:#EF4444;}
+    .chat-lbl{font-size:11px;color:#475569;margin:6px 4px 1px;}
+    </style>""", unsafe_allow_html=True)
 
-    # ── Header ──────────────────────────────────────────────────────────────────
-    hcol1, hcol2 = st.columns([4,1])
-    with hcol1:
+    # Header
+    hc1, hc2 = st.columns([4,1])
+    with hc1:
         st.markdown("""
         <div style="display:flex;align-items:center;gap:12px;padding:4px 0 8px">
-            <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg"
-                 width="38" style="filter:drop-shadow(0 0 8px #4285F4);">
+            <div style="font-size:36px">🦙</div>
             <div>
-                <div style="font-size:17px;font-weight:900;color:#F1F5F9;letter-spacing:1px">ASISTENTE GEMINI</div>
-                <div style="font-size:12px;color:#64748B">Inventario inteligente · ejecuta acciones reales · chatea libremente</div>
+                <div style="font-size:17px;font-weight:900;color:#F1F5F9;letter-spacing:1px">
+                    ASISTENTE LOGIEZE</div>
+                <div style="font-size:12px;color:#64748B">
+                    Groq · Llama 3.3 70B · Sin límites · Inventario inteligente · Chat libre</div>
             </div>
         </div>""", unsafe_allow_html=True)
-    with hcol2:
+    with hc2:
         if st.button("🗑️ Nuevo chat", use_container_width=True, key="clear_chat"):
             st.session_state.chat_hist = []
             st.rerun()
 
-    # ── Leer API key Gemini ─────────────────────────────────────────────────────
+    # Leer API key
     try:
-        _gk_r = sb.table("config").select("valor").eq("clave","gemini_key").execute().data
-        GEMINI_KEY = _gk_r[0]["valor"].strip() if _gk_r else ""
+        _gk = sb.table("config").select("valor").eq("clave","groq_key").execute().data
+        GROQ_KEY = _gk[0]["valor"].strip() if _gk else ""
     except:
-        GEMINI_KEY = ""
+        GROQ_KEY = ""
 
-    if not GEMINI_KEY:
-        st.warning("El admin todavía no cargó la API Key de Gemini. Ir a **ADMIN → Asistente IA**.")
+    if not GROQ_KEY:
+        st.markdown("""
+        <div style="background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.3);
+                    border-radius:12px;padding:20px;text-align:center;margin:20px 0">
+            <div style="font-size:40px;margin-bottom:8px">🔑</div>
+            <div style="font-size:15px;font-weight:700;color:#F97316">Se necesita una API Key de Groq</div>
+            <div style="font-size:13px;color:#94A3B8;margin-top:8px">
+                <b>Gratis, sin tarjeta de crédito:</b><br>
+                1. Entrá a <b>console.groq.com</b><br>
+                2. Clic en <b>API Keys → Create API Key</b><br>
+                3. Copiá la key y pegala en <b>ADMIN → Asistente IA</b>
+            </div>
+        </div>""", unsafe_allow_html=True)
         st.stop()
 
-    # ── Session state ───────────────────────────────────────────────────────────
     if "chat_hist" not in st.session_state:
-        st.session_state.chat_hist = []   # [{rol, texto, accion_log, ok}]
+        st.session_state.chat_hist = []
 
-    # ── Contexto inventario ─────────────────────────────────────────────────────
-    def _ctx_inv():
+    # Contexto inventario compacto
+    def _ctx():
         rows = []
-        for p in maestra[:120]:
-            cod  = str(p.get("cod_int",""))
-            nom  = p.get("nombre","")
-            stk  = int(float(p.get("cantidad_total",0)))
-            lts  = "; ".join(
-                f"ubi={l.get('ubicacion','')} cant={int(float(l.get('cantidad',0)))} vto={l.get('fecha','')}"
-                for l in idx_inv.get(cod,[])[:5]
+        for p in maestra:
+            cod = str(p.get("cod_int",""))
+            stk = int(float(p.get("cantidad_total",0)))
+            lts = " | ".join(
+                f"{l.get('ubicacion','')}:{int(float(l.get('cantidad',0)))} vto:{l.get('fecha','')}"
+                for l in idx_inv.get(cod,[])[:4]
             )
-            rows.append(f"- {nom} | cod={cod} | stock={stk} | {lts}")
-        return "\n".join(rows)
-
-    def _ctx_hist():
-        h = cargar_historial_cache()[:15]
-        return "\n".join(
-            f"{x.get('fecha_hora','')} | {x.get('tipo','')} | {x.get('nombre','')} "
-            f"x{x.get('cantidad','')} en {x.get('ubicacion','')} por {x.get('usuario','')}"
+            rows.append(f"{p.get('nombre','')} [cod:{cod} total:{stk}] {lts}")
+        h = cargar_historial_cache()[:10]
+        hist = "\n".join(
+            f"{x.get('tipo','')} {x.get('nombre','')} x{x.get('cantidad','')} ubi:{x.get('ubicacion','')} por:{x.get('usuario','')}"
             for x in h
         )
+        return "\n".join(rows), hist
 
-    # ── System prompt ───────────────────────────────────────────────────────────
-    _GEMINI_SYSTEM = f"""Sos el asistente de inventario de LOGIEZE.
-Usuario activo: {usuario} | Rol: {rol} | Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}
+    _inv_txt, _hist_txt = _ctx()
 
-=== INVENTARIO ACTUAL ===
-{_ctx_inv()}
+    SYSTEM = f"""Sos el asistente inteligente de LOGIEZE, sistema de gestión de inventario.
+Usuario: {usuario} | Rol: {rol} | {datetime.now().strftime('%d/%m/%Y %H:%M')}
 
-=== ÚLTIMOS MOVIMIENTOS ===
-{_ctx_hist()}
+INVENTARIO COMPLETO:
+{_inv_txt}
 
-=== INSTRUCCIONES ===
-Podés responder cualquier pregunta (inventario, charla general, consejos) Y ejecutar acciones reales.
+ÚLTIMOS MOVIMIENTOS:
+{_hist_txt}
 
-Cuando el usuario pide una ACCIÓN sobre el inventario, respondé EXACTAMENTE con este formato JSON (sin texto antes ni después):
-{{
-  "accion": "salida|entrada|mover|corregir",
-  "params": {{
-    "cod_int": "CODIGO",
-    "cantidad": NUMERO,
-    "ubicacion": "XX-XX",
-    "ubicacion_destino": "YY-YY",
-    "cantidad_nueva": NUMERO,
-    "fecha_vto": "MM/AA"
-  }},
-  "confirmacion": "Texto explicando qué vas a hacer"
-}}
+CAPACIDADES:
+- Respondés cualquier pregunta sobre el inventario con datos reales
+- Ejecutás acciones reales (salida, entrada, mover, corregir stock)
+- Charlás de cualquier tema libremente
 
-Roles "visita" y "vendedor" NO pueden ejecutar acciones de escritura.
-Si no tenés el código exacto, buscá por nombre aproximado en el inventario.
-Hablá en español rioplatense, de forma natural y amigable.
-Si la consulta no es sobre inventario (clima, recetas, chistes, etc.) respondé igual — sos un asistente completo.
+ACCIONES — cuando el usuario pide ejecutar algo, respondé SOLO con este JSON exacto:
+{{"accion":"salida","params":{{"cod_int":"X","cantidad":N,"ubicacion":"XX"}},"confirmacion":"descripcion"}}
+{{"accion":"entrada","params":{{"cod_int":"X","cantidad":N,"ubicacion":"XX","fecha_vto":"MM/AA"}},"confirmacion":"descripcion"}}
+{{"accion":"mover","params":{{"cod_int":"X","cantidad":N,"ubicacion_origen":"XX","ubicacion_destino":"YY"}},"confirmacion":"descripcion"}}
+{{"accion":"corregir","params":{{"cod_int":"X","ubicacion":"XX","cantidad_nueva":N}},"confirmacion":"descripcion"}}
+
+REGLAS:
+- Si es consulta o charla → respondé en texto, SIN JSON
+- Si es acción → respondé SOLO el JSON, sin texto extra
+- Buscá productos por nombre aproximado si no dan código exacto
+- Roles visita/vendedor NO pueden ejecutar acciones de escritura
+- Español rioplatense, amigable y directo
 """
 
-    # ── Llamada a Gemini API ────────────────────────────────────────────────────
-    def _gemini(user_msg, historial):
+    def _groq(user_msg):
         import json as _j, urllib.request as _ur
-
-        # Armar contents con historial
-        contents = []
-        # Primero el system como primer turno user/model
-        contents.append({"role":"user","parts":[{"text":_GEMINI_SYSTEM}]})
-        contents.append({"role":"model","parts":[{"text":"Entendido! Estoy listo para ayudarte con el inventario de LOGIEZE."}]})
-
-        for m in historial[-16:]:  # max 8 pares para no saturar
-            r = "user" if m["rol"]=="user" else "model"
-            contents.append({"role":r,"parts":[{"text":m["texto"]}]})
-
-        contents.append({"role":"user","parts":[{"text":user_msg}]})
+        msgs = [{"role":"system","content": SYSTEM}]
+        for m in st.session_state.chat_hist[-20:]:
+            msgs.append({"role": "user" if m["rol"]=="user" else "assistant",
+                         "content": m["texto"]})
+        msgs.append({"role":"user","content": user_msg})
 
         payload = _j.dumps({
-            "contents": contents,
-            "generationConfig": {
-                "temperature": 0.7,
-                "maxOutputTokens": 1500
-            }
+            "model": "llama-3.3-70b-versatile",
+            "messages": msgs,
+            "temperature": 0.6,
+            "max_tokens": 1024
         }).encode()
+        req = _ur.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=payload,
+            headers={"Authorization": f"Bearer {GROQ_KEY}",
+                     "Content-Type": "application/json"}
+        )
+        with _ur.urlopen(req, timeout=20) as r:
+            return _j.loads(r.read())["choices"][0]["message"]["content"]
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
-        req = _ur.Request(url, data=payload, headers={"Content-Type":"application/json"})
-        with _ur.urlopen(req, timeout=25) as r:
-            data = _j.loads(r.read())
-
-        return data["candidates"][0]["content"]["parts"][0]["text"]
-
-    # ── Ejecutar acción ─────────────────────────────────────────────────────────
-    def _ejecutar_accion_gemini(accion, params):
+    def _ejecutar(accion, params):
         cod  = str(params.get("cod_int","")).strip()
         cant = float(params.get("cantidad", params.get("cantidad_nueva", 0)))
         ubi  = str(params.get("ubicacion","")).upper().strip()
 
-        # Buscar producto — por código o por nombre
-        prod = next((p for p in maestra if str(p.get("cod_int","")) == cod), None)
+        prod = next((p for p in maestra if str(p.get("cod_int",""))==cod), None)
         if not prod:
             prod = next((p for p in maestra if cod.upper() in str(p.get("nombre","")).upper()), None)
             if prod: cod = str(prod["cod_int"])
         if not prod:
-            return False, f"No encontré ningún producto con '{cod}'"
+            return False, f"No encontré producto '{cod}'"
         nom = prod["nombre"]
 
         if accion == "salida":
-            lotes_p = [l for l in inventario if str(l.get("cod_int","")) == cod]
-            lote = next((l for l in lotes_p if str(l.get("ubicacion","")).upper() == ubi), None)
+            lotes_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
+            lote = next((l for l in lotes_p if str(l.get("ubicacion","")).upper()==ubi), None)
             if not lote:
-                lote = next((l for l in lotes_p if float(l.get("cantidad",0)) >= cant), None)
+                lote = next((l for l in lotes_p if float(l.get("cantidad",0))>=cant), None)
                 if not lote:
-                    tot = sum(float(l.get("cantidad",0)) for l in lotes_p)
-                    return False, f"Sin stock suficiente de {nom}. Total disponible: {int(tot)} uds."
+                    return False, f"Sin stock. Total: {int(sum(float(l.get('cantidad',0)) for l in lotes_p))} uds"
                 ubi = str(lote.get("ubicacion",""))
             disp = float(lote.get("cantidad",0))
             if disp < cant:
-                return False, f"Solo hay {int(disp)} uds de {nom} en {ubi}, pediste {int(cant)}."
+                return False, f"Solo hay {int(disp)} uds en {ubi}"
             nueva = disp - cant
             if nueva <= 0:
-                sb.table("inventario").delete().eq("id", lote["id"]).execute()
+                sb.table("inventario").delete().eq("id",lote["id"]).execute()
             else:
-                sb.table("inventario").update({"cantidad": nueva}).eq("id", lote["id"]).execute()
-            registrar_historial("SALIDA", cod, nom, cant, ubi, usuario)
-            recalcular_maestra(cod, inventario)
-            refrescar()
-            return True, f"SALIDA ejecutada — {int(cant)} uds de {nom} desde {ubi}. Quedan {int(nueva)} uds."
+                sb.table("inventario").update({"cantidad":nueva}).eq("id",lote["id"]).execute()
+            registrar_historial("SALIDA",cod,nom,cant,ubi,usuario)
+            recalcular_maestra(cod,inventario); refrescar()
+            return True, f"Salida: {int(cant)} uds de {nom} desde {ubi}. Quedan {int(nueva)} uds."
 
         elif accion == "entrada":
             fv = params.get("fecha_vto","")
-            lotes_ubi = [l for l in inventario if str(l.get("cod_int",""))==cod
-                         and str(l.get("ubicacion","")).upper()==ubi]
-            if lotes_ubi:
-                lote = lotes_ubi[0]
-                sb.table("inventario").update(
-                    {"cantidad": float(lote.get("cantidad",0)) + cant}
-                ).eq("id", lote["id"]).execute()
+            lu = [l for l in inventario if str(l.get("cod_int",""))==cod and str(l.get("ubicacion","")).upper()==ubi]
+            if lu:
+                sb.table("inventario").update({"cantidad":float(lu[0].get("cantidad",0))+cant}).eq("id",lu[0]["id"]).execute()
             else:
-                sb.table("inventario").insert({
-                    "cod_int": cod, "nombre": nom, "cantidad": cant,
-                    "ubicacion": ubi, "fecha": fv, "deposito": "PRINCIPAL"
-                }).execute()
-            registrar_historial("ENTRADA", cod, nom, cant, ubi, usuario)
-            recalcular_maestra(cod, inventario)
-            refrescar()
-            return True, f"ENTRADA registrada — {int(cant)} uds de {nom} en {ubi}."
+                sb.table("inventario").insert({"cod_int":cod,"nombre":nom,"cantidad":cant,"ubicacion":ubi,"fecha":fv,"deposito":"PRINCIPAL"}).execute()
+            registrar_historial("ENTRADA",cod,nom,cant,ubi,usuario)
+            recalcular_maestra(cod,inventario); refrescar()
+            return True, f"Entrada: {int(cant)} uds de {nom} en {ubi}."
 
         elif accion == "mover":
-            ubi_dest = str(params.get("ubicacion_destino","")).upper()
-            lotes_p  = [l for l in inventario if str(l.get("cod_int",""))==cod]
-            lote     = next((l for l in lotes_p if str(l.get("ubicacion","")).upper()==ubi), None)
-            if not lote:
-                return False, f"No encontré lote de {nom} en {ubi}."
-            disp = float(lote.get("cantidad",0))
-            cant_mov = cant if cant > 0 else disp
-            if cant_mov > disp:
-                return False, f"Solo hay {int(disp)} uds en {ubi}."
-            nueva = disp - cant_mov
-            if nueva <= 0:
-                sb.table("inventario").delete().eq("id", lote["id"]).execute()
-            else:
-                sb.table("inventario").update({"cantidad": nueva}).eq("id", lote["id"]).execute()
-            sb.table("inventario").insert({
-                "cod_int": cod, "nombre": nom, "cantidad": cant_mov,
-                "ubicacion": ubi_dest, "fecha": lote.get("fecha",""),
-                "deposito": lote.get("deposito","PRINCIPAL")
-            }).execute()
-            registrar_historial("MOVIMIENTO", cod, nom, cant_mov, f"{ubi}→{ubi_dest}", usuario)
-            recalcular_maestra(cod, inventario)
-            refrescar()
-            return True, f"MOVIMIENTO ejecutado — {int(cant_mov)} uds de {nom}: {ubi} → {ubi_dest}."
-
-        elif accion == "corregir":
-            cant_nueva = float(params.get("cantidad_nueva", cant))
+            ud = str(params.get("ubicacion_destino","")).upper()
             lotes_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
             lote = next((l for l in lotes_p if str(l.get("ubicacion","")).upper()==ubi), None)
-            if not lote and lotes_p:
-                lote = lotes_p[0]; ubi = str(lote.get("ubicacion",""))
-            if not lote:
-                return False, f"No encontré lotes de {nom}."
+            if not lote: return False, f"Sin lote de {nom} en {ubi}"
+            disp = float(lote.get("cantidad",0))
+            cm = cant if cant>0 else disp
+            if cm>disp: return False, f"Solo hay {int(disp)} uds"
+            nv = disp-cm
+            if nv<=0: sb.table("inventario").delete().eq("id",lote["id"]).execute()
+            else: sb.table("inventario").update({"cantidad":nv}).eq("id",lote["id"]).execute()
+            sb.table("inventario").insert({"cod_int":cod,"nombre":nom,"cantidad":cm,"ubicacion":ud,"fecha":lote.get("fecha",""),"deposito":lote.get("deposito","PRINCIPAL")}).execute()
+            registrar_historial("MOVIMIENTO",cod,nom,cm,f"{ubi}→{ud}",usuario)
+            recalcular_maestra(cod,inventario); refrescar()
+            return True, f"Movido: {int(cm)} uds de {nom}: {ubi} → {ud}."
+
+        elif accion == "corregir":
+            cn = float(params.get("cantidad_nueva",cant))
+            lotes_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
+            lote = next((l for l in lotes_p if str(l.get("ubicacion","")).upper()==ubi), None)
+            if not lote and lotes_p: lote=lotes_p[0]; ubi=str(lote.get("ubicacion",""))
+            if not lote: return False, f"Sin lotes de {nom}"
             ant = float(lote.get("cantidad",0))
-            sb.table("inventario").update({"cantidad": cant_nueva}).eq("id", lote["id"]).execute()
-            registrar_historial("CORRECCIÓN", cod, nom, cant_nueva - ant, ubi, usuario)
-            recalcular_maestra(cod, inventario)
-            refrescar()
-            return True, f"CORRECCIÓN aplicada — {nom} en {ubi}: {int(ant)} → {int(cant_nueva)} uds."
+            sb.table("inventario").update({"cantidad":cn}).eq("id",lote["id"]).execute()
+            registrar_historial("CORRECCIÓN",cod,nom,cn-ant,ubi,usuario)
+            recalcular_maestra(cod,inventario); refrescar()
+            return True, f"Corregido {nom} en {ubi}: {int(ant)} → {int(cn)} uds."
 
-        return False, f"Acción desconocida: {accion}"
+        return False, "Acción desconocida"
 
-    # ── Mostrar historial ───────────────────────────────────────────────────────
+    # Mostrar chat
     if not st.session_state.chat_hist:
         st.markdown("""
-        <div style="text-align:center;padding:50px 20px;color:#475569;">
-            <div style="font-size:56px;margin-bottom:16px">🤖</div>
-            <div style="font-size:16px;font-weight:700;color:#94A3B8">Hola! Soy Gemini, tu asistente de inventario.</div>
-            <div style="font-size:13px;margin-top:12px;color:#64748B;line-height:2.2">
-                <code>¿Cuánto stock hay de Paracetamol?</code><br>
-                <code>Sacá 10 unidades de COD123 de 01-1A</code><br>
-                <code>Mové el lote de ABC de 02-3B a 05-1A</code><br>
+        <div style="text-align:center;padding:40px 0 20px">
+            <div style="font-size:52px">🦙</div>
+            <div style="font-size:16px;font-weight:700;color:#94A3B8;margin-top:10px">
+                Hola! Soy tu asistente de inventario.</div>
+            <div style="font-size:13px;color:#64748B;margin-top:10px;line-height:2.2">
+                <code>¿Cuánto stock hay del código 147?</code><br>
+                <code>Sacá 10 unidades de Ibuprofeno de 01-1A</code><br>
                 <code>¿Qué productos tienen menos de 5 unidades?</code><br>
-                <code>Corregí la cantidad de XYZ a 50 en 03-2C</code>
+                <code>Mové el lote de ABC de 02-3B a 05-1A</code><br>
+                <code>Dame un resumen del inventario</code>
             </div>
         </div>""", unsafe_allow_html=True)
     else:
@@ -1431,89 +1399,75 @@ Si la consulta no es sobre inventario (clima, recetas, chistes, etc.) respondé 
                 st.markdown(f'<div class="chat-lbl" style="text-align:right">{usuario} 👤</div>', unsafe_allow_html=True)
                 st.markdown(f'<div class="msg-user">{msg["texto"]}</div>', unsafe_allow_html=True)
             else:
-                st.markdown('<div class="chat-lbl">🤖 Gemini</div>', unsafe_allow_html=True)
+                st.markdown('<div class="chat-lbl">🦙 Asistente</div>', unsafe_allow_html=True)
                 st.markdown(f'<div class="msg-bot">{msg["texto"]}</div>', unsafe_allow_html=True)
                 if msg.get("accion_log"):
-                    cls = "msg-ok" if msg.get("ok") else "msg-err"
-                    st.markdown(f'<div class="{cls}">⚡ {msg["accion_log"]}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="{"msg-ok" if msg.get("ok") else "msg-err"}">⚡ {msg["accion_log"]}</div>', unsafe_allow_html=True)
 
-    # ── Botones rápidos ─────────────────────────────────────────────────────────
+    # Botones rápidos
     st.markdown("<br>", unsafe_allow_html=True)
-    qcols = st.columns(4)
-    rapidas = [
-        ("📉 Bajo stock",   "Mostrame todos los productos con stock menor a 10 unidades"),
-        ("📦 Resumen",       "Dame un resumen del inventario: total productos, stock total y top 5 con más stock"),
-        ("📋 Últimos movs",  "Cuáles fueron los últimos movimientos registrados?"),
-        ("📍 Ubicaciones",   "Listame todos los productos y sus ubicaciones actuales"),
-    ]
-    for i, (lbl, preg) in enumerate(rapidas):
-        with qcols[i]:
+    qc = st.columns(4)
+    for i,(lbl,preg) in enumerate([
+        ("📉 Bajo stock",  "Mostrame todos los productos con stock menor a 10 unidades"),
+        ("📦 Resumen",     "Dame un resumen del inventario: total productos, stock total y top 5"),
+        ("📋 Últimos movs","Cuáles fueron los últimos movimientos registrados?"),
+        ("📍 Ubicaciones", "Listame todos los productos con sus ubicaciones y cantidades"),
+    ]):
+        with qc[i]:
             if st.button(lbl, use_container_width=True, key=f"qr_{i}"):
-                st.session_state._quick_msg = preg
+                st.session_state._qmsg = preg
                 st.rerun()
 
-    _qmsg = st.session_state.pop("_quick_msg", None)
+    _qmsg = st.session_state.pop("_qmsg", None)
 
-    # ── Input ───────────────────────────────────────────────────────────────────
+    # Input
     ic1, ic2 = st.columns([5,1])
     with ic1:
         txt = st.text_input("msg", label_visibility="collapsed",
-                            placeholder="Escribí tu mensaje...",
-                            key="gemini_input")
+                            placeholder="Escribí tu mensaje...", key="groq_input")
     with ic2:
-        send = st.button("➤ Enviar", use_container_width=True, type="primary", key="gemini_send")
+        send = st.button("➤ Enviar", use_container_width=True, type="primary", key="groq_send")
 
-    # ── Procesar ────────────────────────────────────────────────────────────────
-    _msg_final = _qmsg or (txt.strip() if send and txt else None)
+    _final = _qmsg or (txt.strip() if send and txt else None)
 
-    if _msg_final:
+    if _final:
         import json as _jj, re as _re
+        st.session_state.chat_hist.append({"rol":"user","texto":_final})
 
-        st.session_state.chat_hist.append({"rol":"user","texto":_msg_final})
-
-        with st.spinner("🤖 Gemini está pensando..."):
+        with st.spinner("🦙 Pensando..."):
             try:
-                respuesta = _gemini(_msg_final, st.session_state.chat_hist[:-1])
+                resp = _groq(_final)
 
                 # Detectar JSON de acción
-                json_match = _re.search(r'\{[\s\S]*?"accion"[\s\S]*?\}', respuesta)
-                accion_dict = None
-                if json_match:
-                    try:
-                        accion_dict = _jj.loads(json_match.group())
-                    except:
-                        pass
+                m = _re.search(r'\{[^{}]*"accion"[^{}]*\}', resp, _re.DOTALL)
+                act = None
+                if m:
+                    try: act = _jj.loads(m.group())
+                    except: pass
 
-                if accion_dict and accion_dict.get("accion") in ("salida","entrada","mover","corregir"):
-                    tipo = accion_dict["accion"]
-                    confirmacion = accion_dict.get("confirmacion", f"Ejecutar {tipo}")
-
+                if act and act.get("accion") in ("salida","entrada","mover","corregir"):
                     if rol in ("visita","vendedor"):
-                        resp_txt = f"Tu rol ({rol}) no tiene permisos para ejecutar acciones. Solo podés hacer consultas."
-                        st.session_state.chat_hist.append({"rol":"assistant","texto":resp_txt,"ok":False})
-                    else:
-                        ok, resultado = _ejecutar_accion_gemini(tipo, accion_dict.get("params",{}))
                         st.session_state.chat_hist.append({
                             "rol":"assistant",
-                            "texto": confirmacion,
-                            "accion_log": resultado,
-                            "ok": ok
+                            "texto":f"Tu rol ({rol}) no tiene permisos para ejecutar acciones."
+                        })
+                    else:
+                        ok, res = _ejecutar(act["accion"], act.get("params",{}))
+                        st.session_state.chat_hist.append({
+                            "rol":"assistant",
+                            "texto": act.get("confirmacion","Listo"),
+                            "accion_log": res, "ok": ok
                         })
                 else:
-                    # Respuesta de texto puro
-                    texto_limpio = _re.sub(r'```json[\s\S]*?```', '', respuesta).strip()
-                    st.session_state.chat_hist.append({"rol":"assistant","texto":texto_limpio or respuesta})
+                    clean = _re.sub(r'```json[\s\S]*?```','', resp).strip()
+                    st.session_state.chat_hist.append({"rol":"assistant","texto": clean or resp})
 
             except Exception as e:
                 err = str(e)
-                if "400" in err:
-                    msg_e = "API Key inválida o expirada. El admin debe actualizarla en ADMIN → Asistente IA."
-                elif "quota" in err.lower() or "429" in err:
-                    msg_e = "Límite de uso alcanzado. Esperá unos minutos e intentá de nuevo."
-                elif "timeout" in err.lower():
-                    msg_e = "Gemini tardó demasiado en responder. Intentá de nuevo."
-                else:
-                    msg_e = f"Error: {err[:150]}"
+                if "401" in err: msg_e = "API Key inválida. Actualizala en ADMIN → Asistente IA."
+                elif "429" in err: msg_e = "Límite de Groq alcanzado momentáneamente. Esperá unos segundos."
+                elif "timeout" in err.lower(): msg_e = "Tardó demasiado. Intentá de nuevo."
+                else: msg_e = f"Error: {err[:150]}"
                 st.session_state.chat_hist.append({"rol":"assistant","texto":msg_e,"ok":False})
 
         st.rerun()
