@@ -455,7 +455,7 @@ with tab_mov:
         df_res = pd.DataFrame([{
             "Nombre": p['nombre'],
             "Código": p['cod_int'],
-            "Stock":  int(p.get('cantidad_total',0) or 0),
+            "Stock":  int(float(p.get("cantidad_total") or 0)),
         } for p in productos_filtrados])
 
         st.dataframe(df_res, use_container_width=True, hide_index=True,
@@ -1238,7 +1238,7 @@ with tab_asist:
         rows = []
         for p in maestra:
             cod = str(p.get("cod_int",""))
-            stk = int(float(p.get("cantidad_total",0)))
+            stk = int(float(p.get("cantidad_total") or 0))
             lts = " | ".join(
                 f"{l.get('ubicacion','')}:{int(float(l.get('cantidad',0)))} vto:{l.get('fecha','')}"
                 for l in idx_inv.get(cod,[])[:4]
