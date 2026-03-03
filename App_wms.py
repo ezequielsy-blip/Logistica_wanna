@@ -1551,10 +1551,12 @@ with tab_asist:
         registrar_historial("SALIDA", cod, nom, cant, ubi, usuario)
         recalcular_maestra(cod, inventario)
         refrescar()
-        return True, (f"✅ Salida registrada!\n\n"
-                       f"📦 *{nom}*\n"
-                       f"📤 {int(cant)} uds retiradas de {ubi}\n"
-                       f"📊 Quedan en {ubi}: {int(nueva)} uds")
+        lts_post = _lotes(cod)
+        stk_post = int(sum(float(l.get('cantidad',0) or 0) for l in lts_post))
+        dep = lote.get('deposito','')
+        return True, (f"✅ {int(cant)} uds de *{nom}* retiradas\n"
+                       f"📤 Depósito: {dep}  Ubicación: {ubi}\n"
+                       f"📊 Stock restante: {stk_post} uds")
 
     def _exec_entrada(txt):
         if rol in ('visita', 'vendedor'):
@@ -1590,10 +1592,12 @@ with tab_asist:
         registrar_historial("ENTRADA", cod, nom, cant, ubi, usuario)
         recalcular_maestra(cod, inventario)
         refrescar()
-        return True, (f"✅ Entrada registrada!\n\n"
-                       f"📦 *{nom}*\n"
-                       f"📥 {int(cant)} uds en {ubi}"
-                       + (f"\n📅 Vto: {fv}" if fv else ""))
+        lts_post = _lotes(cod)
+        stk_post = int(sum(float(l.get('cantidad',0) or 0) for l in lts_post))
+        return True, (f"✅ {int(cant)} uds de *{nom}* ingresadas\n"
+                       f"📥 Ubicación: {ubi}"
+                       + (f"  Vto:{fv}" if fv else "")
+                       + f"\n📊 Stock total: {stk_post} uds")
 
     def _exec_mover(txt):
         if rol in ('visita', 'vendedor'):
@@ -1635,9 +1639,11 @@ with tab_asist:
         registrar_historial("MOVIMIENTO", cod, nom, cant_mv, f"{ubi_o}→{ubi_d}", usuario)
         recalcular_maestra(cod, inventario)
         refrescar()
-        return True, (f"✅ Movimiento registrado!\n\n"
-                       f"📦 *{nom}*\n"
-                       f"🔀 {int(cant_mv)} uds: {ubi_o} → {ubi_d}")
+        lts_post = _lotes(cod)
+        stk_post = int(sum(float(l.get('cantidad',0) or 0) for l in lts_post))
+        return True, (f"✅ {int(cant_mv)} uds de *{nom}* movidas\n"
+                       f"🔀 {ubi_o} → {ubi_d}\n"
+                       f"📊 Stock total: {stk_post} uds")
 
     def _exec_corregir(txt):
         if rol in ('visita', 'vendedor'):
@@ -1665,7 +1671,7 @@ with tab_asist:
         registrar_historial("CORRECCIÓN", cod, nom, cant, ubi, usuario)
         recalcular_maestra(cod, inventario)
         refrescar()
-        return True, f"✅ Stock corregido!\n\n📦 *{nom}*\n✏️  Ahora hay {int(cant)} uds en {ubi}"
+        return True, f"✅ *{nom}* — ahora hay {int(cant)} uds en {ubi}"
 
     def _resp_historial(txt):
         try:
@@ -1740,10 +1746,10 @@ with tab_asist:
             if not lts: return None, f"📦 *{prod['nombre']}* no tiene stock activo."
             total = sum(float(l.get('cantidad',0)) for l in lts)
             det   = "\n".join(
-                f"  📍 {l.get('ubicacion','?')} — {int(float(l.get('cantidad',0)))} uds"
-                + (f"  Vto:{l.get('fecha','')}" if l.get('fecha') else "")
+                f"  📍 {l.get('ubicacion','?')} ({l.get('deposito','')}) — {int(float(l.get('cantidad',0)))} uds"
+                + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
                 for l in lts)
-            return None, f"📍 *{prod['nombre']}*\nStock total: {int(total)} uds\n\n{det}"
+            return None, f"📍 *{prod['nombre']}*\nTotal: {int(total)} uds\n\n{det}"
         todas = {}
         for l in inventario:
             u = str(l.get('ubicacion',''))
@@ -1758,11 +1764,14 @@ with tab_asist:
             cod = str(prod['cod_int'])
             stk = int(float(prod.get('cantidad_total', 0) or 0))
             lts = _lotes(cod)
-            det = "\n".join(
-                f"  📍 {l.get('ubicacion','?')} — {int(float(l.get('cantidad',0)))} uds"
-                + (f"  Vto:{l.get('fecha','')}" if l.get('fecha') else "")
-                for l in lts) if lts else "  Sin lotes activos"
-            return None, f"📦 *{prod['nombre']}*\nCódigo: {cod}  ·  Stock total: **{stk} uds**\n\n{det}"
+            if lts:
+                det = "\n".join(
+                    f"  📍 {l.get('ubicacion','?')} ({l.get('deposito','')}) — {int(float(l.get('cantidad',0)))} uds"
+                    + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
+                    for l in lts)
+            else:
+                det = "  Sin stock activo"
+            return None, f"📦 *{prod['nombre']}* (cod:{cod})\nTotal: **{stk} uds**\n\n{det}"
         sugs = buscar_varios(txt, maestra)
         if sugs:
             lineas = [f"  📦 {p['nombre']} (cod:{p['cod_int']}) — {int(float(p.get('cantidad_total',0) or 0))} uds"
