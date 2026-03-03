@@ -1816,10 +1816,19 @@ with tab_asist:
                   and not _re.match(r'^\d+(?:ml|cc|l|lt|g|gr|kg|mg|oz)$',w)]
         best, bsc = None, 0
         for p in maestra:
-            nn = _nn(p.get('nombre',''))
-            sc = sum(2 if w == (nn.split() or [''])[0] else 1 for w in tokens if w in nn)
+            nn  = _nn(p.get('nombre',''))
+            nnt = nn.split()
+            sc  = 0
+            import re as _re2
+            for w in tokens:
+                if w not in nn: continue
+                if _re2.search(r'(?<![a-z])' + _re2.escape(w) + r'(?![a-z])', nn):
+                    pts = len(w)
+                    if nnt and w == nnt[0]: pts *= 3
+                    elif w in nnt:          pts *= 2
+                    sc += pts
             if sc > bsc: bsc, best = sc, p
-        return best if bsc >= 2 else None
+        return best if bsc >= 4 else None
 
     def _detalle_prod(prod):
         """Texto con stock + lotes detallados."""
@@ -1857,8 +1866,18 @@ with tab_asist:
 
         cands = []
         for p in maestra:
-            nn = _nn(p.get('nombre',''))
-            sc = sum(2 if w==(nn.split() or [''])[0] else 1 for w in pals if w in nn)
+            nn   = _nn(p.get('nombre',''))
+            nnt  = nn.split()
+            sc   = 0
+            for w in pals:
+                if w not in nn: continue
+                # Palabra exacta en el nombre (no substring de otra)
+                import re as _re2
+                if _re2.search(r'(?<![a-z])' + _re2.escape(w) + r'(?![a-z])', nn):
+                    pts = len(w)          # longitud = peso base
+                    if nnt and w == nnt[0]: pts *= 3   # primera palabra del nombre: triple
+                    elif w in nnt:          pts *= 2   # palabra completa: doble
+                    sc += pts
             if sc > 0: cands.append((sc, p))
         if not cands: return None
 
@@ -2391,136 +2410,151 @@ with tab_asist:
     # ── INPUT + MICRÓFONO ─────────────────────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Limpiar campo en el ciclo posterior al envío
-    # Limpiar input: vaciar antes de renderizar el widget
-    _input_val = ""
-    if st.session_state.pop("_limpiar", False):
-        _input_val = ""
-    else:
-        _input_val = st.session_state.get("bot_input", "")
+    # Limpiar campo: si vino de un envío, el próximo render arranca vacío
+    _input_val = "" if st.session_state.pop("_limpiar", False) else st.session_state.get("bot_input", "")
 
-    # Micrófono via st.components — único método fiable en Streamlit web/mobile
+    # Capturar voz enviada por el componente via query param
+    _voz_qp = st.query_params.get("lz_voz", "")
+    if _voz_qp:
+        try: del st.query_params["lz_voz"]
+        except: pass
+
     import streamlit.components.v1 as _stc
-    _stc.html("""<!DOCTYPE html><html><head><style>
-    *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-    body{background:transparent}
-    #bar{display:flex;align-items:center;gap:10px;background:#1E293B;border:1px solid #334155;
-         border-radius:12px;padding:8px 14px}
-    #btn{background:linear-gradient(135deg,#3B82F6,#06B6D4);color:#fff;border:none;
-         border-radius:50%;width:46px;height:46px;font-size:22px;cursor:pointer;flex-shrink:0;transition:.2s all}
-    #btn.rec{background:linear-gradient(135deg,#EF4444,#F59E0B);animation:pu 1s infinite}
-    @keyframes pu{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{box-shadow:0 0 0 14px rgba(239,68,68,0)}}
-    #st{font-size:13px;color:#94A3B8;font-weight:600;flex:1}
-    #st.ok{color:#10B981} #st.er{color:#EF4444}
-    #pv{display:none;margin-top:8px;background:#0F172A;border:1px solid #1E3A5F;
-        border-radius:8px;padding:8px 12px;font-size:13px;color:#93C5FD;word-break:break-word}
-    #sb{display:none;width:100%;margin-top:6px;padding:10px;border:none;border-radius:10px;
-        background:linear-gradient(135deg,#10B981,#059669);color:#fff;
-        font-size:15px;font-weight:700;cursor:pointer}
-    #sb:active{opacity:.8}
-    </style></head><body>
-    <div id="bar">
-      <button id="btn" onclick="tog()">🎤</button>
-      <span id="st">Toca para dictar</span>
-    </div>
-    <div id="pv"></div>
-    <button id="sb" onclick="env()">&#10148; Enviar mensaje de voz</button>
-    <script>
-    var R=null,gr=false,tx="";
-    function tog(){
-      var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-      if(!SR){ss("er","Necesitas Chrome para el microfono");return}
-      if(gr){R.stop();return}
-      R=new SR();R.lang="es-AR";R.continuous=false;R.interimResults=true;
-      R.onstart=function(){gr=true;sb2("rec","&#9209;");ss("ok","Escuchando... toca para terminar")};
-      R.onresult=function(e){
-        var t="";for(var i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;
-        tx=t;
-        document.getElementById("pv").textContent="Transcripcion: "+tx;
-        document.getElementById("pv").style.display="block";
-        document.getElementById("sb").style.display="block"
-      };
-      R.onerror=function(e){
-        var m={"not-allowed":"Permiso denegado — habilita el microfono en la barra del navegador",
-               "no-speech":"No se escucho nada","network":"Error de red","audio-capture":"Sin microfono"};
-        ss("er",m[e.error]||e.error)
-      };
-      R.onend=function(){
-        gr=false;sb2("","&#127908;");
-        if(!tx)ss("","Toca para dictar");
-        else ss("ok","Listo — toca Enviar o escribe abajo")
-      };
-      R.start()
+
+    _stc.html("""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+body{background:transparent;padding:0 2px}
+#bar{display:flex;align-items:center;gap:12px;background:#1E293B;
+     border:1px solid #334155;border-radius:12px;padding:10px 16px}
+#micbtn{background:linear-gradient(135deg,#3B82F6,#06B6D4);color:#fff;border:none;
+        border-radius:50%;width:48px;height:48px;font-size:24px;cursor:pointer;flex-shrink:0;
+        transition:all .2s;display:flex;align-items:center;justify-content:center;
+        box-shadow:0 2px 8px rgba(59,130,246,.4)}
+#micbtn:hover{transform:scale(1.08)}
+#micbtn.rec{background:linear-gradient(135deg,#EF4444,#F59E0B);
+            animation:pu 1s infinite;box-shadow:0 2px 12px rgba(239,68,68,.5)}
+@keyframes pu{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{box-shadow:0 0 0 12px rgba(239,68,68,0)}}
+#mst{font-size:13px;color:#94A3B8;font-weight:600;flex:1;line-height:1.4}
+#mst.ok{color:#10B981}#mst.er{color:#EF4444}
+#mpv{display:none;font-size:12px;color:#93C5FD;margin-top:3px;line-height:1.3;word-break:break-word}
+#sbtn{width:100%;margin-top:8px;padding:13px 20px;border:none;border-radius:12px;
+      background:linear-gradient(135deg,#10B981,#059669);color:#fff;
+      font-size:15px;font-weight:800;cursor:pointer;letter-spacing:.3px;
+      box-shadow:0 3px 12px rgba(16,185,129,.5);transition:all .15s;display:none}
+#sbtn:hover{transform:translateY(-1px);box-shadow:0 5px 18px rgba(16,185,129,.6)}
+#sbtn:active{transform:translateY(0);opacity:.85}
+</style></head><body>
+<div id="bar">
+  <button id="micbtn" onclick="togMic()">\U0001f3a4</button>
+  <div style="flex:1">
+    <div id="mst">Toca el microfono — se envia solo al terminar</div>
+    <div id="mpv"></div>
+  </div>
+</div>
+<button id="sbtn" onclick="enviarVoz()">\U0001f7e2\u00a0 ENVIAR MENSAJE DE VOZ</button>
+<script>
+var R=null,gr=false,tx="";
+function M(id){return document.getElementById(id)}
+function setMic(c,i){M("micbtn").className=c;M("micbtn").innerHTML=i}
+function setSt(c,t){M("mst").className=c;M("mst").textContent=t}
+function setPv(t){M("mpv").textContent=t;M("mpv").style.display=t?"block":"none"}
+function showSend(v){M("sbtn").style.display=v?"block":"none"}
+function getTa(){
+  var all=window.parent.document.querySelectorAll("textarea");
+  for(var i=0;i<all.length;i++){
+    var p=all[i].placeholder||"";
+    if(p.indexOf("Escribi")>=0||p.indexOf("Enter")>=0) return all[i];
+  }
+  for(var i=0;i<all.length;i++){if(!all[i].readOnly) return all[i]}
+  return null;
+}
+function enviarTexto(texto){
+  var ta=getTa();
+  if(!ta){setSt("er","No se encontro el cuadro de texto");return false}
+  try{
+    Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set.call(ta,texto);
+  }catch(e){ta.value=texto}
+  ta.dispatchEvent(new Event("input",{bubbles:true}));
+  ta.dispatchEvent(new Event("change",{bubbles:true}));
+  setTimeout(function(){
+    var btns=window.parent.document.querySelectorAll("button");
+    for(var i=0;i<btns.length;i++){
+      var t=(btns[i].innerText||btns[i].textContent||"").trim();
+      if(t.indexOf("Enviar")>=0){btns[i].click();return}
     }
-    function env(){
-      if(!tx)return;
-      // postMessage al parent Streamlit con el texto transcripto
-      try{window.parent.postMessage({lz_voz:tx},"*")}catch(e){}
-      // Intentar escribir directamente en el textarea como fallback
-      try{
-        var ta=window.parent.document.querySelector("textarea[data-testid]");
-        if(!ta){
-          var all=window.parent.document.querySelectorAll("textarea");
-          for(var i=0;i<all.length;i++){if(all[i].placeholder&&all[i].placeholder.indexOf("Escribi")>=0){ta=all[i];break}}
+  },200);
+  return true;
+}
+function hookEnter(){
+  var ta=getTa();
+  if(ta&&!ta._lzHook){
+    ta._lzHook=true;
+    ta.addEventListener("keydown",function(ev){
+      if(ev.key==="Enter"&&!ev.shiftKey){
+        ev.preventDefault();ev.stopPropagation();
+        if(!ta.value.trim()) return;
+        var btns=window.parent.document.querySelectorAll("button");
+        for(var i=0;i<btns.length;i++){
+          var t=(btns[i].innerText||btns[i].textContent||"").trim();
+          if(t.indexOf("Enviar")>=0){btns[i].click();return}
         }
-        if(ta){
-          Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set.call(ta,tx);
-          ta.dispatchEvent(new Event("input",{bubbles:true}));
-          setTimeout(function(){
-            var btns=window.parent.document.querySelectorAll("button");
-            for(var i=0;i<btns.length;i++){if(btns[i].innerText.indexOf("Enviar")>=0){btns[i].click();break}}
-          },250)
-        }
-      }catch(e){}
-      tx="";
-      document.getElementById("pv").style.display="none";
-      document.getElementById("sb").style.display="none";
-      sb2("","&#127908;");ss("","Toca para dictar")
-    }
-    function sb2(c,i){var b=document.getElementById("btn");b.className=c;b.innerHTML=i}
-    function ss(c,t){var s=document.getElementById("st");s.className=c;s.textContent=t}
-    </script></body></html>""", height=120)
+      }
+    },true);
+  }
+}
+function togMic(){
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){setSt("er","Necesitas Chrome o Edge para el microfono");return}
+  if(gr){R.stop();return}
+  tx="";showSend(false);setPv("");
+  R=new SR();R.lang="es-AR";R.continuous=false;R.interimResults=true;R.maxAlternatives=1;
+  R.onstart=function(){gr=true;setMic("rec","\u23f9");setSt("ok","\U0001f534 Escuchando... toca para parar")};
+  R.onresult=function(e){
+    var t="";for(var i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript;
+    tx=t;setPv("\U0001f4dd "+tx);showSend(!!tx);
+  };
+  R.onerror=function(e){
+    var m={"not-allowed":"Permiso denegado — habilita el microfono en el navegador",
+           "no-speech":"No se escucho nada","network":"Error de red","audio-capture":"Sin microfono"};
+    setSt("er","\u274c "+(m[e.error]||e.error));gr=false;setMic("","\U0001f3a4");showSend(false);
+  };
+  R.onend=function(){
+    gr=false;setMic("","\U0001f3a4");
+    if(tx){
+      setSt("ok","\u2705 Grabado — enviando...");showSend(true);
+      setTimeout(function(){
+        var ok=enviarTexto(tx);
+        if(ok){tx="";setPv("");showSend(false);setSt("","Toca el microfono")}
+      },300);
+    }else{setSt("","Toca el microfono");showSend(false)}
+  };
+  R.start();
+}
+function enviarVoz(){
+  if(!tx){setSt("er","Graba un mensaje primero");return}
+  setSt("ok","Enviando...");
+  if(enviarTexto(tx)){tx="";setPv("");showSend(false);setSt("","Toca el microfono")}
+}
+var _ht=0;
+function tryH(){hookEnter();if(!getTa()&&_ht<25){_ht++;setTimeout(tryH,400)}}
+tryH();
+</script></body></html>""", height=130)
 
     # CSS textarea
     st.markdown("""<style>
     .stTextArea textarea{background:#1E293B !important;color:#F1F5F9 !important;
         border:1px solid #334155 !important;border-radius:12px !important;
-        font-size:15px !important;resize:none !important}
+        font-size:15px !important;resize:none !important;padding:12px 16px !important}
     .stTextArea textarea:focus{border-color:#3B82F6 !important;
         box-shadow:0 0 0 2px rgba(59,130,246,.3) !important}
+    .stTextArea textarea::placeholder{color:#475569 !important}
     </style>""", unsafe_allow_html=True)
-
-    # Enter = enviar (Shift+Enter = salto de linea)
-    st.markdown("""<script>
-    (function(){
-      var t=0;
-      function h(){
-        var found=false;
-        var all=document.querySelectorAll("textarea");
-        for(var i=0;i<all.length;i++){
-          var ta=all[i];
-          if(!ta._lzh && ta.placeholder && ta.placeholder.indexOf("Escribi")>=0){
-            ta._lzh=true; found=true;
-            ta.addEventListener("keydown",function(ev){
-              if(ev.key==="Enter"&&!ev.shiftKey){
-                ev.preventDefault();
-                var btns=document.querySelectorAll("button");
-                for(var j=0;j<btns.length;j++){if(btns[j].innerText.indexOf("Enviar")>=0){btns[j].click();return}}
-              }
-            })
-          }
-        }
-        if(!found&&t<30){t++;setTimeout(h,300)}
-      }
-      h()
-    })()
-    </script>""", unsafe_allow_html=True)
 
     ic1, ic2 = st.columns([5, 1])
     with ic1:
         txt_in = st.text_area(
             "msg", label_visibility="collapsed",
-            placeholder="Escribi aca · Enter envia · Shift+Enter nueva linea · o usa el microfono",
+            placeholder="Escribí acá · Enter envía · Shift+Enter nueva línea",
             key="bot_input",
             height=68,
             value=_input_val,
@@ -2529,7 +2563,7 @@ with tab_asist:
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
         send = st.button("➤ Enviar", use_container_width=True, type="primary", key="bot_send")
 
-    _final = _quick or (txt_in.strip() if send and txt_in else None)
+    _final = _quick or (_voz_qp.strip() if _voz_qp else None) or (txt_in.strip() if send and txt_in else None)
 
     if _final:
         st.session_state["_limpiar"] = True
