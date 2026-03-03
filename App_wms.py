@@ -1042,6 +1042,44 @@ with tab_admin:
             st.caption(f"Numero activo: {_wa_num_actual}")
 
         st.markdown("---")
+        st.markdown('<p class="sec-label">🤖 ASISTENTE IA — Groq API Key</p>', unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.3);
+                    border-radius:12px;padding:12px 16px;margin-bottom:10px;font-size:12px;color:#94A3B8;">
+            La key se guarda en Supabase y la usa el Operario Digital para responder.<br>
+            <b style="color:#818CF8">Conseguí tu key gratis en:</b> console.groq.com → API Keys → Create API Key<br>
+            La key empieza con <code>gsk_...</code>
+        </div>
+        """, unsafe_allow_html=True)
+
+        try:
+            _gk_db = sb.table("config").select("valor").eq("clave","groq_key").execute().data
+            _gk_actual = _gk_db[0]["valor"] if _gk_db else ""
+            _gk_masked = (_gk_actual[:8] + "..." + _gk_actual[-4:]) if len(_gk_actual) > 12 else ""
+        except:
+            _gk_actual = _gk_masked = ""
+
+        with st.form("form_groq"):
+            nueva_gk = st.text_input(
+                "API Key de Groq:",
+                placeholder="gsk_...",
+                help="Pegá tu key acá. Se guarda encriptada en Supabase."
+            )
+            if _gk_masked:
+                st.caption(f"Key actual: {_gk_masked}")
+            if st.form_submit_button("💾 Guardar Groq Key", use_container_width=True):
+                gk_val = nueva_gk.strip()
+                if gk_val.startswith("gsk_") and len(gk_val) > 20:
+                    try:
+                        sb.table("config").upsert({"clave":"groq_key","valor":gk_val}, on_conflict="clave").execute()
+                        st.success("✅ Groq Key guardada correctamente.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al guardar: {e}")
+                else:
+                    st.warning("La key debe empezar con 'gsk_' y tener más de 20 caracteres.")
+
+        st.markdown("---")
         st.markdown('<p class="sec-label">⚠️ ZONA PELIGROSA</p>', unsafe_allow_html=True)
         tabla_wipe = st.selectbox("Tabla a borrar:", ["inventario","maestra","historial"], key="wipe_t")
         confirmar  = st.text_input("Escribí CONFIRMAR para habilitar el borrado:", key="wipe_conf")
