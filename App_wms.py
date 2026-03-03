@@ -1396,12 +1396,25 @@ with tab_asist:
         return [p for _, p in mej[:top]]
 
     def _cant(t):
+        n = _n(t)
+        # Paso 1: verbo+número (mayor prioridad)
+        m_exp = _re.search(
+            r'(?:llegaron?|llego|ingres[aoe]|carg[aoe]|sum[aoe]|agreg[aoe]|'            r'recib[ioe]|entr[aoe]|compra|trajo|trajeron|'            r'baj[aoe]|sac[aoe]|retir[aoe]|us[aoe]|gast[aoe]|'            r'son|hay|quedan?|pon[eo])\s+(\d+(?:[.,]\d+)?)'            r'|(\d+(?:[.,]\d+)?)\s+(?:unidades?|uds?|cajas?|bultos?)', n)
+        if m_exp:
+            v = m_exp.group(1) or m_exp.group(2)
+            if v: return float(v.replace(',','.'))
+        # Paso 2: excluir ubicaciones/fechas, tomar primer número no-código
         limpio = _re.sub(r'\b\d{1,2}[-_]\d{1,2}[A-Za-z]{0,2}\b', ' ', t)
+        limpio = _re.sub(r'\b\d{1,2}[/\-]\d{2,4}\b', ' ', limpio)
         limpio = _re.sub(r'"[^"]*"', ' ', limpio)
         codigos = {str(p.get('cod_int','')) for p in maestra}
-        for m in _re.finditer(r'\b(\d+(?:[.,]\d+)?)\b', limpio):
+        nums = list(_re.finditer(r'\b(\d+(?:[.,]\d+)?)\b', limpio))
+        for m in nums:
             if m.group(1) not in codigos:
                 return float(m.group(1).replace(',','.'))
+        # Paso 3: si todos son códigos, el primero es la cantidad
+        if len(nums) >= 2:
+            return float(nums[0].group(1).replace(',','.'))
         tabla = {
             'un':1,'una':1,'dos':2,'tres':3,'cuatro':4,'cinco':5,'seis':6,
             'siete':7,'ocho':8,'nueve':9,'diez':10,'once':11,'doce':12,
@@ -1409,7 +1422,6 @@ with tab_asist:
             'sesenta':60,'setenta':70,'ochenta':80,'noventa':90,'cien':100,
             'doscientos':200,'quinientos':500,'mil':1000
         }
-        n = _n(t)
         for w, v in tabla.items():
             if _re.search(r'\b' + w + r'\b', n): return float(v)
         return 0.0
@@ -1758,7 +1770,93 @@ with tab_asist:
         lines = [f"  📍 {u} — {int(c)} uds" for u, c in sorted(todas.items())][:40]
         return None, f"📍 Ubicaciones activas ({len(todas)}):\n\n" + "\n".join(lines)
 
+    def _resp_lista_categoria(txt):
+        """
+        Cuando preguntan 'qué shampoo de 350 tengo' devuelve
+        una lista completa de todos los productos que coinciden,
+        con stock, ubicaciones y detalle.
+        """
+        n = _n(txt)
+        # Extraer palabras clave (ignorar stopwords)
+        stops = {'que','cual','cuales','tengo','tienen','hay','de','del','en',
+                 'los','las','un','una','me','como','donde','esta','estan',
+                 'todo','todos','toda','todas','dame','lista','listame',
+                 'mostrame','ver','veo','cuanto','cuantos','stock'}
+        palabras = [w for w in n.split() if w not in stops and len(w) > 1]
+
+        if not palabras:
+            return None, None
+
+        # Buscar todos los productos que contienen ALGUNA palabra clave
+        candidatos = []
+        for p in maestra:
+            nom_n = _n(p.get('nombre',''))
+            score = sum(1 for w in palabras if w in nom_n)
+            if score > 0:
+                candidatos.append((score, p))
+
+        if not candidatos:
+            return None, None
+
+        # Ordenar por score desc, luego por nombre
+        candidatos.sort(key=lambda x: (-x[0], x[1].get('nombre','')))
+
+        # Si hay un solo resultado exacto y es inconfundible → detalle individual
+        if len(candidatos) == 1:
+            prod = candidatos[0][1]
+            cod = str(prod['cod_int'])
+            stk = int(float(prod.get('cantidad_total', 0) or 0))
+            lts = _lotes(cod)
+            det = "\n".join(
+                f"  📍 {l.get('ubicacion','?')} — {int(float(l.get('cantidad',0)))} uds"
+                + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
+                for l in lts) if lts else "  Sin stock activo"
+            return None, f"📦 *{prod['nombre']}* (cod:{cod})\nTotal: **{stk} uds**\n\n{det}"
+
+        # Múltiples: armar lista completa
+        total_prods = len(candidatos)
+        total_stock = sum(int(float(p.get('cantidad_total',0) or 0)) for _,p in candidatos)
+
+        lineas = []
+        for _, p in candidatos[:40]:  # máximo 40
+            cod = str(p['cod_int'])
+            stk = int(float(p.get('cantidad_total', 0) or 0))
+            lts = _lotes(cod)
+
+            # Indicador de stock
+            if stk == 0:
+                icono = "⛔"
+            elif stk < 10:
+                icono = "⚠️"
+            else:
+                icono = "✅"
+
+            # Detalle de ubicaciones en línea
+            ubi_det = ""
+            if lts:
+                ubis = [f"{l.get('ubicacion','?')}:{int(float(l.get('cantidad',0)))}u"
+                        + (f"[{l.get('fecha','')}]" if l.get('fecha') else "")
+                        for l in lts[:4]]
+                ubi_det = "  →  " + "  |  ".join(ubis)
+
+            lineas.append(f"{icono} **{p['nombre']}** (cod:{cod}) — {stk} uds{ubi_det}")
+
+        encabezado = (f"📋 *{total_prods} productos* encontrados para «{txt.strip()}»\n"
+                      f"📊 Stock total: **{total_stock:,} uds**\n\n")
+
+        if total_prods > 40:
+            encabezado += f"*(Mostrando primeros 40 de {total_prods})*\n\n"
+
+        return None, encabezado + "\n".join(lineas)
+
     def _resp_consulta(txt):
+        # Primero intentar como lista de categoría
+        ok_l, resp_l = _resp_lista_categoria(txt)
+        # Si hay múltiples resultados, usar la lista
+        if resp_l and "\n" in resp_l and "productos" in resp_l:
+            return ok_l, resp_l
+
+        # Buscar producto único
         prod = buscar_uno(txt, maestra)
         if prod:
             cod = str(prod['cod_int'])
@@ -1772,6 +1870,11 @@ with tab_asist:
             else:
                 det = "  Sin stock activo"
             return None, f"📦 *{prod['nombre']}* (cod:{cod})\nTotal: **{stk} uds**\n\n{det}"
+
+        # Si _resp_lista_categoria encontró algo, usarlo
+        if resp_l:
+            return ok_l, resp_l
+
         sugs = buscar_varios(txt, maestra)
         if sugs:
             lineas = [f"  📦 {p['nombre']} (cod:{p['cod_int']}) — {int(float(p.get('cantidad_total',0) or 0))} uds"
@@ -1818,23 +1921,41 @@ with tab_asist:
             )
         return None
 
+    def _combinar_ctx(anterior, nuevo):
+        return (anterior.get("txt", "") + " " + nuevo).strip()
+
     def _procesar(txt):
-        intent = _intent(txt)
+        # ── Contexto pendiente de turno anterior ──────────────────────────────
+        pendiente = st.session_state.get("_ctx_pendiente")
+        if pendiente:
+            txt_c = _combinar_ctx(pendiente, txt)
+            intent = pendiente.get("intent", _intent(txt_c))
+            st.session_state.pop("_ctx_pendiente", None)
+        else:
+            txt_c  = txt
+            intent = _intent(txt)
+
         ch = _resp_charla(intent)
         if ch: return ch
-        if intent == 'salida':       return _exec_salida(txt)
-        if intent == 'entrada':      return _exec_entrada(txt)
-        if intent == 'mover':        return _exec_mover(txt)
-        if intent == 'corregir':     return _exec_corregir(txt)
-        if intent == 'historial':    return _resp_historial(txt)
-        if intent == 'resumen':      return _resp_resumen(txt)
-        if intent == 'bajo_stock':   return _resp_bajo_stock(txt)
-        if intent == 'top_stock':    return _resp_top_stock(txt)
-        if intent == 'ubicaciones':  return _resp_ubicaciones(txt)
-        if intent == 'vencimientos': return _resp_vencimientos(txt)
-        if intent == 'pedidos':      return _resp_pedidos(txt)
-        if intent == 'consulta_stock': return _resp_consulta(txt)
-        return _resp_consulta(txt)  # fallback: buscar producto
+
+        if intent == 'salida':       resultado = _exec_salida(txt_c)
+        elif intent == 'entrada':    resultado = _exec_entrada(txt_c)
+        elif intent == 'mover':      resultado = _exec_mover(txt_c)
+        elif intent == 'corregir':   resultado = _exec_corregir(txt_c)
+        elif intent == 'historial':  return _resp_historial(txt_c)
+        elif intent == 'resumen':    return _resp_resumen(txt_c)
+        elif intent == 'bajo_stock': return _resp_bajo_stock(txt_c)
+        elif intent == 'top_stock':  return _resp_top_stock(txt_c)
+        elif intent == 'ubicaciones':return _resp_ubicaciones(txt_c)
+        elif intent == 'vencimientos':return _resp_vencimientos(txt_c)
+        elif intent == 'pedidos':    return _resp_pedidos(txt_c)
+        else:                        return _resp_consulta(txt_c)
+
+        ok, resp = resultado
+        # Si el bot pide más datos → guardar contexto para el próximo mensaje
+        if ok is None and (resp.startswith("¿") or "Especificá" in resp or "¿En qué" in resp):
+            st.session_state["_ctx_pendiente"] = {"intent": intent, "txt": txt_c}
+        return ok, resp
 
     # ── PANTALLA INICIAL ──────────────────────────────────────────────────────
 
