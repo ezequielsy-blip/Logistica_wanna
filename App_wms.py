@@ -2487,44 +2487,47 @@ with tab_asist:
 
         return False, "Acción desconocida: {}".format(accion)
 
+    # Modelos Groq a intentar en orden — el primero que funcione se usa
     def _llamar_ia(msgs, gk=None):
+        """
+        Llama a Groq con auto-deteccion de modelo.
+        Si no hay key, usa Ollama local.
+        """
         import json as _jj, urllib.request as _ur
         if gk:
-            body = _jj.dumps({
-                "model": "llama3-8b-8192",
-                "messages": msgs,
-                "temperature": 0.1,
-                "max_tokens": 600
-            }).encode()
-            req = _ur.Request(
-                "https://api.groq.com/openai/v1/chat/completions",
-                data=body,
-                headers={"Authorization": "Bearer " + gk.strip(),
-                         "Content-Type": "application/json"})
+            # Obtener lista de modelos disponibles para esta key
+            try:
+                req_m = _ur.Request("https://api.groq.com/openai/v1/models",
+                    headers={"Authorization":"Bearer "+gk.strip(),
+                             "Content-Type":"application/json"})
+                with _ur.urlopen(req_m, timeout=8) as rm:
+                    ids = [m["id"] for m in _jj.loads(rm.read()).get("data",[]) if m.get("id")]
+            except:
+                ids = []
+            # Elegir el mejor modelo disponible
+            preferidos = ["llama-3.1-8b-instant","llama3-8b-8192","gemma2-9b-it","mixtral-8x7b-32768"]
+            modelo = next((p for p in preferidos if p in ids), ids[0] if ids else "llama-3.1-8b-instant")
+            body = _jj.dumps({"model":modelo,"messages":msgs,"temperature":0.1,"max_tokens":600}).encode()
+            req = _ur.Request("https://api.groq.com/openai/v1/chat/completions", data=body,
+                headers={"Authorization":"Bearer "+gk.strip(),"Content-Type":"application/json"})
             try:
                 with _ur.urlopen(req, timeout=25) as r:
                     return _jj.loads(r.read())["choices"][0]["message"]["content"].strip()
             except _ur.HTTPError as he:
-                body_err = he.read().decode("utf-8","ignore")
-                raise Exception("Groq HTTP {}: {}".format(he.code, body_err[:200]))
+                raise Exception("Groq {}: {}".format(he.code, he.read().decode("utf-8","ignore")[:150]))
         else:
-            # Ollama — detectar modelo disponible
+            # Ollama local — detectar modelo instalado
             try:
                 with _ur.urlopen("http://localhost:11434/api/tags", timeout=2) as rt:
-                    tags = _jj.loads(rt.read()).get("models", [])
-                nombres = [m["name"] for m in tags if m.get("name")]
+                    nombres = [m["name"] for m in _jj.loads(rt.read()).get("models",[]) if m.get("name")]
                 modelo = nombres[0] if nombres else "gemma3:4b"
             except:
                 modelo = "gemma3:4b"
-            body = _jj.dumps({
-                "model": modelo,
-                "messages": msgs,
-                "stream": False,
-                "options": {"temperature": 0.05, "num_predict": 500}
-            }).encode()
+            body = _jj.dumps({"model":modelo,"messages":msgs,"stream":False,
+                              "options":{"temperature":0.05,"num_predict":500}}).encode()
             req = _ur.Request("http://localhost:11434/api/chat",
-                data=body, headers={"Content-Type": "application/json"})
-            with _ur.urlopen(req, timeout=60) as r:
+                data=body, headers={"Content-Type":"application/json"})
+            with _ur.urlopen(req, timeout=90) as r:
                 return _jj.loads(r.read())["message"]["content"].strip()
 
     def _cerebro(user_msg):
