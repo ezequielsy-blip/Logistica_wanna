@@ -1136,289 +1136,296 @@ with tab_asist:
         t = ''.join(c for c in t if _ud.category(c) != 'Mn')
         return t.lower().strip()
 
-    def _num(txt):
-        """Extrae cantidad del texto, ignorando números que son códigos de producto o ubicaciones."""
-        # Obtener todos los códigos de producto existentes para no confundirlos con cantidades
-        codigos_existentes = {str(p.get('cod_int','')) for p in maestra}
 
-        # Primero eliminar todas las ubicaciones del texto para que sus números no confundan
-        txt_sin_ubis = _re.sub(r'\b[0-9]{1,2}[-_][0-9A-Za-z]{1,4}\b', '', txt)
+    # ═══════════════════════════════════════════════════════════════════════
+    # MOTOR NLP v3.0 — Lenguaje natural flexible, búsqueda inteligente
+    # ═══════════════════════════════════════════════════════════════════════
+    import re as _re, unicodedata as _ud
 
-        # Extraer números del texto limpio
-        nums = _re.findall(r'\d+(?:[.,]\d+)?', txt_sin_ubis)
+    def _n(t):
+        s = _ud.normalize('NFD', str(t))
+        return _re.sub(r'\s+', ' ', ''.join(
+            c for c in s if _ud.category(c) != 'Mn').lower().strip())
 
-        for num_str in nums:
-            # Ignorar si es un código de producto conocido
-            if num_str in codigos_existentes:
-                continue
-            return float(num_str.replace(',','.'))
-
-        # Palabras numéricas como fallback
-        tabla = {
-            'un':1,'una':1,'dos':2,'tres':3,'cuatro':4,'cinco':5,
-            'seis':6,'siete':7,'ocho':8,'nueve':9,'diez':10,'once':11,
-            'doce':12,'quince':15,'veinte':20,'treinta':30,'cuarenta':40,
-            'cincuenta':50,'sesenta':60,'setenta':70,'ochenta':80,'noventa':90,
-            'cien':100,'ciento':100,'doscientos':200,'trescientos':300,
-            'cuatrocientos':400,'quinientos':500,'mil':1000
-        }
-        n = _n(txt)
-        for w, v in tabla.items():
-            if w in n: return float(v)
-        return 0.0
-
-    def _ubi(txt):
-        """Extrae la primera ubicación (ej: 01-2A, 99-01B)."""
-        m = _re.search(r'\b([0-9]{1,2}[-_][0-9A-Za-z]{1,3}[A-Za-z]?)\b', txt)
-        return m.group(1).upper() if m else ""
-
-    def _ubis(txt):
-        """Extrae todas las ubicaciones del texto."""
-        return [u.upper() for u in _re.findall(r'\b([0-9]{1,2}[-_][0-9A-Za-z]{1,3}[A-Za-z]?)\b', txt)]
-
-    # Palabras a ignorar en búsqueda de productos
-    _STOPWORDS = {
-        'del','los','las','una','con','por','que','hay','uds','uni','para',
-        'desde','hasta','sacar','agregar','mover','move','poner','unidades','stock',
-        'codigo','producto','lote','cuanto','cuantos','queda','quedan','hay',
-        'dame','muestrame','mostrame','ver','listar','buscar','consultar',
-        'registrar','anota','anotar','donde','esta','ubicacion','tenemos',
-        'de','al','el','la','en','a','y','o','e','si','no','ni','sea'
+    # Stopwords: nunca son nombre de producto
+    _SW = {
+        'de','del','al','el','la','los','las','un','una','unos','unas',
+        'en','a','y','o','e','si','no','ni','por','para','con','sin','que',
+        'sacar','saca','saque','sacame','bajame','baja','bajen',
+        'retirar','retira','retiro','quitar','quita','usar','usamos',
+        'consumir','consume','gastamos','gasta','salida','despachar',
+        'despacho','egreso','descontar','desconta',
+        'agregar','agrega','agreg','ingresar','ingresa','entrada',
+        'recibir','recibio','llego','llegaron','sumar','suma',
+        'cargar','carga','compramos','compra','trajeron',
+        'meter','mete','poneme','pone','poner',
+        'mover','move','mueve','movi','manda','mandar',
+        'trasladar','traslada','reubicar','reubica',
+        'pasar','llevar','transferir',
+        'corregir','correg','ajustar','ajusta','fijar','actualizar',
+        'cuanto','cuanta','cuantos','cuantas','hay','queda','quedan',
+        'tiene','tenemos','existe','disponible','stock','dame','deme',
+        'mostrame','ver','listar','buscar','fijate','decime',
+        'codigo','cod','articulo','producto','lote','unidades','uds',
+        'total','me','nos','te','se','lo',
     }
 
-    def _limpiar_txt_para_producto(txt):
-        """Extrae solo el contenido entre comillas si existe, sino usa todo."""
-        # Si hay comillas dobles, usar el contenido entre ellas
-        m = _re.search(r'"([^"]+)"', txt)
-        if m:
-            return m.group(1)
-        # Si hay comillas simples
-        m = _re.search(r"'([^']+)'", txt)
-        if m:
-            return m.group(1)
-        # Remover ubicaciones del texto antes de buscar producto
-        txt_limpio = _re.sub(r'\b[0-9]{1,2}[-_][0-9A-Za-z]{1,3}[A-Za-z]?\b', '', txt)
-        # Remover números sueltos (cantidades)
-        txt_limpio = _re.sub(r'\b\d+\b', '', txt_limpio)
-        return txt_limpio
+    def _palabras_prod(txt):
+        t = _n(txt)
+        t = _re.sub(r'\b\d{1,2}[-_]\d{1,2}[a-z]{0,2}\b', ' ', t)
+        t = _re.sub(r'\b\d+\b', ' ', t)
+        return [w for w in t.split() if len(w) >= 2 and w not in _SW]
+
+    def _score_prod(nom_n, pals, q_n):
+        if not nom_n or not pals: return 0.0
+        if nom_n == q_n: return 99999.0
+        if q_n and len(q_n) > 3 and q_n in nom_n: return 5000.0
+        hits = sum(1 for w in pals if w in nom_n)
+        if hits == 0: return 0.0
+        sc = hits * 100 + (hits / len(pals)) * 200
+        if hits == len(pals): sc += 300
+        for w in pals:
+            if nom_n.startswith(w): sc += 50
+            sc += len(w) * 5
+            for tok in nom_n.split():
+                if len(w) >= 3 and w in tok and w != tok: sc += 25
+        sc -= len(nom_n) * 0.05
+        return sc
 
     def _buscar_prod(query):
-        """Busca producto por código exacto, número o nombre aproximado."""
-        q = _n(query)
-        # 1. Código exacto en query completo
+        """Busca por codigo interno, barras EAN/UPC, o nombre parcial."""
+        qn = _n(query)
+        q_strip = query.strip()
+        # 1. Codigo interno exacto
         for p in maestra:
-            if str(p.get("cod_int","")).lower() == q:
-                return p
-        # 2. Primer número como código (solo números cortos, no partes de ubicaciones)
-        nums = _re.findall(r'(?<![0-9\-])\b(\d{1,6})\b(?![\-])', query)
-        for num in nums:
+            if _n(str(p.get('cod_int',''))) == qn: return p
+        # 2. Codigo de barras exacto
+        for campo in ('barras','ean','upc','cod_barras','codigo_barras','barcode'):
             for p in maestra:
-                if str(p.get("cod_int","")) == num:
-                    return p
-        # 3. Usar texto limpio (entre comillas o sin ubicaciones/números)
-        txt_prod = _limpiar_txt_para_producto(query)
-        q_prod = _n(txt_prod)
-        # 4. Nombre exacto
+                v = str(p.get(campo,'')).strip()
+                if v and (v == q_strip or _n(v) == qn): return p
+        # 3. Numero en texto = codigo
+        limpio = _re.sub(r'\b\d{1,2}[-_]\d{1,2}[A-Za-z]{0,2}\b', ' ', query)
+        limpio = _re.sub(r'"[^"]*"', ' ', limpio)
+        for m in _re.finditer(r'\b(\d+)\b', limpio):
+            num = m.group(1)
+            for p in maestra:
+                if str(p.get('cod_int','')) == num: return p
+            for campo in ('barras','ean','upc','barcode'):
+                for p in maestra:
+                    if str(p.get(campo,'')) == num: return p
+        # 4. Nombre con scoring
+        mc = _re.search(r'"([^"]+)"', query) or _re.search(r"'([^']+)'", query)
+        qp   = mc.group(1) if mc else query
+        qpn  = _n(qp)
+        pals = _palabras_prod(qp)
+        if not pals: return None
+        mejores = []
         for p in maestra:
-            if _n(p.get("nombre","")) == q_prod:
-                return p
-        # 5. Todas las palabras clave presentes en el nombre
-        palabras = [w for w in q_prod.split() if len(w) > 2 and w not in _STOPWORDS]
-        if palabras:
-            for p in maestra:
-                nom = _n(p.get("nombre",""))
-                if all(w in nom for w in palabras):
-                    return p
-        # 6. Mayor score por coincidencia parcial
-        if palabras:
-            candidatos = []
-            for p in maestra:
-                nom = _n(p.get("nombre",""))
-                score = sum(1 for w in palabras if w in nom)
-                if score > 0:
-                    candidatos.append((score, len(p.get("nombre","")), p))
-            if candidatos:
-                candidatos.sort(key=lambda x: (-x[0], x[1]))
-                return candidatos[0][2]
-        return None
+            sc = _score_prod(_n(p.get('nombre','')), pals, qpn)
+            if sc > 0: mejores.append((sc, p))
+        if not mejores: return None
+        mejores.sort(key=lambda x: -x[0])
+        return mejores[0][1] if mejores[0][0] >= 15 else None
 
-    def _listar_prods(query):
-        """Lista productos que coinciden parcialmente con la búsqueda."""
-        q = _n(query)
-        palabras = [w for w in q.split() if len(w) > 2 and w not in _STOPWORDS]
-        if not palabras: return []
-        res = []
-        for p in maestra:
-            nom   = _n(p.get("nombre",""))
-            cod   = str(p.get("cod_int",""))
-            score = sum(1 for w in palabras if w in nom or w == cod)
-            if score > 0:
-                res.append((score, p))
+    def _buscar_varios(query, top=6):
+        mc   = _re.search(r'"([^"]+)"', query) or _re.search(r"'([^']+)'", query)
+        qp   = mc.group(1) if mc else query
+        qpn  = _n(qp)
+        pals = _palabras_prod(qp)
+        if not pals: return []
+        res  = [(  _score_prod(_n(p.get('nombre','')), pals, qpn), p) for p in maestra]
+        res  = [(sc, p) for sc, p in res if sc > 0]
         res.sort(key=lambda x: -x[0])
-        return [p for _, p in res]
+        return [p for _, p in res[:top]]
+
+    def _cant(t):
+        limpio = _re.sub(r'\b\d{1,2}[-_]\d{1,2}[A-Za-z]{0,2}\b', ' ', t)
+        limpio = _re.sub(r'"[^"]*"', ' ', limpio)
+        codigos = {str(p.get('cod_int','')) for p in maestra}
+        for m in _re.finditer(r'\b(\d+(?:[.,]\d+)?)\b', limpio):
+            if m.group(1) not in codigos:
+                return float(m.group(1).replace(',','.'))
+        tabla = {
+            'un':1,'una':1,'dos':2,'tres':3,'cuatro':4,'cinco':5,'seis':6,
+            'siete':7,'ocho':8,'nueve':9,'diez':10,'once':11,'doce':12,
+            'quince':15,'veinte':20,'treinta':30,'cuarenta':40,'cincuenta':50,
+            'sesenta':60,'setenta':70,'ochenta':80,'noventa':90,'cien':100,
+            'doscientos':200,'quinientos':500,'mil':1000
+        }
+        n = _n(t)
+        for w, v in tabla.items():
+            if _re.search(r'\b' + w + r'\b', n): return float(v)
+        return 0.0
+
+    def _ubi(t):
+        m = _re.search(r'\b(\d{1,2}[-_]\d{1,2}[A-Za-z]{0,2})\b', t)
+        return m.group(1).upper() if m else ''
+
+    def _ubis(t):
+        return [u.upper() for u in _re.findall(r'\b(\d{1,2}[-_]\d{1,2}[A-Za-z]{0,2})\b', t)]
+
+    def _fecha_vto(t):
+        m = _re.search(r'\b(\d{1,2}[/\-]\d{2,4})\b', t)
+        return m.group(1) if m else ''
 
     def _lotes(cod):
         return idx_inv.get(str(cod), [])
 
-    def _intencion(txt):
-        """Detecta intención del mensaje con prioridad correcta."""
-        n = _n(txt)
-
-        if any(w in n for w in [
-            'sacar','saca','saque','retira','retirar','descontar','desconta',
-            'salida','despachar','despach','quitar','quita','usar','gasta',
-            'consumir','consum','menos','egreso','egresa','extraer','extrajo'
-        ]):
+    def _intent(t):
+        # _n() elimina tildes y pasa a minusculas — patrones siempre sin tildes
+        n = _n(t)
+        if _re.search(r'\b(hola|buenas|buen\s?dia|como\s+estas|como\s+andas|hey|que\s+tal)\b', n):
+            return 'saludo'
+        if _re.search(r'\b(gracias|gracia|genial|perfecto|excelente|de\s+nada)\b', n):
+            return 'gracias'
+        if _re.search(r'\b(ayuda|que\s+podes|que\s+sabes|como\s+funciona|comandos|como\s+te\s+uso)\b', n):
+            return 'ayuda'
+        # SALIDA
+        if _re.search(r'\b(sac[aoe]|sacame|sacamos|saque|baj[aoe]|bajame|bajamos|'
+                       r'retir[ao]|retiramos|retiraron|quit[ao]|quitame|quitamos|'
+                       r'us[ao]|usamos|usaron|consum[eo]|consumimos|consumieron|'
+                       r'gast[ao]|gastamos|gastaron|salida|despacha|despacho|despachamos|'
+                       r'egres[ao]|descont[ao]|descontamos|'
+                       r'se\s+llev[ao]|se\s+llevaron|llevamos|llevaron|llevo|'
+                       r'se\s+us[ao]|se\s+usaron|se\s+gast[ao]|se\s+gastaron|'
+                       r'tom[ao]|tomamos|tomaron)\b', n):
             return 'salida'
-
-        if any(w in n for w in [
-            'agregar','agrega','agreg','ingresar','ingresa','ingres','entrada',
-            'recibir','recibi','sumar','suma','añadir','añade','cargar','carga',
-            'llegaron','llego','compramos','recepcion','incorporar','incorpora',
-            'nuevo stock','mas unidades'
-        ]):
+        # ENTRADA
+        if _re.search(r'\b(agreg[ao]|agregame|agregamos|agregaron|'
+                       r'ingres[ao]|ingresamos|ingresaron|entro|entraron|entrada|entradas|'
+                       r'recib[io]|recibimos|recibieron|llegaron|llego|llegamos|'
+                       r'sum[ao]|sumamos|sumame|carg[ao]|cargamos|cargaron|cargue|'
+                       r'compra|compramos|compraron|trajo|trajimos|trajeron|'
+                       r'met[eo]|metemos|pon[eo]|ponemos|poneme|pusimos|'
+                       r'reponer|reponemos|reposicion|incorpor[ao])\b', n):
             return 'entrada'
-
-        if any(w in n for w in [
-            'mover','mueve','movi','move ','move"','trasladar','traslada','reubicar','reubica',
-            'cambiar de lugar','cambiar ubicacion','pasar a','llevar a',
-            'mandar a','manda a','transferir','transfer','reubicar'
-        ]) or n.startswith('move') or ' move ' in n:
+        # MOVER
+        if _re.search(r'\b(mov[eo]|movi|moveme|movemos|movieron|'
+                       r'manda[rn]?|mandame|mandamos|mandaron|'
+                       r'traslad[ao]|trasladamos|reubic[ao]|reubicamos|'
+                       r'transfer[io]|transferimos|'
+                       r'pas[ao]\s+(a|al|todo)|pasame|pasamos|pasaron|'
+                       r'llev[ao]\s+(a|al)|llevame|llevamos\s+(a|al)|'
+                       r'cambi[ao]\s+(de\s+)?ubic)\b', n):
             return 'mover'
-
-        if any(w in n for w in [
-            'corregir','correg','ajustar','ajusta','fijar','actualizar','actualiza',
-            'cambiar cantidad','es en realidad','deberia ser','deberia tener',
-            'son en total','hay en total','poner en','setear'
-        ]):
+        if len(_ubis(t)) >= 2 and _re.search(r'\bde\b.{1,40}\ba\b', n):
+            return 'mover'
+        # CORREGIR
+        if _re.search(r'\b(correg[io]|corregimos|corregime|ajust[ao]|ajustamos|ajustame|'
+                       r'fij[ao]|fijamos|actualiz[ao]|actualizamos|'
+                       r'en\s+realidad\s+(hay|son|tiene)|la\s+cantidad\s+(es|son|real)|'
+                       r'inventario\s+fisico|conteo|deberia\s+(ser|tener|haber))\b', n):
             return 'corregir'
-
-        if any(w in n for w in [
-            'historial','movimientos','movimiento','ultimos','ultimo','registro',
-            'registros','que paso','que se hizo','quien hizo','cuando se',
-            'bitacora','log','actividad'
-        ]):
+        # HISTORIAL
+        if _re.search(r'\b(historial|movimientos|movimiento|ultimos|ultimo|'
+                       r'registro|que\s+paso|que\s+hicieron|que\s+hubo|'
+                       r'bitacora|actividad|novedades|que\s+se\s+(hizo|movio))\b', n):
             return 'historial'
-
-        if any(w in n for w in [
-            'vencer','vencidos','vencimiento','fecha','proximos a vencer',
-            'por vencer','caducidad','caduca','expiran','expira'
-        ]):
+        # VENCIMIENTOS
+        if _re.search(r'\b(venc[eo]|vencen|vencidos|vencimiento|vencimientos|'
+                       r'por\s+vencer|proximos\s+a\s+vencer|'
+                       r'caducidad|caduca|caducan|expiran|expira|se\s+vencen)\b', n):
             return 'vencimientos'
-
-        if any(w in n for w in [
-            'bajo stock','poco stock','poco queda','se acab','quedan pocos',
-            'queda poco','critico','sin stock','agotado','menor a','menos de',
-            'por debajo','escaso','escasos','minimo'
-        ]):
+        # BAJO STOCK
+        if _re.search(r'\b(bajo\s+stock|poco\s+stock|poca\s+cantidad|'
+                       r'se\s+acab[ao]|se\s+acabaron|quedan?\s+poco[sa]?|'
+                       r'critico|sin\s+stock|agotado[sa]?|escaso[sa]?|minimo|'
+                       r'(que|lo)\s+(nos\s+|me\s+)?falt[ao]|falta\s+reponer|'
+                       r'necesitamos\s+reponer|hay\s+poco[sa]?|nos\s+quedamos\s+sin)\b', n):
             return 'bajo_stock'
-
-        if any(w in n for w in [
-            'resumen','general','todo el inventario','todo el stock',
-            'cuanto tengo en total','que tengo en total','panorama','balance'
-        ]):
+        # RESUMEN
+        if _re.search(r'\b(resumen|todo\s+el\s+(inventario|stock)|panorama|balance|'
+                       r'estado\s+del\s+inventario|como\s+estamos|inventario\s+completo)\b', n):
             return 'resumen'
-
-        if any(w in n for w in [
-            'top','ranking','mas stock','mayor stock','mas cantidad',
-            'los mas','los que mas','mejor stock','mayor cantidad'
-        ]):
+        # TOP
+        if _re.search(r'\b(top|ranking|mas\s+stock|mayor\s+stock|mas\s+cantidad|los\s+que\s+mas)\b', n):
             return 'top_stock'
-
-        if any(w in n for w in [
-            'ubicacion','ubicaciones','donde esta','donde queda','donde hay',
-            'en que lugar','en que estante','deposito','sector','zona'
-        ]):
+        # UBICACIONES
+        if _re.search(r'\b(donde\s+est[ae]|donde\s+hay|donde\s+queda|donde\s+quedan|'
+                       r'ubicacion|ubicaciones|en\s+que\s+lugar|en\s+que\s+estante|guardado|donde)\b', n):
             return 'ubicaciones'
-
-        if any(w in n for w in [
-            'cuanto hay','cuantos hay','cuanto queda','cuantos quedan',
-            'stock de','hay de','quedan de','tenemos de','existe','existencia',
-            'disponible','inventario de','ver stock','que hay de','cuantos tenemos'
-        ]):
+        # CONSULTA STOCK
+        if _re.search(r'\b(cuanto[sa]?\s+(hay|queda[sn]?|tene[ms]?|tiene[ns]?)|'
+                       r'cuanto\s+stock|stock\s+de|hay\s+de|quedan?\s+de|tenemos\s+de|'
+                       r'hay\s+stock|existe|existencia|disponible|cuanto\s+(tenemos|tiene|hay))\b', n):
             return 'consulta_stock'
-
-        if any(w in n for w in [
-            'pedido','pedidos','orden','ordenes','nube','pendiente','pendientes'
-        ]):
+        # PEDIDOS
+        if _re.search(r'\b(pedido[s]?|orden(es)?|nube|pendiente[s]?)\b', n):
             return 'pedidos'
-
-        return 'charla'
-
-    # ── EJECUTORES ────────────────────────────────────────────────────────────
+        return 'buscar'
 
     def _exec_salida(txt):
         if rol in ('visita', 'vendedor'):
             return None, "❌ Tu rol no tiene permisos para registrar salidas."
         prod = _buscar_prod(txt)
-        cant = _num(txt)
+        cant = _cant(txt)
         ubi  = _ubi(txt)
         if not prod:
-            return None, "No encontré el producto. Especificá nombre o código.\nEj: *Sacá 10 de Ibuprofeno de 01-1A*"
+            sugs = _buscar_varios(txt)
+            if sugs:
+                lista = "\n".join(f"  • {p['nombre']} (cod:{p['cod_int']})" for p in sugs)
+                return None, f"🔍 No encontré el producto exacto. ¿Es alguno de estos?\n\n{lista}"
+            return None, "No encontré ese producto. Decime el nombre o el código."
         if cant == 0:
             return None, f"¿Cuántas unidades de *{prod['nombre']}* querés sacar?"
-        cod     = str(prod["cod_int"])
-        nom     = prod["nombre"]
-        lotes_p = _lotes(cod)
-        lote    = None
+        cod, nom = str(prod['cod_int']), prod['nombre']
+        lts = _lotes(cod)
+        if not lts:
+            return False, f"❌ No hay stock de *{nom}* en el inventario."
+        lote = None
         if ubi:
-            lote = next((l for l in lotes_p if str(l.get("ubicacion","")).upper() == ubi), None)
+            lote = next((l for l in lts if str(l.get('ubicacion','')).upper() == ubi), None)
+            if not lote:
+                ubis_ok = [str(l.get('ubicacion','')) for l in lts if float(l.get('cantidad',0) or 0) > 0]
+                return False, f"❌ No hay lote de *{nom}* en {ubi}.\nStock en: {', '.join(ubis_ok)}"
+        if not lote: lote = next((l for l in lts if float(l.get('cantidad',0) or 0) >= cant), None)
+        if lote: ubi = str(lote.get('ubicacion',''))
+        if not lote and lts:
+            lote = max(lts, key=lambda l: float(l.get('cantidad',0) or 0))
+            ubi  = str(lote.get('ubicacion',''))
         if not lote:
-            lote = next((l for l in lotes_p if float(l.get("cantidad", 0) or 0) >= cant), None)
-            if lote: ubi = str(lote.get("ubicacion",""))
-        if not lote and lotes_p:
-            lote = max(lotes_p, key=lambda l: float(l.get("cantidad", 0) or 0))
-            ubi  = str(lote.get("ubicacion",""))
-        if not lote:
-            return None, f"❌ No hay stock de *{nom}* en el inventario."
-        disp = float(lote.get("cantidad", 0) or 0)
-        if disp < cant:
-            detalle = "\n".join(f"  📍 {l.get('ubicacion','?')} — {int(float(l.get('cantidad',0)))} uds" for l in lotes_p)
-            return None, (f"❌ Solo hay {int(disp)} uds de *{nom}* en {ubi}.\n\n"
-                          f"Stock disponible:\n{detalle}\n\n"
-                          f"Especificá otra ubicación o reducí la cantidad.")
+            return False, f"❌ No hay stock de *{nom}*."
+        disp = float(lote.get('cantidad', 0) or 0)
+        if cant > disp:
+            return False, f"❌ Solo hay {int(disp)} uds de *{nom}* en {ubi}.\n¿Querés sacar las {int(disp)} que hay?"
         nueva = disp - cant
-        if nueva <= 0:
-            sb.table("inventario").delete().eq("id", lote["id"]).execute()
-        else:
-            sb.table("inventario").update({"cantidad": nueva}).eq("id", lote["id"]).execute()
+        if nueva <= 0: sb.table("inventario").delete().eq("id", lote["id"]).execute()
+        else:          sb.table("inventario").update({"cantidad": nueva}).eq("id", lote["id"]).execute()
         registrar_historial("SALIDA", cod, nom, cant, ubi, usuario)
         recalcular_maestra(cod, inventario)
         refrescar()
         return True, (f"✅ Salida registrada!\n\n"
-                      f"📦 *{nom}* (cod:{cod})\n"
-                      f"📤 Cantidad: {int(cant)} uds\n"
-                      f"📍 Desde: {ubi}\n"
-                      f"📊 Quedan: {int(nueva)} uds en {ubi}")
+                       f"📦 *{nom}*\n"
+                       f"📤 {int(cant)} uds retiradas de {ubi}\n"
+                       f"📊 Quedan en {ubi}: {int(nueva)} uds")
 
     def _exec_entrada(txt):
         if rol in ('visita', 'vendedor'):
             return None, "❌ Tu rol no tiene permisos para registrar entradas."
         prod = _buscar_prod(txt)
-        cant = _num(txt)
+        cant = _cant(txt)
         ubi  = _ubi(txt)
         if not prod:
-            return None, "No encontré el producto.\nEj: *Agregá 50 de Ibuprofeno en 02-3B*"
+            sugs = _buscar_varios(txt)
+            if sugs:
+                lista = "\n".join(f"  • {p['nombre']} (cod:{p['cod_int']})" for p in sugs)
+                return None, f"🔍 No encontré el producto exacto. ¿Es alguno de estos?\n\n{lista}"
+            return None, "No encontré ese producto. Decime el nombre o el código."
         if cant == 0:
-            return None, f"¿Cuántas unidades de *{prod['nombre']}* querés agregar?"
+            return None, f"¿Cuántas unidades de *{prod['nombre']}* llegaron?"
         if not ubi:
-            lotes_p = _lotes(prod["cod_int"])
-            if lotes_p:
-                ubi_sug = str(lotes_p[0].get("ubicacion",""))
-                return None, (f"¿En qué ubicación agregás las {int(cant)} uds de *{prod['nombre']}*?\n"
-                              f"Ubicación actual: {ubi_sug}\n\n"
-                              f"Ej: *Agregá {int(cant)} de {prod['nombre']} en {ubi_sug}*")
-            return None, f"¿En qué ubicación ponés las {int(cant)} uds de *{prod['nombre']}*? Ej: *en 02-3B*"
-        cod = str(prod["cod_int"])
-        nom = prod["nombre"]
-        vto_m = _re.search(r'\b(\d{1,2}[/\-]\d{2,4})\b', txt)
-        fv = vto_m.group(1) if vto_m else ""
-        lotes_ubi = [l for l in inventario
-                     if str(l.get("cod_int","")) == cod
-                     and str(l.get("ubicacion","")).upper() == ubi]
-        if lotes_ubi:
-            nueva = float(lotes_ubi[0].get("cantidad", 0) or 0) + cant
-            sb.table("inventario").update({"cantidad": nueva}).eq("id", lotes_ubi[0]["id"]).execute()
+            lts_p = _lotes(str(prod['cod_int']))
+            sug   = str(lts_p[0].get('ubicacion','')) if lts_p else "01-1A"
+            return None, f"¿En qué ubicación van las {int(cant)} uds de *{prod['nombre']}*?\nEj: en {sug}"
+        cod, nom = str(prod['cod_int']), prod['nombre']
+        fv       = _fecha_vto(txt)
+        lts_ubi  = [l for l in inventario
+                    if str(l.get('cod_int','')) == cod
+                    and str(l.get('ubicacion','')).upper() == ubi]
+        if lts_ubi:
+            nueva = float(lts_ubi[0].get('cantidad', 0) or 0) + cant
+            sb.table("inventario").update({"cantidad": nueva}).eq("id", lts_ubi[0]["id"]).execute()
         else:
             sb.table("inventario").insert({
                 "cod_int": cod, "nombre": nom, "cantidad": cant,
@@ -1428,319 +1435,241 @@ with tab_asist:
         recalcular_maestra(cod, inventario)
         refrescar()
         return True, (f"✅ Entrada registrada!\n\n"
-                      f"📦 *{nom}* (cod:{cod})\n"
-                      f"📥 Cantidad: {int(cant)} uds\n"
-                      f"📍 En: {ubi}"
-                      + (f"\n📅 Vto: {fv}" if fv else ""))
+                       f"📦 *{nom}*\n"
+                       f"📥 {int(cant)} uds en {ubi}"
+                       + (f"\n📅 Vto: {fv}" if fv else ""))
 
     def _exec_mover(txt):
         if rol in ('visita', 'vendedor'):
             return None, "❌ Tu rol no tiene permisos para mover lotes."
         prod  = _buscar_prod(txt)
-        cant  = _num(txt)
+        cant  = _cant(txt)
         ubics = _ubis(txt)
         if not prod:
-            return None, "No encontré el producto.\nEj: *Mové Ibuprofeno de 01-1A a 03-2B*"
+            sugs = _buscar_varios(txt)
+            if sugs:
+                lista = "\n".join(f"  • {p['nombre']} (cod:{p['cod_int']})" for p in sugs)
+                return None, f"🔍 ¿Cuál producto querés mover?\n\n{lista}"
+            return None, "No encontré ese producto. Decime el nombre o el código."
         if len(ubics) < 2:
-            return None, f"Necesito origen y destino.\nEj: *Mové {prod['nombre']} de 01-1A a 03-2B*"
-        ubi_orig = ubics[0]
-        ubi_dest = ubics[1]
-        cod  = str(prod["cod_int"])
-        nom  = prod["nombre"]
-        lote = next((l for l in _lotes(cod)
-                     if str(l.get("ubicacion","")).upper() == ubi_orig), None)
+            lts    = _lotes(str(prod['cod_int']))
+            ubis_s = [str(l.get('ubicacion','')) for l in lts if float(l.get('cantidad',0) or 0) > 0]
+            sug    = ubis_s[0] if ubis_s else "01-1A"
+            return None, (f"Necesito origen Y destino para mover *{prod['nombre']}*.\n"
+                           f"Ubicaciones con stock: {', '.join(ubis_s) or 'ninguna'}\n"
+                           f"Ej: «Mové de {sug} a 02-1A»")
+        ubi_o, ubi_d = ubics[0], ubics[1]
+        cod, nom     = str(prod['cod_int']), prod['nombre']
+        lts          = _lotes(cod)
+        lote = next((l for l in lts if str(l.get('ubicacion','')).upper() == ubi_o), None)
         if not lote:
-            return None, f"❌ No hay lote de *{nom}* en {ubi_orig}."
-        disp = float(lote.get("cantidad", 0) or 0)
-        # Si no especificó cantidad, o especificó más de lo disponible → mover TODO
-        if cant == 0 or cant > disp:
-            cant_mov = disp
-        else:
-            cant_mov = cant
-        nueva = disp - cant_mov
-        if nueva <= 0:
-            sb.table("inventario").delete().eq("id", lote["id"]).execute()
-        else:
-            sb.table("inventario").update({"cantidad": nueva}).eq("id", lote["id"]).execute()
+            ubis_s = [str(l.get('ubicacion','')) for l in lts if float(l.get('cantidad',0) or 0) > 0]
+            return False, (f"❌ No hay lote de *{nom}* en {ubi_o}.\n"
+                            f"Ubicaciones con stock: {', '.join(ubis_s) or 'ninguna'}")
+        disp    = float(lote.get('cantidad', 0) or 0)
+        cant_mv = cant if (0 < cant <= disp) else disp
+        nueva   = disp - cant_mv
+        if nueva <= 0: sb.table("inventario").delete().eq("id", lote["id"]).execute()
+        else:          sb.table("inventario").update({"cantidad": nueva}).eq("id", lote["id"]).execute()
         sb.table("inventario").insert({
-            "cod_int": cod, "nombre": nom, "cantidad": cant_mov,
-            "ubicacion": ubi_dest, "fecha": lote.get("fecha",""),
+            "cod_int": cod, "nombre": nom, "cantidad": cant_mv,
+            "ubicacion": ubi_d, "fecha": lote.get("fecha",""),
             "deposito": lote.get("deposito","PRINCIPAL")
         }).execute()
-        registrar_historial("MOVIMIENTO", cod, nom, cant_mov, f"{ubi_orig}→{ubi_dest}", usuario)
+        registrar_historial("MOVIMIENTO", cod, nom, cant_mv, f"{ubi_o}→{ubi_d}", usuario)
         recalcular_maestra(cod, inventario)
         refrescar()
         return True, (f"✅ Movimiento registrado!\n\n"
-                      f"📦 *{nom}*\n"
-                      f"🔀 {int(cant_mov)} uds: {ubi_orig} → {ubi_dest}")
+                       f"📦 *{nom}*\n"
+                       f"🔀 {int(cant_mv)} uds: {ubi_o} → {ubi_d}")
 
     def _exec_corregir(txt):
         if rol in ('visita', 'vendedor'):
             return None, "❌ Tu rol no tiene permisos para corregir stock."
         prod = _buscar_prod(txt)
-        cant = _num(txt)
+        cant = _cant(txt)
         ubi  = _ubi(txt)
         if not prod:
-            return None, "No encontré el producto.\nEj: *Corregí Ibuprofeno a 25 uds en 01-1A*"
+            return None, "No encontré el producto. Decime el nombre o el código."
         if cant == 0:
-            return None, f"¿A cuántas unidades corregís *{prod['nombre']}*?"
-        cod     = str(prod["cod_int"])
-        nom     = prod["nombre"]
-        lotes_p = _lotes(cod)
-        lote    = next((l for l in lotes_p if str(l.get("ubicacion","")).upper() == ubi), None) if ubi else None
-        if not lote and lotes_p:
-            lote = lotes_p[0]; ubi = str(lote.get("ubicacion",""))
-        if not lote:
-            return None, f"❌ No hay lotes de *{nom}* en el inventario."
-        ant = float(lote.get("cantidad", 0) or 0)
-        sb.table("inventario").update({"cantidad": cant}).eq("id", lote["id"]).execute()
-        registrar_historial("CORRECCIÓN", cod, nom, cant - ant, ubi, usuario)
+            return None, f"¿Cuántas unidades hay realmente de *{prod['nombre']}*?"
+        cod, nom = str(prod['cod_int']), prod['nombre']
+        lts  = _lotes(cod)
+        lote = None
+        if ubi: lote = next((l for l in lts if str(l.get('ubicacion','')).upper() == ubi), None)
+        if not lote and lts: lote = lts[0]; ubi = str(lote.get('ubicacion',''))
+        if lote:
+            sb.table("inventario").update({"cantidad": cant}).eq("id", lote["id"]).execute()
+        else:
+            if not ubi: return None, f"¿En qué ubicación está *{nom}*?"
+            sb.table("inventario").insert({
+                "cod_int": cod, "nombre": nom, "cantidad": cant,
+                "ubicacion": ubi, "deposito": "PRINCIPAL"
+            }).execute()
+        registrar_historial("CORRECCIÓN", cod, nom, cant, ubi, usuario)
         recalcular_maestra(cod, inventario)
         refrescar()
-        return True, (f"✅ Corrección aplicada!\n\n"
-                      f"📦 *{nom}* en {ubi}\n"
-                      f"✏️ {int(ant)} → {int(cant)} uds")
+        return True, f"✅ Stock corregido!\n\n📦 *{nom}*\n✏️  Ahora hay {int(cant)} uds en {ubi}"
 
-    # ── CONSULTAS ─────────────────────────────────────────────────────────────
+    def _resp_historial(txt):
+        try:
+            data = sb.table("historial").select("*").order("id",desc=True).limit(30).execute().data or []
+            if not data: return None, "No hay movimientos registrados aún."
+            prod = _buscar_prod(txt) if any(w in _n(txt) for w in ['de','del','sobre']) else None
+            if prod:
+                data = [r for r in data if str(r.get('cod_int','')) == str(prod['cod_int'])]
+            icons = {"ENTRADA":"📥","SALIDA":"📤","MOVIMIENTO":"🔀","CORRECCIÓN":"✏️"}
+            lineas = [f"{icons.get(r.get('tipo',''),'📌')} {r.get('fecha_hora','')} · "
+                      f"{r.get('nombre','')} · {int(float(r.get('cantidad',0)))} uds · "
+                      f"{r.get('ubicacion','')} · @{r.get('usuario','')}"
+                      for r in data[:20]]
+            tit = f"📋 Historial de *{prod['nombre']}*:" if prod else "📋 Últimos movimientos:"
+            return None, tit + "\n\n" + "\n".join(lineas)
+        except Exception as e:
+            return False, f"❌ Error: {e}"
 
-    def _resp_consulta(txt):
-        prod = _buscar_prod(txt)
-        if prod:
-            cod   = str(prod["cod_int"])
-            stk   = int(float(prod.get("cantidad_total") or 0))
-            lotes = _lotes(cod)
-            if not lotes:
-                return None, f"📦 *{prod['nombre']}* (cod:{cod})\nStock total: {stk} uds\nSin lotes activos."
-            detalle = "\n".join(
-                f"  📍 {l.get('ubicacion','?')} — {int(float(l.get('cantidad',0)))} uds"
-                + (f" · vto: {l.get('fecha','')}" if l.get('fecha') else "")
-                for l in lotes
-            )
-            return None, f"📦 *{prod['nombre']}* (cod:{cod})\nStock total: **{stk} uds**\n\nLotes:\n{detalle}"
-        resultados = _listar_prods(txt)
-        if resultados:
-            lineas = [f"  • {p['nombre']} [cod:{p['cod_int']}] — {int(float(p.get('cantidad_total') or 0))} uds"
-                      for p in resultados[:10]]
-            return None, f"Encontré {len(resultados)} producto(s):\n\n" + "\n".join(lineas)
-        return None, "No encontré ningún producto con ese nombre o código."
+    def _resp_vencimientos(_):
+        hoy = date.today()
+        vencidos, proximos = [], []
+        for l in inventario:
+            fv = l.get('fecha','')
+            if not fv: continue
+            try:
+                p = str(fv).strip().split("/")
+                if len(p) == 2:
+                    a = int(p[1]); m = int(p[0])
+                    fd   = date(2000 + a if a < 100 else a, m, 1)
+                    dias = (fd - hoy).days
+                    lin  = f"  {'⛔' if dias<0 else '⚠️'} {l.get('nombre',l.get('cod_int','?'))} · {l.get('ubicacion','?')} · Vto:{fv}"
+                    if dias < 0:              vencidos.append(lin)
+                    elif dias <= DIAS_ALERTA: proximos.append(f"{lin} ({dias}d)")
+            except: pass
+        r = ""
+        if vencidos: r += f"⛔ VENCIDOS ({len(vencidos)}):\n" + "\n".join(vencidos) + "\n\n"
+        if proximos: r += f"⚠️ POR VENCER ({len(proximos)}):\n" + "\n".join(proximos)
+        return None, r or "✅ No hay lotes vencidos ni próximos a vencer."
+
+    def _resp_bajo_stock(txt):
+        lim   = _cant(txt) or 10.0
+        bajos = [(float(p.get('cantidad_total',0) or 0), p.get('nombre','?'), str(p.get('cod_int','')))
+                 for p in maestra if float(p.get('cantidad_total',0) or 0) <= lim]
+        if not bajos: return None, f"✅ Todo supera las {int(lim)} uds."
+        bajos.sort()
+        lineas = [f"  {'⛔' if b[0]==0 else '⚠️'} {b[1]} (cod:{b[2]}) · {int(b[0])} uds"
+                  for b in bajos[:25]]
+        return None, f"📉 Bajo stock (≤{int(lim)} uds) — {len(bajos)} productos:\n\n" + "\n".join(lineas)
 
     def _resp_resumen(_):
         total_p = len(maestra)
-        total_s = sum(int(float(p.get("cantidad_total") or 0)) for p in maestra)
-        sin_s   = sum(1 for p in maestra if int(float(p.get("cantidad_total") or 0)) == 0)
-        top5    = sorted(maestra, key=lambda p: float(p.get("cantidad_total") or 0), reverse=True)[:5]
-        top_txt = "\n".join(
-            f"  {i+1}. {p['nombre']} — {int(float(p.get('cantidad_total',0)))} uds"
-            for i, p in enumerate(top5)
-        )
-        return None, (f"📊 **Resumen del inventario**\n\n"
-                      f"  • Productos registrados: {total_p}\n"
-                      f"  • Con stock: {total_p - sin_s}\n"
-                      f"  • Sin stock: {sin_s}\n"
-                      f"  • Stock total: {total_s:,} uds\n\n"
-                      f"🏆 Top 5 con más stock:\n{top_txt}")
-
-    def _resp_bajo_stock(txt):
-        limite = _num(txt)
-        if limite == 0: limite = 10
-        bajos = sorted(
-            [p for p in maestra if int(float(p.get("cantidad_total") or 0)) < limite],
-            key=lambda p: float(p.get("cantidad_total") or 0)
-        )
-        if not bajos:
-            return None, f"✅ No hay productos con menos de {int(limite)} unidades. Todo en orden!"
-        lineas = [f"  ⚠️ {p['nombre']} [cod:{p['cod_int']}] — {int(float(p.get('cantidad_total',0)))} uds"
-                  for p in bajos[:25]]
-        resto = f"\n\n...y {len(bajos)-25} más." if len(bajos) > 25 else ""
-        return None, (f"📉 Productos con menos de {int(limite)} uds ({len(bajos)} encontrados):\n\n"
-                      + "\n".join(lineas) + resto)
+        con_st  = sum(1 for p in maestra if float(p.get('cantidad_total',0) or 0) > 0)
+        total_u = sum(float(p.get('cantidad_total',0) or 0) for p in maestra)
+        top5    = sorted(maestra, key=lambda p: -float(p.get('cantidad_total',0) or 0))[:5]
+        tops    = "\n".join(f"  {i+1}. {p['nombre']} — {int(float(p.get('cantidad_total',0)))} uds"
+                            for i, p in enumerate(top5))
+        return None, (f"📊 RESUMEN DEL INVENTARIO\n\n"
+                       f"📦 Productos: {total_p}   ✅ Con stock: {con_st}   ⛔ Sin stock: {total_p-con_st}\n"
+                       f"🔢 Total uds: {int(total_u):,}\n\n🏆 Top 5:\n{tops}")
 
     def _resp_top_stock(txt):
-        n   = int(_num(txt)) if _num(txt) > 0 else 10
-        n   = min(n, 30)
-        top = sorted(maestra, key=lambda p: float(p.get("cantidad_total") or 0), reverse=True)[:n]
-        lineas = [f"  {i+1}. {p['nombre']} [cod:{p['cod_int']}] — {int(float(p.get('cantidad_total',0)))} uds"
-                  for i, p in enumerate(top)]
-        return None, f"🏆 Top {n} productos con mayor stock:\n\n" + "\n".join(lineas)
+        n_top = min(int(_cant(txt) or 10), 30)
+        tops  = sorted(maestra, key=lambda p: -float(p.get('cantidad_total',0) or 0))[:n_top]
+        lineas = [f"  {i+1}. {p['nombre']} (cod:{p['cod_int']}) — {int(float(p.get('cantidad_total',0)))} uds"
+                  for i, p in enumerate(tops)]
+        return None, f"🏆 Top {n_top} por stock:\n\n" + "\n".join(lineas)
 
     def _resp_ubicaciones(txt):
         prod = _buscar_prod(txt)
         if prod:
-            cod   = str(prod["cod_int"])
-            lotes = _lotes(cod)
-            if not lotes:
-                return None, f"No hay lotes activos de *{prod['nombre']}* en el inventario."
-            detalle = "\n".join(
+            lts = _lotes(str(prod['cod_int']))
+            if not lts: return None, f"📦 *{prod['nombre']}* no tiene stock activo."
+            total = sum(float(l.get('cantidad',0)) for l in lts)
+            det   = "\n".join(
                 f"  📍 {l.get('ubicacion','?')} — {int(float(l.get('cantidad',0)))} uds"
-                + (f" · vto: {l.get('fecha','')}" if l.get('fecha') else "")
-                for l in lotes
-            )
-            return None, f"📍 Ubicaciones de *{prod['nombre']}*:\n{detalle}"
-        ubs = {}
+                + (f"  Vto:{l.get('fecha','')}" if l.get('fecha') else "")
+                for l in lts)
+            return None, f"📍 *{prod['nombre']}*\nStock total: {int(total)} uds\n\n{det}"
+        todas = {}
         for l in inventario:
-            u = l.get("ubicacion","?")
-            ubs[u] = ubs.get(u, 0) + 1
-        lineas = [f"  📍 {u} — {n} lote{'s' if n > 1 else ''}" for u, n in sorted(ubs.items())]
-        return None, f"📍 Ubicaciones activas ({len(ubs)}):\n\n" + "\n".join(lineas[:40])
+            u = str(l.get('ubicacion',''))
+            if u: todas[u] = todas.get(u, 0) + float(l.get('cantidad', 0) or 0)
+        if not todas: return None, "No hay ubicaciones cargadas."
+        lines = [f"  📍 {u} — {int(c)} uds" for u, c in sorted(todas.items())][:40]
+        return None, f"📍 Ubicaciones activas ({len(todas)}):\n\n" + "\n".join(lines)
 
-    def _resp_historial(txt):
-        hist = cargar_historial_cache()
+    def _resp_consulta(txt):
         prod = _buscar_prod(txt)
         if prod:
-            cod   = str(prod["cod_int"])
-            hist  = [h for h in hist if str(h.get("cod_int","")) == cod][:20]
-            titulo = f"Historial de *{prod['nombre']}*"
-        else:
-            limite = int(_num(txt)) if _num(txt) > 0 else 15
-            hist   = hist[:min(limite, 30)]
-            titulo = f"Últimos {len(hist)} movimientos"
-        if not hist:
-            return None, "No hay movimientos registrados aún."
-        lineas = []
-        for h in hist:
-            tipo  = h.get("tipo","?")
-            nom   = h.get("nombre","?")
-            cant  = h.get("cantidad","?")
-            ubi   = h.get("ubicacion","?")
-            fh    = h.get("fecha_hora","")
-            usr   = h.get("usuario","?")
-            icono = ("📤" if "SALIDA" in tipo else
-                     "📥" if "ENTRADA" in tipo else
-                     "🔀" if "MOV" in tipo or "TRASLADO" in tipo else "✏️")
-            lineas.append(f"{icono} {fh} | {tipo} | {nom} x{cant} en {ubi} [{usr}]")
-        return None, f"📋 {titulo}:\n\n" + "\n".join(lineas)
-
-    def _resp_vencimientos(_):
-        items = []
-        for l in inventario:
-            dias = dias_para_vencer(l.get('fecha',''))
-            if dias is not None:
-                items.append((
-                    dias,
-                    l.get("nombre","?"),
-                    str(l.get("cod_int","")),
-                    l.get("ubicacion","?"),
-                    int(float(l.get("cantidad",0))),
-                    l.get('fecha','')
-                ))
-        items.sort(key=lambda x: x[0])
-        vencidos   = [(d,n,c,u,q,f) for d,n,c,u,q,f in items if d < 0]
-        por_vencer = [(d,n,c,u,q,f) for d,n,c,u,q,f in items if 0 <= d <= DIAS_ALERTA]
-        lineas = []
-        if vencidos:
-            lineas.append(f"🔴 VENCIDOS ({len(vencidos)}):")
-            for d,n,c,u,q,f in vencidos[:10]:
-                lineas.append(f"  • {n} [cod:{c}] — {q} uds en {u} — vto: {f} (hace {abs(d)} días)")
-        if por_vencer:
-            lineas.append(f"\n🟠 POR VENCER en {DIAS_ALERTA} días ({len(por_vencer)}):")
-            for d,n,c,u,q,f in por_vencer[:15]:
-                lineas.append(f"  • {n} [cod:{c}] — {q} uds en {u} — vto: {f} (en {d} días)")
-        if not lineas:
-            return None, f"✅ No hay lotes vencidos ni próximos a vencer en {DIAS_ALERTA} días."
-        return None, "\n".join(lineas)
-
-    def _resp_pedidos(_):
-        try:
-            peds = sb.table("pedidos").select("id,nombre,fecha,estado,items") \
-                     .in_("estado", ["pendiente","en_proceso"]) \
-                     .order("id", desc=True).limit(10).execute().data or []
-            if not peds:
-                return None, "No hay pedidos pendientes en la nube."
-            lineas = []
-            for p in peds:
-                items  = p.get("items") or []
-                n_its  = len(items) if isinstance(items, list) else "?"
-                icono  = "🟡" if p.get("estado") == "en_proceso" else "🟢"
-                lineas.append(f"{icono} #{p['id']} {p['nombre']} — {n_its} ítems — {p.get('fecha','')}")
-            return None, f"☁️ Pedidos en la nube ({len(peds)}):\n\n" + "\n".join(lineas)
-        except:
-            return None, "No se pudo acceder a los pedidos. Verificá la conexión."
-
-    def _resp_charla(txt):
-        n = _n(txt)
-        if any(w in n for w in ['hola','buenas','buen dia','buenas tardes','buenas noches','hey','ola']):
-            return f"Hola {usuario}! 👋 Soy tu operario digital. Podés pedirme que registre entradas, salidas, movimientos, o consultarme el stock, historial y mucho más."
-        if any(w in n for w in ['gracias','muchas gracias','grax','grazie','thanks']):
-            return "De nada! 😊 ¿En qué más te puedo ayudar?"
-        if any(w in n for w in ['chiste','broma']):
-            import random
-            chistes = [
-                "¿Por qué el inventario fue al médico? Porque tenía stock-itis crónica. 😄",
-                "¿Qué le dijo un lote a otro? ¡Nos vemos en la ubicación! 📦",
-                "¿Por qué el depósito siempre está ordenado? Porque tiene mucho self-control. 🏭",
-                "¿Cómo se llama el producto que nunca falta? ¡Siempre-presente! 😂",
-            ]
-            return random.choice(chistes)
-        if any(w in n for w in ['quien eres','que eres','como te llamas','presentate','tu nombre']):
-            return ("Soy el Operario Digital de LOGIEZE 📦\n\n"
-                    "Funciono 100% en tu servidor, sin internet ni costos externos.\n"
-                    "Hablame en lenguaje natural y ejecuto los movimientos directamente.")
-        if any(w in n for w in ['que podes hacer','que sabes','ayuda','help','comandos','capacidades']):
-            return ("Esto es lo que puedo hacer:\n\n"
-                    "📤 SALIDAS\n"
-                    "  *Sacá 10 de Ibuprofeno de 01-1A*\n"
-                    "  *Descontá 5 del código 147*\n\n"
-                    "📥 ENTRADAS\n"
-                    "  *Agregá 50 de Paracetamol en 02-3B vto 06/26*\n"
-                    "  *Ingresá 100 del código 200 en 04-2A*\n\n"
-                    "🔀 MOVIMIENTOS\n"
-                    "  *Mové Ibuprofeno de 01-1A a 03-2B*\n"
-                    "  *Pasá 20 del código 147 de 02-1A a 05-3C*\n\n"
-                    "✏️ CORRECCIONES\n"
-                    "  *Corregí Ibuprofeno a 25 uds en 01-1A*\n\n"
-                    "🔍 CONSULTAS\n"
-                    "  *¿Cuánto hay del código 147?*\n"
-                    "  *Resumen del inventario*\n"
-                    "  *Productos con bajo stock*\n"
-                    "  *Lotes por vencer*\n"
-                    "  *Últimos movimientos*\n"
-                    "  *Top 10 productos*\n"
-                    "  *¿Dónde está el Paracetamol?*")
-        if any(w in n for w in ['como estas','como andas','todo bien','como te va']):
-            return "Todo bien, listo para trabajar! 💪 ¿Qué necesitás del inventario?"
-        return None
-
-    # ── PROCESADOR CENTRAL ────────────────────────────────────────────────────
-
-    def _procesar(txt):
-        intencion = _intencion(txt)
-
-        if intencion == 'salida':         return _exec_salida(txt)
-        if intencion == 'entrada':        return _exec_entrada(txt)
-        if intencion == 'mover':          return _exec_mover(txt)
-        if intencion == 'corregir':       return _exec_corregir(txt)
-        if intencion == 'historial':      return _resp_historial(txt)
-        if intencion == 'resumen':        return _resp_resumen(txt)
-        if intencion == 'bajo_stock':     return _resp_bajo_stock(txt)
-        if intencion == 'top_stock':      return _resp_top_stock(txt)
-        if intencion == 'ubicaciones':    return _resp_ubicaciones(txt)
-        if intencion == 'vencimientos':   return _resp_vencimientos(txt)
-        if intencion == 'pedidos':        return _resp_pedidos(txt)
-        if intencion == 'consulta_stock': return _resp_consulta(txt)
-
-        resp_charla = _resp_charla(txt)
-        if resp_charla:
-            return None, resp_charla
-
-        # Fallback: intento de consulta de stock
-        prod = _buscar_prod(txt)
-        if prod:
-            cod = str(prod["cod_int"])
-            stk = int(float(prod.get("cantidad_total") or 0))
+            cod = str(prod['cod_int'])
+            stk = int(float(prod.get('cantidad_total', 0) or 0))
             lts = _lotes(cod)
             det = "\n".join(
                 f"  📍 {l.get('ubicacion','?')} — {int(float(l.get('cantidad',0)))} uds"
-                for l in lts
-            ) if lts else "  Sin lotes activos"
-            return None, f"📦 *{prod['nombre']}* (cod:{cod})\nStock total: **{stk} uds**\n\n{det}"
+                + (f"  Vto:{l.get('fecha','')}" if l.get('fecha') else "")
+                for l in lts) if lts else "  Sin lotes activos"
+            return None, f"📦 *{prod['nombre']}*\nCódigo: {cod}  ·  Stock total: **{stk} uds**\n\n{det}"
+        sugs = _buscar_varios(txt)
+        if sugs:
+            lineas = [f"  📦 {p['nombre']} (cod:{p['cod_int']}) — {int(float(p.get('cantidad_total',0) or 0))} uds"
+                      for p in sugs]
+            return None, "Encontré varios productos:\n\n" + "\n".join(lineas) + \
+                "\n\nEspecificá el nombre o dame el código para ver el detalle."
+        return None, "No encontré ese producto. Podés buscar por nombre o código."
 
-        return None, ("No entendí bien lo que necesitás. Podés decirme por ejemplo:\n\n"
-                      "  📤 *Sacá 10 de Ibuprofeno de 01-1A*\n"
-                      "  📥 *Agregá 50 del código 200 en 02-3B*\n"
-                      "  🔀 *Mové ABC de 01-A a 03-B*\n"
-                      "  📦 *¿Cuánto hay del código 147?*\n"
-                      "  📋 *Últimos movimientos*\n"
-                      "  ❓ *¿Qué podés hacer?*")
+    def _resp_pedidos(_):
+        try:
+            peds = sb.table("pedidos").select("id,nombre,fecha,estado") \
+                .in_("estado",["pendiente","en_proceso"]) \
+                .order("id",desc=True).limit(10).execute().data or []
+            if not peds: return None, "No hay pedidos pendientes en la nube."
+            lines = [f"  {'🟡' if p.get('estado')=='en_proceso' else '🟢'} #{p['id']} · {p['nombre']} · {p.get('fecha','')}"
+                     for p in peds]
+            return None, f"📋 Pedidos ({len(peds)}):\n\n" + "\n".join(lines)
+        except: return None, "No se pudo consultar la tabla pedidos."
+
+    def _resp_charla(intent):
+        hora = datetime.now().hour
+        sal  = "Buenos días" if hora < 12 else ("Buenas tardes" if hora < 20 else "Buenas noches")
+        if intent == 'saludo':
+            return None, f"👋 {sal}, {usuario}! Soy el Operario Digital. ¿Qué necesitás?"
+        if intent == 'gracias':
+            return None, "✅ ¡De nada! Para eso estoy. ¿Algo más?"
+        if intent == 'ayuda':
+            return None, (
+                "🤖 Podés hablarme como quieras. Por ejemplo:\n\n"
+                "📤  «Bajame 10 de ibuprofeno»\n"
+                "📤  «Sacá el gel de 01-2A»\n"
+                "📥  «Llegaron 50 de paracetamol, ponelos en 03-1B»\n"
+                "📥  «Cargá 100 del código 200 en 02-3A»\n"
+                "🔀  «Mandame el ibuprofeno del 01-1A al 03-2B»\n"
+                "🔀  «Pasá todo lo de 99-59B a 12-5C»\n"
+                "✏️   «Corregí el stock de paracetamol a 25»\n"
+                "📦  «¿Cuánto gel tenemos?»\n"
+                "📦  «Buscame el código 150»\n"
+                "📍  «¿Dónde está el ibuprofeno?»\n"
+                "📉  «¿Qué nos falta reponer?»\n"
+                "📊  «Dame un resumen»\n"
+                "📋  «¿Qué movimientos hubo hoy?»\n"
+                "🎤  También podés hablar con el micrófono."
+            )
+        return None
+
+    def _procesar(txt):
+        intent = _intent(txt)
+        ch = _resp_charla(intent)
+        if ch: return ch
+        if intent == 'salida':       return _exec_salida(txt)
+        if intent == 'entrada':      return _exec_entrada(txt)
+        if intent == 'mover':        return _exec_mover(txt)
+        if intent == 'corregir':     return _exec_corregir(txt)
+        if intent == 'historial':    return _resp_historial(txt)
+        if intent == 'resumen':      return _resp_resumen(txt)
+        if intent == 'bajo_stock':   return _resp_bajo_stock(txt)
+        if intent == 'top_stock':    return _resp_top_stock(txt)
+        if intent == 'ubicaciones':  return _resp_ubicaciones(txt)
+        if intent == 'vencimientos': return _resp_vencimientos(txt)
+        if intent == 'pedidos':      return _resp_pedidos(txt)
+        if intent == 'consulta_stock': return _resp_consulta(txt)
+        return _resp_consulta(txt)  # fallback: buscar producto
 
     # ── PANTALLA INICIAL ──────────────────────────────────────────────────────
 
