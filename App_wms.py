@@ -2240,11 +2240,19 @@ with tab_asist:
     # ═══════════════════════════════════════════════════════════════════════════
 
     def _groq_key():
+        # Intento 1: Supabase
         try:
             r = sb.table("config").select("valor").eq("clave","groq_key").execute().data
-            k = (r[0]["valor"] or "").strip() if r else ""
-            return k if k.startswith("gsk_") else None
-        except: return None
+            if r:
+                k = str(r[0].get("valor","") or "").strip()
+                if len(k) > 10: return k
+        except: pass
+        # Intento 2: Streamlit secrets
+        try:
+            k2 = str(st.secrets.get("GROQ_KEY", st.secrets.get("groq_key",""))).strip()
+            if len(k2) > 10: return k2
+        except: pass
+        return None
 
     def _ollama_ok():
         import urllib.request as _ur
@@ -2480,29 +2488,42 @@ with tab_asist:
         return False, "Acción desconocida: {}".format(accion)
 
     def _llamar_ia(msgs, gk=None):
-        """Llama a Groq si hay key, sino a Ollama local."""
         import json as _jj, urllib.request as _ur
         if gk:
             body = _jj.dumps({
                 "model": "llama-3.3-70b-versatile",
                 "messages": msgs,
                 "temperature": 0.1,
-                "max_tokens": 500
+                "max_tokens": 600
             }).encode()
-            req = _ur.Request("https://api.groq.com/openai/v1/chat/completions",
-                data=body, headers={"Authorization":"Bearer {}".format(gk),
-                                    "Content-Type":"application/json"})
-            with _ur.urlopen(req, timeout=20) as r:
-                return _jj.loads(r.read())["choices"][0]["message"]["content"].strip()
+            req = _ur.Request(
+                "https://api.groq.com/openai/v1/chat/completions",
+                data=body,
+                headers={"Authorization": "Bearer " + gk.strip(),
+                         "Content-Type": "application/json"})
+            try:
+                with _ur.urlopen(req, timeout=25) as r:
+                    return _jj.loads(r.read())["choices"][0]["message"]["content"].strip()
+            except _ur.HTTPError as he:
+                body_err = he.read().decode("utf-8","ignore")
+                raise Exception("Groq HTTP {}: {}".format(he.code, body_err[:200]))
         else:
+            # Ollama — detectar modelo disponible
+            try:
+                with _ur.urlopen("http://localhost:11434/api/tags", timeout=2) as rt:
+                    tags = _jj.loads(rt.read()).get("models", [])
+                nombres = [m["name"] for m in tags if m.get("name")]
+                modelo = nombres[0] if nombres else "gemma3:4b"
+            except:
+                modelo = "gemma3:4b"
             body = _jj.dumps({
-                "model": "llama3.2:3b",
+                "model": modelo,
                 "messages": msgs,
                 "stream": False,
-                "options": {"temperature":0.1,"num_predict":500}
+                "options": {"temperature": 0.05, "num_predict": 500}
             }).encode()
             req = _ur.Request("http://localhost:11434/api/chat",
-                data=body, headers={"Content-Type":"application/json"})
+                data=body, headers={"Content-Type": "application/json"})
             with _ur.urlopen(req, timeout=60) as r:
                 return _jj.loads(r.read())["message"]["content"].strip()
 
@@ -2513,7 +2534,7 @@ with tab_asist:
         if not gk and not _ollama_ok():
             return False, (
                 "⚠️ No hay IA disponible.\n"
-                "• **Web**: configurá tu Groq key en ADMIN\n"
+                "• **Web**: cargá tu Groq key en el tab ADMIN → sección 🤖 ASISTENTE IA\n"
                 "• **Local**: ejecutá `ollama serve` en una terminal"
             )
 
@@ -2599,11 +2620,21 @@ with tab_asist:
 
         except Exception as e:
             err = str(e)
-            if "401" in err or "403" in err: return False, "❌ Groq Key inválida. Actualizala en ADMIN."
-            if "429" in err:                 return False, "⏳ Límite de Groq. Esperá unos segundos."
-            if "timeout" in err.lower():     return False, "⏱️ Tiempo de espera agotado. Probá de nuevo."
-            if "111" in err or "refused" in err: return False, "⚠️ Ollama no está corriendo. Ejecutá: ollama serve"
-            return False, "Error: {}".format(err[:100])
+            if "401" in err or "invalid_api_key" in err:
+                return False, (
+                    "❌ Groq Key inválida o expirada.\n"
+                    "Andá a ADMIN → 🤖 ASISTENTE IA y cargá una key nueva.\n"
+                    "Conseguila gratis en console.groq.com"
+                )
+            if "403" in err:
+                return False, "❌ Groq: sin permiso (403). Verificá que la key sea válida."
+            if "429" in err:
+                return False, "⏳ Límite de Groq alcanzado. Esperá unos segundos y probá de nuevo."
+            if "timeout" in err.lower():
+                return False, "⏱️ Groq tardó demasiado. Probá de nuevo."
+            if "111" in err or "refused" in err:
+                return False, "⚠️ Ollama no está corriendo. Ejecutá: ollama serve"
+            return False, "Error IA: {}".format(err[:150])
 
     # ═══════════════════════════════════════════════════════════════════════════
     # PROCESADOR PRINCIPAL
