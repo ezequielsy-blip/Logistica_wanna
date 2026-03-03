@@ -1990,65 +1990,83 @@ with tab_asist:
     # ═══════════════════════════════════════════════════════════════════════════
 
     def _groq_chat(user_msg):
-        """Llama a Groq (llama-3.3-70b) con contexto completo del inventario."""
+        """Groq llama-3.3-70b con TODO inventario + historial completo de conversacion."""
         import json as _jj, urllib.request as _ur2
         try:
             gk_r = sb.table("config").select("valor").eq("clave","groq_key").execute().data
             gk   = (gk_r[0]["valor"] or "").strip() if gk_r else ""
             if not gk or not gk.startswith("gsk_"):
-                return None  # sin key → bot local se hace cargo
+                return None
         except:
             return None
 
-        # Contexto inventario (top 40 + últimos movimientos)
-        top = sorted(maestra, key=lambda p: -float(p.get('cantidad_total',0) or 0))[:40]
-        ctx_inv = "\n".join(
-            f"- {p.get('nombre','')} [cod:{p.get('cod_int','')}] stock:{int(float(p.get('cantidad_total',0) or 0))} uds"
-            for p in top
-        )
-        hist_r   = cargar_historial_cache()[:10]
-        ctx_hist = "\n".join(
-            f"- {h.get('tipo','')} | {h.get('nombre','')} | x{h.get('cantidad','')} | {h.get('ubicacion','')} | @{h.get('usuario','')}"
-            for h in hist_r
-        )
+        # TODO el inventario con lotes detallados
+        lineas_inv = []
+        for p in maestra:
+            cod = str(p.get("cod_int",""))
+            nom = p.get("nombre","")
+            stk = int(float(p.get("cantidad_total",0) or 0))
+            lts = idx_inv.get(cod, [])
+            lotes_str = "  ".join(
+                "[ubi:{} cant:{} vto:{}]".format(
+                    l.get("ubicacion","?"), int(float(l.get("cantidad",0))), l.get("fecha",""))
+                for l in lts[:6]
+            )
+            lineas_inv.append("{} cod:{} total:{}uds {}".format(nom, cod, stk, lotes_str))
+        ctx_inv = "\n".join(lineas_inv)
+
+        # Ultimos 20 movimientos
+        try:
+            hist_r   = cargar_historial_cache()[:20]
+            ctx_hist = "\n".join(
+                "{} | {} | {} | x{} | {} | @{}".format(
+                    h.get("fecha_hora",""), h.get("tipo",""), h.get("nombre",""),
+                    h.get("cantidad",""), h.get("ubicacion",""), h.get("usuario",""))
+                for h in hist_r
+            )
+        except:
+            ctx_hist = ""
 
         system = (
-            f"Sos el Operario Digital de LOGIEZE, sistema de inventario de depósito.\n"
-            f"Usuario logueado: {usuario} | Rol: {rol} | Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
-            f"INVENTARIO (top stock):\n{ctx_inv}\n\n"
-            f"ÚLTIMOS MOVIMIENTOS:\n{ctx_hist}\n\n"
-            "CAPACIDADES DEL SISTEMA:\n"
-            "- Registrar entradas/salidas/movimientos/correcciones de stock\n"
-            "- Buscar productos por nombre, código o medida (350ml, 5L, 60g, etc.)\n"
-            "- Ver stock por ubicación, bajo stock, vencimientos, historial\n"
-            "- Gestionar pedidos desde la nube\n"
-            "- Múltiples depósitos y ubicaciones tipo XX-YY\n\n"
-            "Respondés cualquier pregunta: inventario, logística, dudas del sistema, o charla libre.\n"
-            "Si es una acción (entrada/salida/etc), explicá que puede escribirla directamente.\n"
-            "Español rioplatense, directo, amigable. Si te cargamos con algo gracioso, respondé con humor."
+            "Sos el Operario Digital de LOGIEZE, sistema de gestion de inventario de deposito.\n"
+            "Usuario: {} | Rol: {} | {}\n\n".format(usuario, rol, datetime.now().strftime("%d/%m/%Y %H:%M")) +
+            "=== INVENTARIO COMPLETO ({} productos) ===\n{}\n\n".format(len(maestra), ctx_inv) +
+            "=== ULTIMOS 20 MOVIMIENTOS ===\n{}\n\n".format(ctx_hist) +
+            "=== REGLAS ===\n"
+            "Tenes TODO el inventario arriba. NUNCA digas que no tenes info — buscala.\n"
+            "Si preguntan por un producto, buscalo y da datos concretos (stock, ubicacion, vto).\n"
+            "Si preguntan algo gracioso o fuera de tema, responde con humor rioplatense.\n"
+            "Si es una accion (entrada/salida/etc), explica que puede escribirla directamente.\n"
+            "Espanol rioplatense, directo, sin vueltas."
         )
 
-        msgs = [
-            {"role": "system", "content": system},
-            {"role": "user",   "content": user_msg},
-        ]
+        # Historial de conversacion completo (ultimos 20 mensajes)
+        msgs = [{"role": "system", "content": system}]
+        for m in st.session_state.get("bot_hist", [])[-20:]:
+            msgs.append({
+                "role": "user" if m["rol"] == "user" else "assistant",
+                "content": m["texto"]
+            })
+        if not msgs or msgs[-1].get("content") != user_msg:
+            msgs.append({"role": "user", "content": user_msg})
+
         payload = _jj.dumps({
             "model":       "llama-3.3-70b-versatile",
             "messages":    msgs,
-            "temperature": 0.75,
-            "max_tokens":  700,
+            "temperature": 0.8,
+            "max_tokens":  1000,
         }).encode()
 
         req = _ur2.Request(
             "https://api.groq.com/openai/v1/chat/completions",
             data=payload,
-            headers={"Authorization": f"Bearer {gk}", "Content-Type": "application/json"}
+            headers={"Authorization": "Bearer {}".format(gk), "Content-Type": "application/json"}
         )
         try:
-            with _ur2.urlopen(req, timeout=15) as r2:
+            with _ur2.urlopen(req, timeout=20) as r2:
                 return _jj.loads(r2.read())["choices"][0]["message"]["content"]
         except Exception as eg:
-            return f"⚠️ Groq no respondió ({eg}). Probá de nuevo."
+            return "Groq no respondio ({}). Intenta de nuevo.".format(str(eg)[:80])
 
     # ═══════════════════════════════════════════════════════════════════════════
     # CONTEXTO PENDIENTE (multi-turno)
@@ -2159,154 +2177,137 @@ with tab_asist:
 
     _quick = st.session_state.pop("_bot_quick", None)
 
-    # ── MICRÓFONO: usa st.session_state para pasar la transcripción ──────────
+    # ── INPUT + MICRÓFONO ─────────────────────────────────────────────────────
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Recuperar transcripción del micrófono si viene del componente
-    _voz_nueva = st.session_state.pop("_voz_lista", None)
+    # Limpiar campo en el ciclo posterior al envío
+    if st.session_state.pop("_limpiar", False):
+        st.session_state["bot_input"] = ""
 
-    # CSS del área de input
-    st.markdown("""
-    <style>
-    .stTextArea textarea {
-        background:#1E293B !important; color:#F1F5F9 !important;
-        border:1px solid #334155 !important; border-radius:12px !important;
-        font-size:15px !important; resize:none !important;
-    }
-    .stTextArea textarea:focus {
-        border-color:#3B82F6 !important; box-shadow:0 0 0 2px rgba(59,130,246,.3) !important;
-    }
-    #mic-outer {
-        display:flex; align-items:center; gap:10px;
-        background:#1E293B; border:1px solid #334155; border-radius:12px;
-        padding:8px 14px; margin-bottom:6px;
-    }
-    #mic-btn-main {
-        background:linear-gradient(135deg,#3B82F6,#06B6D4);
-        color:white; border:none; border-radius:50%;
-        width:46px; height:46px; font-size:22px; cursor:pointer;
-        flex-shrink:0; transition:all .2s; display:flex; align-items:center; justify-content:center;
-    }
-    #mic-btn-main.rec {
-        background:linear-gradient(135deg,#EF4444,#F59E0B);
-        animation:mpulse 1s infinite;
-    }
-    @keyframes mpulse {
-        0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}
-        50%{box-shadow:0 0 0 14px rgba(239,68,68,0)}
-    }
-    #mic-status { font-size:13px; color:#94A3B8; font-weight:600; flex:1 }
-    #mic-status.ok { color:#10B981 }
-    #mic-status.err { color:#EF4444 }
-    #mic-preview {
-        margin-top:6px; background:#0F172A; border:1px solid #1E3A5F;
-        border-radius:8px; padding:8px 12px; font-size:13px; color:#93C5FD;
-        display:none; word-break:break-word;
-    }
-    #mic-send {
-        margin-top:6px; width:100%; padding:10px;
-        background:linear-gradient(135deg,#10B981,#059669);
-        color:white; border:none; border-radius:10px;
-        font-size:15px; font-weight:700; cursor:pointer; display:none;
-    }
-    #mic-send:active { opacity:.8 }
-    </style>
-
-    <div id="mic-outer">
-      <button id="mic-btn-main" onclick="togMic()" title="Hablar">🎤</button>
-      <span id="mic-status">Tocá el micrófono para dictar tu mensaje</span>
+    # Micrófono via st.components — único método fiable en Streamlit web/mobile
+    import streamlit.components.v1 as _stc
+    _stc.html("""<!DOCTYPE html><html><head><style>
+    *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+    body{background:transparent}
+    #bar{display:flex;align-items:center;gap:10px;background:#1E293B;border:1px solid #334155;
+         border-radius:12px;padding:8px 14px}
+    #btn{background:linear-gradient(135deg,#3B82F6,#06B6D4);color:#fff;border:none;
+         border-radius:50%;width:46px;height:46px;font-size:22px;cursor:pointer;flex-shrink:0;transition:.2s all}
+    #btn.rec{background:linear-gradient(135deg,#EF4444,#F59E0B);animation:pu 1s infinite}
+    @keyframes pu{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{box-shadow:0 0 0 14px rgba(239,68,68,0)}}
+    #st{font-size:13px;color:#94A3B8;font-weight:600;flex:1}
+    #st.ok{color:#10B981} #st.er{color:#EF4444}
+    #pv{display:none;margin-top:8px;background:#0F172A;border:1px solid #1E3A5F;
+        border-radius:8px;padding:8px 12px;font-size:13px;color:#93C5FD;word-break:break-word}
+    #sb{display:none;width:100%;margin-top:6px;padding:10px;border:none;border-radius:10px;
+        background:linear-gradient(135deg,#10B981,#059669);color:#fff;
+        font-size:15px;font-weight:700;cursor:pointer}
+    #sb:active{opacity:.8}
+    </style></head><body>
+    <div id="bar">
+      <button id="btn" onclick="tog()">🎤</button>
+      <span id="st">Toca para dictar</span>
     </div>
-    <div id="mic-preview"></div>
-    <button id="mic-send" onclick="sendVoice()">➤ Enviar mensaje de voz</button>
-
+    <div id="pv"></div>
+    <button id="sb" onclick="env()">&#10148; Enviar mensaje de voz</button>
     <script>
-    (function(){
-      var R=null, gr=false, tx='';
-
-      window.togMic = function(){
-        var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-        if(!SR){ st('err','❌ Necesitás Chrome en Android para usar el micrófono'); return; }
-        if(gr){ R.stop(); return; }
-        R=new SR();
-        R.lang='es-AR'; R.continuous=false; R.interimResults=true; R.maxAlternatives=1;
-
-        R.onstart=function(){ gr=true; btn('rec','⏹️'); st('ok','🔴 Escuchando... tocá ⏹ para terminar'); };
-
-        R.onresult=function(e){
-          var t='';
-          for(var i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript;
-          tx=t;
-          var pv=document.getElementById('mic-preview');
-          pv.textContent='📝 '+tx; pv.style.display='block';
-          document.getElementById('mic-send').style.display='block';
-        };
-
-        R.onerror=function(e){
-          var m={
-            'not-allowed':'Permiso de micrófono denegado — habilitalo en el candado de la barra del navegador',
-            'no-speech':'No se escuchó nada, intentá de nuevo',
-            'network':'Error de red',
-            'audio-capture':'Sin micrófono disponible'
-          };
-          st('err','❌ '+(m[e.error]||'Error: '+e.error));
-        };
-
-        R.onend=function(){
-          gr=false; btn('','🎤');
-          if(!tx) st('','Tocá el micrófono para dictar tu mensaje');
-          else st('ok','✅ Listo — tocá "Enviar mensaje de voz" o editá abajo');
-        };
-
-        R.start();
+    var R=null,gr=false,tx="";
+    function tog(){
+      var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+      if(!SR){ss("er","Necesitas Chrome para el microfono");return}
+      if(gr){R.stop();return}
+      R=new SR();R.lang="es-AR";R.continuous=false;R.interimResults=true;
+      R.onstart=function(){gr=true;sb2("rec","&#9209;");ss("ok","Escuchando... toca para terminar")};
+      R.onresult=function(e){
+        var t="";for(var i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;
+        tx=t;
+        document.getElementById("pv").textContent="Transcripcion: "+tx;
+        document.getElementById("pv").style.display="block";
+        document.getElementById("sb").style.display="block"
       };
-
-      // Enviar: escribe en el textarea de Streamlit y simula el formulario
-      window.sendVoice = function(){
-        if(!tx) return;
-        // Buscar el textarea de Streamlit
-        var areas = window.parent.document.querySelectorAll('textarea');
-        var ta = null;
-        areas.forEach(function(a){
-          if(a.getAttribute('aria-label')==='msg' || a.placeholder.includes('Escribí')) ta=a;
-        });
-        if(ta){
-          var setter=Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,'value').set;
-          setter.call(ta,tx);
-          ta.dispatchEvent(new Event('input',{bubbles:true}));
-          // click botón Enviar
-          setTimeout(function(){
-            var btns=window.parent.document.querySelectorAll('button');
-            btns.forEach(function(b){ if(b.textContent.includes('Enviar')) b.click(); });
-          }, 200);
+      R.onerror=function(e){
+        var m={"not-allowed":"Permiso denegado — habilita el microfono en la barra del navegador",
+               "no-speech":"No se escucho nada","network":"Error de red","audio-capture":"Sin microfono"};
+        ss("er",m[e.error]||e.error)
+      };
+      R.onend=function(){
+        gr=false;sb2("","&#127908;");
+        if(!tx)ss("","Toca para dictar");
+        else ss("ok","Listo — toca Enviar o escribe abajo")
+      };
+      R.start()
+    }
+    function env(){
+      if(!tx)return;
+      // postMessage al parent Streamlit con el texto transcripto
+      try{window.parent.postMessage({lz_voz:tx},"*")}catch(e){}
+      // Intentar escribir directamente en el textarea como fallback
+      try{
+        var ta=window.parent.document.querySelector("textarea[data-testid]");
+        if(!ta){
+          var all=window.parent.document.querySelectorAll("textarea");
+          for(var i=0;i<all.length;i++){if(all[i].placeholder&&all[i].placeholder.indexOf("Escribi")>=0){ta=all[i];break}}
         }
-        tx='';
-        document.getElementById('mic-preview').style.display='none';
-        document.getElementById('mic-send').style.display='none';
-        st('','Tocá el micrófono para dictar tu mensaje');
-        btn('','🎤');
-      };
+        if(ta){
+          Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set.call(ta,tx);
+          ta.dispatchEvent(new Event("input",{bubbles:true}));
+          setTimeout(function(){
+            var btns=window.parent.document.querySelectorAll("button");
+            for(var i=0;i<btns.length;i++){if(btns[i].innerText.indexOf("Enviar")>=0){btns[i].click();break}}
+          },250)
+        }
+      }catch(e){}
+      tx="";
+      document.getElementById("pv").style.display="none";
+      document.getElementById("sb").style.display="none";
+      sb2("","&#127908;");ss("","Toca para dictar")
+    }
+    function sb2(c,i){var b=document.getElementById("btn");b.className=c;b.innerHTML=i}
+    function ss(c,t){var s=document.getElementById("st");s.className=c;s.textContent=t}
+    </script></body></html>""", height=120)
 
-      function btn(cls,ico){
-        var b=document.getElementById('mic-btn-main');
-        b.className=cls; b.textContent=ico;
-      }
-      function st(cls,txt){
-        var s=document.getElementById('mic-status');
-        s.className=cls; s.textContent=txt;
-      }
-    })();
-    </script>
-    """, unsafe_allow_html=True)
+    # CSS textarea
+    st.markdown("""<style>
+    .stTextArea textarea{background:#1E293B !important;color:#F1F5F9 !important;
+        border:1px solid #334155 !important;border-radius:12px !important;
+        font-size:15px !important;resize:none !important}
+    .stTextArea textarea:focus{border-color:#3B82F6 !important;
+        box-shadow:0 0 0 2px rgba(59,130,246,.3) !important}
+    </style>""", unsafe_allow_html=True)
 
-    # ── INPUT DE TEXTO ────────────────────────────────────────────────────────
+    # Enter = enviar (Shift+Enter = salto de linea)
+    st.markdown("""<script>
+    (function(){
+      var t=0;
+      function h(){
+        var found=false;
+        var all=document.querySelectorAll("textarea");
+        for(var i=0;i<all.length;i++){
+          var ta=all[i];
+          if(!ta._lzh && ta.placeholder && ta.placeholder.indexOf("Escribi")>=0){
+            ta._lzh=true; found=true;
+            ta.addEventListener("keydown",function(ev){
+              if(ev.key==="Enter"&&!ev.shiftKey){
+                ev.preventDefault();
+                var btns=document.querySelectorAll("button");
+                for(var j=0;j<btns.length;j++){if(btns[j].innerText.indexOf("Enviar")>=0){btns[j].click();return}}
+              }
+            })
+          }
+        }
+        if(!found&&t<30){t++;setTimeout(h,300)}
+      }
+      h()
+    })()
+    </script>""", unsafe_allow_html=True)
+
     ic1, ic2 = st.columns([5, 1])
     with ic1:
         txt_in = st.text_area(
             "msg", label_visibility="collapsed",
-            placeholder="Escribí acá o usá el micrófono  ·  Ej: qué shampoo de 350ml hay?",
+            placeholder="Escribi aca · Enter envia · Shift+Enter nueva linea · o usa el microfono",
             key="bot_input",
             height=68,
-            value=_voz_nueva or "",
         )
     with ic2:
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
@@ -2315,6 +2316,8 @@ with tab_asist:
     _final = _quick or (txt_in.strip() if send and txt_in else None)
 
     if _final:
+        st.session_state["bot_input"] = ""
+        st.session_state["_limpiar"]  = True
         st.session_state.bot_hist.append({"rol":"user","texto":_final})
         try:
             ok, respuesta = _procesar(_final)
@@ -2326,6 +2329,6 @@ with tab_asist:
                 entry["ok"]         = False
                 entry["accion_log"] = respuesta
         except Exception as e:
-            entry = {"rol":"assistant","texto":f"❌ Error interno: {str(e)[:200]}","ok":False}
+            entry = {"rol":"assistant","texto":"Error interno: {}".format(str(e)[:200]),"ok":False}
         st.session_state.bot_hist.append(entry)
         st.rerun()
