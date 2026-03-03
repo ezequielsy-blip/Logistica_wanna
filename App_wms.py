@@ -2491,7 +2491,7 @@ with tab_asist:
         import json as _jj, urllib.request as _ur
         if gk:
             body = _jj.dumps({
-                "model": "llama-3.3-70b-versatile",
+                "model": "llama3-8b-8192",
                 "messages": msgs,
                 "temperature": 0.1,
                 "max_tokens": 600
@@ -2627,7 +2627,7 @@ with tab_asist:
                     "Conseguila gratis en console.groq.com"
                 )
             if "403" in err:
-                return False, "❌ Groq: sin permiso (403). Verificá que la key sea válida."
+                return False, "❌ Groq 403: modelo no disponible en tu plan. Contactá soporte."
             if "429" in err:
                 return False, "⏳ Límite de Groq alcanzado. Esperá unos segundos y probá de nuevo."
             if "timeout" in err.lower():
