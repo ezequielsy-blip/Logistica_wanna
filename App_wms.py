@@ -2182,7 +2182,7 @@ with tab_asist:
 
     # Limpiar campo en el ciclo posterior al envío
     if st.session_state.pop("_limpiar", False):
-        st.session_state["bot_input"] = ""
+        st.session_state["_input_key"] = st.session_state.get("_input_key", 0) + 1
 
     # Micrófono via st.components — único método fiable en Streamlit web/mobile
     import streamlit.components.v1 as _stc
@@ -2303,10 +2303,11 @@ with tab_asist:
 
     ic1, ic2 = st.columns([5, 1])
     with ic1:
+        _ikey = "bot_input_" + str(st.session_state.get("_input_key", 0))
         txt_in = st.text_area(
             "msg", label_visibility="collapsed",
             placeholder="Escribi aca · Enter envia · Shift+Enter nueva linea · o usa el microfono",
-            key="bot_input",
+            key=_ikey,
             height=68,
         )
     with ic2:
@@ -2316,8 +2317,7 @@ with tab_asist:
     _final = _quick or (txt_in.strip() if send and txt_in else None)
 
     if _final:
-        st.session_state["bot_input"] = ""
-        st.session_state["_limpiar"]  = True
+        st.session_state["_limpiar"] = True
         st.session_state.bot_hist.append({"rol":"user","texto":_final})
         try:
             ok, respuesta = _procesar(_final)
