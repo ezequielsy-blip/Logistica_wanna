@@ -1773,17 +1773,20 @@ with tab_asist:
         return _ud.normalize('NFD', str(t).lower()).encode('ascii','ignore').decode()
 
     def _medida(txt):
-        """Extrae medida del texto → (num, unidad_norm, texto_original) o None."""
+        """Extrae medida: '350ml', '5l', '5 L', '1.5kg', '200 g', etc."""        # Patrón 1: unidades compuestas (ml, cc, kg, gr, etc.) — con o sin espacio
         m = _re.search(
-            r'\b(\d+(?:[.,]\d+)?)\s*(ml|cc|cl|l|lt|lts|litro|litros|g|gr|grs|gramo|gramos|kg|kilo|kilos|mg|oz|un|u)\b',
+            r'(\d+(?:[.,]\d+)?)\s*(ml|cc|cl|lt|lts|litros?|grs?|gramos?|kilos?|kg|mg|oz)',
             _nn(txt))
+        # Patrón 2: unidades de una letra (l, g, u) — sólo si no están pegadas a letra
+        if not m:
+            m = _re.search(r'(\d+(?:[.,]\d+)?)\s*([lgu])(?![a-z\d])', _nn(txt))
         if not m: return None
         num = float(m.group(1).replace(',','.'))
         raw = m.group(2)
         u   = {'ml':'ml','cc':'ml','cl':'ml','l':'l','lt':'l','lts':'l','litro':'l','litros':'l',
                'g':'g','gr':'g','grs':'g','gramo':'g','gramos':'g',
                'kg':'kg','kilo':'kg','kilos':'kg','mg':'mg',
-               'oz':'oz','un':'un','u':'un'}.get(raw, raw)
+               'oz':'oz','u':'un'}.get(raw, raw)
         return (num, u, m.group(0).strip())
 
     def _medida_ok(nom_n, num, u):
@@ -1796,23 +1799,27 @@ with tab_asist:
         return any(v in nom_n for v in vs)
 
     def _buscar_prod(query):
-        """Busca el mejor producto por nombre o código."""
+        """Busca el mejor producto. Si hay medida en el texto, no usa búsqueda por código."""
         n = _nn(query)
-        m = _re.search(r'\b(\d{3,6})\b', n)
-        if m:
-            cod = m.group(1)
-            p   = next((x for x in maestra if str(x.get('cod_int',''))==cod), None)
-            if p: return p
-        stops = {'el','la','los','las','de','del','un','una','hay','tengo','hay','en',
+        tiene_medida = bool(_re.search(r'\d+\s*(?:ml|cc|l|lt|g|gr|kg|kilo|mg|oz)', n))
+        if not tiene_medida:
+            m = _re.search(r'\b(\d{3,6})\b', n)
+            if m:
+                cod = m.group(1)
+                p   = next((x for x in maestra if str(x.get('cod_int',''))==cod), None)
+                if p: return p
+        stops = {'el','la','los','las','de','del','un','una','hay','tengo','en',
                  'me','que','cuanto','cual','stock','producto','codigo','dame','busca',
-                 'buscame','mostrame','ver','cuantos','donde','esta','para','con'}
-        tokens = [w for w in n.split() if w not in stops and len(w) > 2]
+                 'buscame','mostrame','ver','cuantos','donde','esta','para','con','tenes'}
+        tokens = [w for w in n.split() if w not in stops and len(w) > 2
+                  and not _re.match(r'^\d+$',w)
+                  and not _re.match(r'^\d+(?:ml|cc|l|lt|g|gr|kg|mg|oz)$',w)]
         best, bsc = None, 0
         for p in maestra:
             nn = _nn(p.get('nombre',''))
             sc = sum(2 if w == (nn.split() or [''])[0] else 1 for w in tokens if w in nn)
             if sc > bsc: bsc, best = sc, p
-        return best if bsc >= 1 else None
+        return best if bsc >= 2 else None
 
     def _detalle_prod(prod):
         """Texto con stock + lotes detallados."""
@@ -2242,7 +2249,7 @@ with tab_asist:
         if _re.search(r'\b(top|ranking|mas.stock|mayor.stock|mas.cantidad|los.que.mas|top.\d)\b', n): return 'top'
         if _re.search(r'\b(resumen|panorama|balance|estado.del.inventario|como.estamos|inventario.completo|todo.el.stock)\b', n): return 'resumen'
         if _re.search(r'\b(historial|movimientos|ultimos|ultimo|registro|que.paso|bitacora|actividad)\b', n): return 'hist'
-        if _re.search(r'\b(lista|listame|mostrame|todos.los|todas.las|que.productos|cuales|dame.la.lista|listar)\b', n): return 'lista'
+        if _re.search(r'\b(lista|listame|mostrame|todos.los|todas.las|que.productos|cuales|dame.la.lista|listar|que.hay|cuantos.hay|tenes.de|hay.de)\b', n): return 'lista'
         if _re.search(r'\b(sac[ao]|sacame|baj[ao]|bajame|retir[ao]|salida|despacha|consum[eo]|egres[ao]|quitar|quit[ao])\b', n): return 'salida'
         if _re.search(r'\b(agreg[ao]|ingres[ao]|recib[io]|llegaron|llego|carg[ao]|entrada|incorpor[ao]|sum[ao]|pus[eo])\b', n): return 'entrada'
         if _re.search(r'\b(mov[eo]|movi|mand[ao]|traslad[ao]|pas[ao]\s+(a|al)|llev[ao]\s+(a|al)|cambi[ao].+ubic|trasfer[io])\b', n): return 'mover'
@@ -2310,7 +2317,10 @@ with tab_asist:
                 st.session_state["_ctx"] = {"intent":intent,"txt":txt_c}
             return ok, resp
 
-        # Consulta genérica
+        # Consulta genérica — si incluye medida, va directo a lista de categoría
+        if _medida(txt_c):
+            r = _lista_categoria(txt_c)
+            if r: return None, r
         prod = _buscar_prod(txt_c)
         if prod: return None, _detalle_prod(prod)
 
@@ -2382,8 +2392,12 @@ with tab_asist:
     st.markdown("<br>", unsafe_allow_html=True)
 
     # Limpiar campo en el ciclo posterior al envío
+    # Limpiar input: vaciar antes de renderizar el widget
+    _input_val = ""
     if st.session_state.pop("_limpiar", False):
-        st.session_state["bot_input"] = ""
+        _input_val = ""
+    else:
+        _input_val = st.session_state.get("bot_input", "")
 
     # Micrófono via st.components — único método fiable en Streamlit web/mobile
     import streamlit.components.v1 as _stc
@@ -2509,6 +2523,7 @@ with tab_asist:
             placeholder="Escribi aca · Enter envia · Shift+Enter nueva linea · o usa el microfono",
             key="bot_input",
             height=68,
+            value=_input_val,
         )
     with ic2:
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
@@ -2517,8 +2532,7 @@ with tab_asist:
     _final = _quick or (txt_in.strip() if send and txt_in else None)
 
     if _final:
-        st.session_state["bot_input"] = ""
-        st.session_state["_limpiar"]  = True
+        st.session_state["_limpiar"] = True
         st.session_state.bot_hist.append({"rol":"user","texto":_final})
         try:
             ok, respuesta = _procesar(_final)
