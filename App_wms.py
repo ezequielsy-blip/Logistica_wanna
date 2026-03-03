@@ -1396,25 +1396,12 @@ with tab_asist:
         return [p for _, p in mej[:top]]
 
     def _cant(t):
-        n = _n(t)
-        # Paso 1: verbo+número (mayor prioridad)
-        m_exp = _re.search(
-            r'(?:llegaron?|llego|ingres[aoe]|carg[aoe]|sum[aoe]|agreg[aoe]|'            r'recib[ioe]|entr[aoe]|compra|trajo|trajeron|'            r'baj[aoe]|sac[aoe]|retir[aoe]|us[aoe]|gast[aoe]|'            r'son|hay|quedan?|pon[eo])\s+(\d+(?:[.,]\d+)?)'            r'|(\d+(?:[.,]\d+)?)\s+(?:unidades?|uds?|cajas?|bultos?)', n)
-        if m_exp:
-            v = m_exp.group(1) or m_exp.group(2)
-            if v: return float(v.replace(',','.'))
-        # Paso 2: excluir ubicaciones/fechas, tomar primer número no-código
         limpio = _re.sub(r'\b\d{1,2}[-_]\d{1,2}[A-Za-z]{0,2}\b', ' ', t)
-        limpio = _re.sub(r'\b\d{1,2}[/\-]\d{2,4}\b', ' ', limpio)
         limpio = _re.sub(r'"[^"]*"', ' ', limpio)
         codigos = {str(p.get('cod_int','')) for p in maestra}
-        nums = list(_re.finditer(r'\b(\d+(?:[.,]\d+)?)\b', limpio))
-        for m in nums:
+        for m in _re.finditer(r'\b(\d+(?:[.,]\d+)?)\b', limpio):
             if m.group(1) not in codigos:
                 return float(m.group(1).replace(',','.'))
-        # Paso 3: si todos son códigos, el primero es la cantidad
-        if len(nums) >= 2:
-            return float(nums[0].group(1).replace(',','.'))
         tabla = {
             'un':1,'una':1,'dos':2,'tres':3,'cuatro':4,'cinco':5,'seis':6,
             'siete':7,'ocho':8,'nueve':9,'diez':10,'once':11,'doce':12,
@@ -1422,6 +1409,7 @@ with tab_asist:
             'sesenta':60,'setenta':70,'ochenta':80,'noventa':90,'cien':100,
             'doscientos':200,'quinientos':500,'mil':1000
         }
+        n = _n(t)
         for w, v in tabla.items():
             if _re.search(r'\b' + w + r'\b', n): return float(v)
         return 0.0
@@ -1770,118 +1758,195 @@ with tab_asist:
         lines = [f"  📍 {u} — {int(c)} uds" for u, c in sorted(todas.items())][:40]
         return None, f"📍 Ubicaciones activas ({len(todas)}):\n\n" + "\n".join(lines)
 
-    def _resp_lista_categoria(txt):
-        """
-        Cuando preguntan 'qué shampoo de 350 tengo' devuelve
-        una lista completa de todos los productos que coinciden,
-        con stock, ubicaciones y detalle.
-        """
-        n = _n(txt)
-        # Extraer palabras clave (ignorar stopwords)
-        stops = {'que','cual','cuales','tengo','tienen','hay','de','del','en',
-                 'los','las','un','una','me','como','donde','esta','estan',
-                 'todo','todos','toda','todas','dame','lista','listame',
-                 'mostrame','ver','veo','cuanto','cuantos','stock'}
-        palabras = [w for w in n.split() if w not in stops and len(w) > 1]
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # BÚSQUEDA POR MEDIDA EXACTA  (350ml, 5L, 60g, 1kg, 250cc, etc.)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _extraer_medida(txt):
+        """Extrae la primera medida del texto. Retorna (numero_float, unidad_norm, texto_original) o None."""
+        patron = _re.search(
+            r'\b(\d+(?:[.,]\d+)?)\s*'
+            r'(ml|cc|cl|l|lt|lts|litro|litros|g|gr|grs|gramo|gramos|'
+            r'kg|kilo|kilos|mg|oz|un|u)\b',
+            _n(txt)
+        )
+        if not patron:
+            return None
+        num = float(patron.group(1).replace(',', '.'))
+        raw = patron.group(2)
+        mapa = {
+            'ml':'ml','cc':'ml','cl':'ml',
+            'l':'l','lt':'l','lts':'l','litro':'l','litros':'l',
+            'g':'g','gr':'g','grs':'g','gramo':'g','gramos':'g',
+            'kg':'kg','kilo':'kg','kilos':'kg',
+            'mg':'mg','oz':'oz','un':'un','u':'un',
+        }
+        return (num, mapa.get(raw, raw), patron.group(0).strip())
+
+    def _medida_ok(nom_n, num, unidad):
+        """True si el nombre normalizado contiene la medida (con equivalencias)."""
+        num_s = str(int(num)) if num == int(num) else str(num)
+        # Construir variantes equivalentes
+        vs = {num_s + unidad}
+        if unidad == 'l':
+            ml = int(num * 1000)
+            vs.update([str(ml)+'ml', str(ml)+'cc', num_s+'lt', num_s+'lts', num_s+'litro'])
+        elif unidad == 'ml':
+            vs.add(num_s+'cc')
+            if num >= 1000:
+                vs.add(str(int(num/1000))+'l')
+        elif unidad == 'kg':
+            vs.update([str(int(num*1000))+'g', str(int(num*1000))+'gr', num_s+'kilo'])
+        elif unidad == 'g':
+            vs.update([num_s+'gr', num_s+'grs'])
+            if num >= 1000:
+                vs.add(str(int(num/1000))+'kg')
+        for v in vs:
+            if v in nom_n:
+                return True
+        # Búsqueda con espacios entre número y unidad
+        alts = {'ml':r'ml|cc','l':r'l|lt|lts|litro','g':r'g|gr|grs|gramo',
+                'kg':r'kg|kilo','mg':r'mg','oz':r'oz','un':r'un|u'}
+        return bool(_re.search(r'\b' + num_s + r'\s*(?:' + alts.get(unidad, unidad) + r')\b', nom_n))
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # LISTA POR CATEGORÍA / MEDIDA
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _resp_lista_categoria(txt):
+        n = _n(txt)
+        medida = _extraer_medida(txt)
+
+        stops = {
+            'que','cual','cuales','tengo','tienen','hay','de','del','en',
+            'los','las','un','una','me','como','donde','esta','estan',
+            'todo','todos','toda','todas','dame','lista','listame',
+            'mostrame','ver','veo','cuanto','cuantos','stock','producto',
+            'productos','tenes','tiene','busco','quiero','mostrar',
+            'hay','a','el','la','con','por','para','sobre','entre',
+        }
+        # Excluir tokens de la medida de las palabras clave
+        if medida:
+            num_s = str(int(medida[0])) if medida[0]==int(medida[0]) else str(medida[0])
+            stops.add(num_s)
+            stops.add(medida[1])
+            for tok in medida[2].replace(' ','').split(): stops.add(tok)
+
+        palabras = [w for w in n.split() if w not in stops and len(w) > 1]
         if not palabras:
             return None, None
 
-        # Buscar todos los productos que contienen ALGUNA palabra clave
+        # ── Paso 1: filtrar por palabras clave ─────────────────────────────
         candidatos = []
         for p in maestra:
             nom_n = _n(p.get('nombre',''))
-            score = sum(1 for w in palabras if w in nom_n)
-            if score > 0:
-                candidatos.append((score, p))
+            sc = sum(2 if w == nom_n.split()[0] else 1 for w in palabras if w in nom_n)
+            if sc > 0:
+                candidatos.append((sc, p))
 
         if not candidatos:
             return None, None
 
-        # Ordenar por score desc, luego por nombre
+        # ── Paso 2: filtrar ESTRICTAMENTE por medida ───────────────────────
+        filtro_txt = ""
+        if medida:
+            num, unidad, txt_med = medida
+            filtrados = [(sc, p) for sc, p in candidatos
+                         if _medida_ok(_n(p.get('nombre','')), num, unidad)]
+            if filtrados:
+                candidatos = filtrados
+                filtro_txt = f" de **{txt_med}**"
+            else:
+                otras = sorted({
+                    m.group(0).strip()
+                    for _, p in candidatos
+                    for m in [_re.search(
+                        r'\b\d+(?:[.,]\d+)?\s*(?:ml|cc|l|lt|g|gr|grs|kg|mg|oz)\b',
+                        _n(p.get('nombre','')))]
+                    if m
+                })[:8]
+                aviso = f"No encontré productos de esa categoría con **{txt_med}**.\n"
+                if otras:
+                    aviso += f"Medidas disponibles: {', '.join(otras)}"
+                else:
+                    aviso += f"Tengo {len(candidatos)} producto(s) de esa categoría sin medida especificada."
+                return None, aviso
+
         candidatos.sort(key=lambda x: (-x[0], x[1].get('nombre','')))
 
-        # Si hay un solo resultado exacto y es inconfundible → detalle individual
+        # ── Un solo resultado → detalle completo ───────────────────────────
         if len(candidatos) == 1:
             prod = candidatos[0][1]
-            cod = str(prod['cod_int'])
-            stk = int(float(prod.get('cantidad_total', 0) or 0))
-            lts = _lotes(cod)
-            det = "\n".join(
+            cod  = str(prod['cod_int'])
+            stk  = int(float(prod.get('cantidad_total', 0) or 0))
+            lts  = _lotes(cod)
+            det  = "\n".join(
                 f"  📍 {l.get('ubicacion','?')} — {int(float(l.get('cantidad',0)))} uds"
                 + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
                 for l in lts) if lts else "  Sin stock activo"
             return None, f"📦 *{prod['nombre']}* (cod:{cod})\nTotal: **{stk} uds**\n\n{det}"
 
-        # Múltiples: armar lista completa
-        total_prods = len(candidatos)
-        total_stock = sum(int(float(p.get('cantidad_total',0) or 0)) for _,p in candidatos)
+        # ── Lista completa ─────────────────────────────────────────────────
+        total_p   = len(candidatos)
+        total_stk = sum(int(float(p.get('cantidad_total',0) or 0)) for _, p in candidatos)
 
         lineas = []
-        for _, p in candidatos[:40]:  # máximo 40
-            cod = str(p['cod_int'])
-            stk = int(float(p.get('cantidad_total', 0) or 0))
-            lts = _lotes(cod)
+        for _, p in candidatos[:50]:
+            cod  = str(p['cod_int'])
+            stk  = int(float(p.get('cantidad_total', 0) or 0))
+            lts  = _lotes(cod)
+            ico  = "⛔" if stk == 0 else ("⚠️" if stk < 10 else "✅")
+            ubis = " | ".join(
+                f"{l.get('ubicacion','?')}:{int(float(l.get('cantidad',0)))}u"
+                + (f"[{l.get('fecha','')}]" if l.get('fecha') else "")
+                for l in lts[:3]) if lts else "sin stock"
+            lineas.append(f"{ico} **{p['nombre']}** (cod:{cod}) — {stk} uds  →  {ubis}")
 
-            # Indicador de stock
-            if stk == 0:
-                icono = "⛔"
-            elif stk < 10:
-                icono = "⚠️"
-            else:
-                icono = "✅"
+        cab = (f"📋 **{total_p} producto{'s' if total_p>1 else ''}**{filtro_txt}"
+               f"  —  Stock total: **{total_stk:,} uds**\n")
+        if total_p > 50:
+            cab += f"*(Mostrando 50 de {total_p})*\n"
 
-            # Detalle de ubicaciones en línea
-            ubi_det = ""
-            if lts:
-                ubis = [f"{l.get('ubicacion','?')}:{int(float(l.get('cantidad',0)))}u"
-                        + (f"[{l.get('fecha','')}]" if l.get('fecha') else "")
-                        for l in lts[:4]]
-                ubi_det = "  →  " + "  |  ".join(ubis)
+        return None, cab + "\n" + "\n".join(lineas)
 
-            lineas.append(f"{icono} **{p['nombre']}** (cod:{cod}) — {stk} uds{ubi_det}")
-
-        encabezado = (f"📋 *{total_prods} productos* encontrados para «{txt.strip()}»\n"
-                      f"📊 Stock total: **{total_stock:,} uds**\n\n")
-
-        if total_prods > 40:
-            encabezado += f"*(Mostrando primeros 40 de {total_prods})*\n\n"
-
-        return None, encabezado + "\n".join(lineas)
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CONSULTA (producto único o lista)
+    # ═══════════════════════════════════════════════════════════════════════════
 
     def _resp_consulta(txt):
-        # Primero intentar como lista de categoría
+        # Intentar lista/categoría primero
         ok_l, resp_l = _resp_lista_categoria(txt)
-        # Si hay múltiples resultados, usar la lista
-        if resp_l and "\n" in resp_l and "productos" in resp_l:
+        if resp_l and "**" in resp_l and ("producto" in resp_l or "📋" in resp_l):
             return ok_l, resp_l
 
-        # Buscar producto único
+        # Producto único exacto
         prod = buscar_uno(txt, maestra)
         if prod:
             cod = str(prod['cod_int'])
             stk = int(float(prod.get('cantidad_total', 0) or 0))
             lts = _lotes(cod)
-            if lts:
-                det = "\n".join(
-                    f"  📍 {l.get('ubicacion','?')} ({l.get('deposito','')}) — {int(float(l.get('cantidad',0)))} uds"
-                    + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
-                    for l in lts)
-            else:
-                det = "  Sin stock activo"
+            det = "\n".join(
+                f"  📍 {l.get('ubicacion','?')} ({l.get('deposito','')}) — {int(float(l.get('cantidad',0)))} uds"
+                + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
+                for l in lts) if lts else "  Sin stock activo"
             return None, f"📦 *{prod['nombre']}* (cod:{cod})\nTotal: **{stk} uds**\n\n{det}"
 
-        # Si _resp_lista_categoria encontró algo, usarlo
+        # Usar resp de lista si hay algo (aviso de medida no encontrada, etc.)
         if resp_l:
             return ok_l, resp_l
 
         sugs = buscar_varios(txt, maestra)
         if sugs:
-            lineas = [f"  📦 {p['nombre']} (cod:{p['cod_int']}) — {int(float(p.get('cantidad_total',0) or 0))} uds"
-                      for p in sugs]
-            return None, "Encontré varios productos:\n\n" + "\n".join(lineas) + \
-                "\n\nEspecificá el nombre o dame el código para ver el detalle."
-        return None, "No encontré ese producto. Podés buscar por nombre o código."
+            lineas = [f"  📦 {p['nombre']} (cod:{p['cod_int']}) — "
+                      f"{int(float(p.get('cantidad_total',0) or 0))} uds" for p in sugs]
+            return None, ("Encontré varios productos:\n\n" + "\n".join(lineas) +
+                          "\n\nEspecificá el nombre o dame el código para el detalle.")
+        return None, None   # devuelve None para que Groq tome el relevo
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PEDIDOS / CHARLA
+    # ═══════════════════════════════════════════════════════════════════════════
 
     def _resp_pedidos(_):
         try:
@@ -1898,37 +1963,109 @@ with tab_asist:
         hora = datetime.now().hour
         sal  = "Buenos días" if hora < 12 else ("Buenas tardes" if hora < 20 else "Buenas noches")
         if intent == 'saludo':
-            return None, f"👋 {sal}, {usuario}! Soy el Operario Digital. ¿Qué necesitás?"
+            return None, f"👋 {sal}, {usuario}! Soy el Operario Digital. ¿En qué te ayudo?"
         if intent == 'gracias':
             return None, "✅ ¡De nada! Para eso estoy. ¿Algo más?"
         if intent == 'ayuda':
             return None, (
                 "🤖 Podés hablarme como quieras. Por ejemplo:\n\n"
-                "📤  «Bajame 10 de ibuprofeno»\n"
-                "📤  «Sacá el gel de 01-2A»\n"
-                "📥  «Llegaron 50 de paracetamol, ponelos en 03-1B»\n"
+                "📤  «Bajame 10 de ibuprofeno de 01-2A»\n"
+                "📥  «Llegaron 50 de paracetamol en 03-1B»\n"
                 "📥  «Cargá 100 del código 200 en 02-3A»\n"
-                "🔀  «Mandame el ibuprofeno del 01-1A al 03-2B»\n"
                 "🔀  «Pasá todo lo de 99-59B a 12-5C»\n"
-                "✏️   «Corregí el stock de paracetamol a 25»\n"
-                "📦  «¿Cuánto gel tenemos?»\n"
+                "✏️   «Corregí el stock de gel a 25 en 01-1A»\n"
+                "📦  «Qué shampoo de 350ml tenemos?»\n"
+                "📦  «Listame todos los geles de 5L»\n"
                 "📦  «Buscame el código 150»\n"
                 "📍  «¿Dónde está el ibuprofeno?»\n"
                 "📉  «¿Qué nos falta reponer?»\n"
-                "📊  «Dame un resumen»\n"
+                "📊  «Dame un resumen del inventario»\n"
                 "📋  «¿Qué movimientos hubo hoy?»\n"
-                "🎤  También podés hablar con el micrófono."
+                "🤖  También podés preguntarme cualquier cosa sobre el sistema."
             )
         return None
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # GROQ — responde todo lo que el motor local no entiende
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def _groq_chat(user_msg):
+        """Llama a Groq (llama-3.3-70b) con contexto completo del inventario."""
+        import json as _jj, urllib.request as _ur2
+        try:
+            gk_r = sb.table("config").select("valor").eq("clave","groq_key").execute().data
+            gk   = (gk_r[0]["valor"] or "").strip() if gk_r else ""
+            if not gk or not gk.startswith("gsk_"):
+                return None  # sin key → bot local se hace cargo
+        except:
+            return None
+
+        # Contexto inventario (top 40 + últimos movimientos)
+        top = sorted(maestra, key=lambda p: -float(p.get('cantidad_total',0) or 0))[:40]
+        ctx_inv = "\n".join(
+            f"- {p.get('nombre','')} [cod:{p.get('cod_int','')}] stock:{int(float(p.get('cantidad_total',0) or 0))} uds"
+            for p in top
+        )
+        hist_r   = cargar_historial_cache()[:10]
+        ctx_hist = "\n".join(
+            f"- {h.get('tipo','')} | {h.get('nombre','')} | x{h.get('cantidad','')} | {h.get('ubicacion','')} | @{h.get('usuario','')}"
+            for h in hist_r
+        )
+
+        system = (
+            f"Sos el Operario Digital de LOGIEZE, sistema de inventario de depósito.\n"
+            f"Usuario logueado: {usuario} | Rol: {rol} | Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n"
+            f"INVENTARIO (top stock):\n{ctx_inv}\n\n"
+            f"ÚLTIMOS MOVIMIENTOS:\n{ctx_hist}\n\n"
+            "CAPACIDADES DEL SISTEMA:\n"
+            "- Registrar entradas/salidas/movimientos/correcciones de stock\n"
+            "- Buscar productos por nombre, código o medida (350ml, 5L, 60g, etc.)\n"
+            "- Ver stock por ubicación, bajo stock, vencimientos, historial\n"
+            "- Gestionar pedidos desde la nube\n"
+            "- Múltiples depósitos y ubicaciones tipo XX-YY\n\n"
+            "Respondés cualquier pregunta: inventario, logística, dudas del sistema, o charla libre.\n"
+            "Si es una acción (entrada/salida/etc), explicá que puede escribirla directamente.\n"
+            "Español rioplatense, directo, amigable. Si te cargamos con algo gracioso, respondé con humor."
+        )
+
+        msgs = [
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user_msg},
+        ]
+        payload = _jj.dumps({
+            "model":       "llama-3.3-70b-versatile",
+            "messages":    msgs,
+            "temperature": 0.75,
+            "max_tokens":  700,
+        }).encode()
+
+        req = _ur2.Request(
+            "https://api.groq.com/openai/v1/chat/completions",
+            data=payload,
+            headers={"Authorization": f"Bearer {gk}", "Content-Type": "application/json"}
+        )
+        try:
+            with _ur2.urlopen(req, timeout=15) as r2:
+                return _jj.loads(r2.read())["choices"][0]["message"]["content"]
+        except Exception as eg:
+            return f"⚠️ Groq no respondió ({eg}). Probá de nuevo."
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CONTEXTO PENDIENTE (multi-turno)
+    # ═══════════════════════════════════════════════════════════════════════════
 
     def _combinar_ctx(anterior, nuevo):
         return (anterior.get("txt", "") + " " + nuevo).strip()
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # PROCESADOR PRINCIPAL
+    # ═══════════════════════════════════════════════════════════════════════════
+
     def _procesar(txt):
-        # ── Contexto pendiente de turno anterior ──────────────────────────────
+        # Contexto pendiente de turno anterior
         pendiente = st.session_state.get("_ctx_pendiente")
         if pendiente:
-            txt_c = _combinar_ctx(pendiente, txt)
+            txt_c  = _combinar_ctx(pendiente, txt)
             intent = pendiente.get("intent", _intent(txt_c))
             st.session_state.pop("_ctx_pendiente", None)
         else:
@@ -1938,24 +2075,34 @@ with tab_asist:
         ch = _resp_charla(intent)
         if ch: return ch
 
-        if intent == 'salida':       resultado = _exec_salida(txt_c)
-        elif intent == 'entrada':    resultado = _exec_entrada(txt_c)
-        elif intent == 'mover':      resultado = _exec_mover(txt_c)
-        elif intent == 'corregir':   resultado = _exec_corregir(txt_c)
-        elif intent == 'historial':  return _resp_historial(txt_c)
-        elif intent == 'resumen':    return _resp_resumen(txt_c)
-        elif intent == 'bajo_stock': return _resp_bajo_stock(txt_c)
-        elif intent == 'top_stock':  return _resp_top_stock(txt_c)
-        elif intent == 'ubicaciones':return _resp_ubicaciones(txt_c)
+        if intent == 'salida':        resultado = _exec_salida(txt_c)
+        elif intent == 'entrada':     resultado = _exec_entrada(txt_c)
+        elif intent == 'mover':       resultado = _exec_mover(txt_c)
+        elif intent == 'corregir':    resultado = _exec_corregir(txt_c)
+        elif intent == 'historial':   return _resp_historial(txt_c)
+        elif intent == 'resumen':     return _resp_resumen(txt_c)
+        elif intent == 'bajo_stock':  return _resp_bajo_stock(txt_c)
+        elif intent == 'top_stock':   return _resp_top_stock(txt_c)
+        elif intent == 'ubicaciones': return _resp_ubicaciones(txt_c)
         elif intent == 'vencimientos':return _resp_vencimientos(txt_c)
-        elif intent == 'pedidos':    return _resp_pedidos(txt_c)
-        else:                        return _resp_consulta(txt_c)
+        elif intent == 'pedidos':     return _resp_pedidos(txt_c)
+        else:
+            # Consulta / fallback
+            ok_c, resp_c = _resp_consulta(txt_c)
+            if resp_c is not None:
+                return ok_c, resp_c
+            # Nada encontrado → Groq lo resuelve
+            groq_r = _groq_chat(txt_c)
+            if groq_r:
+                return None, groq_r
+            return None, "No encontré ese producto. Probá con otro nombre o código."
 
         ok, resp = resultado
-        # Si el bot pide más datos → guardar contexto para el próximo mensaje
-        if ok is None and (resp.startswith("¿") or "Especificá" in resp or "¿En qué" in resp):
+        # Guardar contexto si el bot está pidiendo más datos
+        if ok is None and resp and ("¿" in resp or "Especificá" in resp):
             st.session_state["_ctx_pendiente"] = {"intent": intent, "txt": txt_c}
         return ok, resp
+
 
     # ── PANTALLA INICIAL ──────────────────────────────────────────────────────
 
@@ -2012,120 +2159,157 @@ with tab_asist:
 
     _quick = st.session_state.pop("_bot_quick", None)
 
-    # ── INPUT ─────────────────────────────────────────────────────────────────
+    # ── MICRÓFONO: usa st.session_state para pasar la transcripción ──────────
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── AUDIO: transcripción via Web Speech API ───────────────────────────────
+    # Recuperar transcripción del micrófono si viene del componente
+    _voz_nueva = st.session_state.pop("_voz_lista", None)
+
+    # CSS del área de input
     st.markdown("""
     <style>
-    #audio-bar {
-        display:flex; align-items:center; gap:10px;
-        background:#1E293B; border:1px solid #334155;
-        border-radius:14px; padding:8px 14px; margin-bottom:8px;
+    .stTextArea textarea {
+        background:#1E293B !important; color:#F1F5F9 !important;
+        border:1px solid #334155 !important; border-radius:12px !important;
+        font-size:15px !important; resize:none !important;
     }
-    #mic-btn {
+    .stTextArea textarea:focus {
+        border-color:#3B82F6 !important; box-shadow:0 0 0 2px rgba(59,130,246,.3) !important;
+    }
+    #mic-outer {
+        display:flex; align-items:center; gap:10px;
+        background:#1E293B; border:1px solid #334155; border-radius:12px;
+        padding:8px 14px; margin-bottom:6px;
+    }
+    #mic-btn-main {
         background:linear-gradient(135deg,#3B82F6,#06B6D4);
         color:white; border:none; border-radius:50%;
-        width:44px; height:44px; font-size:20px; cursor:pointer;
-        flex-shrink:0; transition:all .2s;
+        width:46px; height:46px; font-size:22px; cursor:pointer;
+        flex-shrink:0; transition:all .2s; display:flex; align-items:center; justify-content:center;
     }
-    #mic-btn.recording {
+    #mic-btn-main.rec {
         background:linear-gradient(135deg,#EF4444,#F59E0B);
-        animation: pulse-mic 1s infinite;
+        animation:mpulse 1s infinite;
     }
-    @keyframes pulse-mic {
+    @keyframes mpulse {
         0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}
-        50%{box-shadow:0 0 0 10px rgba(239,68,68,0)}
+        50%{box-shadow:0 0 0 14px rgba(239,68,68,0)}
     }
-    #audio-status {
-        font-size:12px; color:#94A3B8; font-weight:600;
+    #mic-status { font-size:13px; color:#94A3B8; font-weight:600; flex:1 }
+    #mic-status.ok { color:#10B981 }
+    #mic-status.err { color:#EF4444 }
+    #mic-preview {
+        margin-top:6px; background:#0F172A; border:1px solid #1E3A5F;
+        border-radius:8px; padding:8px 12px; font-size:13px; color:#93C5FD;
+        display:none; word-break:break-word;
     }
-    #audio-status.active { color:#10B981; }
+    #mic-send {
+        margin-top:6px; width:100%; padding:10px;
+        background:linear-gradient(135deg,#10B981,#059669);
+        color:white; border:none; border-radius:10px;
+        font-size:15px; font-weight:700; cursor:pointer; display:none;
+    }
+    #mic-send:active { opacity:.8 }
     </style>
 
-    <div id="audio-bar">
-        <button id="mic-btn" onclick="toggleMic()" title="Hablar">🎤</button>
-        <span id="audio-status">Presioná el micrófono para hablar</span>
+    <div id="mic-outer">
+      <button id="mic-btn-main" onclick="togMic()" title="Hablar">🎤</button>
+      <span id="mic-status">Tocá el micrófono para dictar tu mensaje</span>
     </div>
+    <div id="mic-preview"></div>
+    <button id="mic-send" onclick="sendVoice()">➤ Enviar mensaje de voz</button>
 
     <script>
-    let recognition = null;
-    let isRecording = false;
+    (function(){
+      var R=null, gr=false, tx='';
 
-    function toggleMic() {
-        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-            document.getElementById('audio-status').textContent =
-                '❌ Tu navegador no soporta micrófono. Usá Chrome en Android.';
-            return;
+      window.togMic = function(){
+        var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+        if(!SR){ st('err','❌ Necesitás Chrome en Android para usar el micrófono'); return; }
+        if(gr){ R.stop(); return; }
+        R=new SR();
+        R.lang='es-AR'; R.continuous=false; R.interimResults=true; R.maxAlternatives=1;
+
+        R.onstart=function(){ gr=true; btn('rec','⏹️'); st('ok','🔴 Escuchando... tocá ⏹ para terminar'); };
+
+        R.onresult=function(e){
+          var t='';
+          for(var i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript;
+          tx=t;
+          var pv=document.getElementById('mic-preview');
+          pv.textContent='📝 '+tx; pv.style.display='block';
+          document.getElementById('mic-send').style.display='block';
+        };
+
+        R.onerror=function(e){
+          var m={
+            'not-allowed':'Permiso de micrófono denegado — habilitalo en el candado de la barra del navegador',
+            'no-speech':'No se escuchó nada, intentá de nuevo',
+            'network':'Error de red',
+            'audio-capture':'Sin micrófono disponible'
+          };
+          st('err','❌ '+(m[e.error]||'Error: '+e.error));
+        };
+
+        R.onend=function(){
+          gr=false; btn('','🎤');
+          if(!tx) st('','Tocá el micrófono para dictar tu mensaje');
+          else st('ok','✅ Listo — tocá "Enviar mensaje de voz" o editá abajo');
+        };
+
+        R.start();
+      };
+
+      // Enviar: escribe en el textarea de Streamlit y simula el formulario
+      window.sendVoice = function(){
+        if(!tx) return;
+        // Buscar el textarea de Streamlit
+        var areas = window.parent.document.querySelectorAll('textarea');
+        var ta = null;
+        areas.forEach(function(a){
+          if(a.getAttribute('aria-label')==='msg' || a.placeholder.includes('Escribí')) ta=a;
+        });
+        if(ta){
+          var setter=Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,'value').set;
+          setter.call(ta,tx);
+          ta.dispatchEvent(new Event('input',{bubbles:true}));
+          // click botón Enviar
+          setTimeout(function(){
+            var btns=window.parent.document.querySelectorAll('button');
+            btns.forEach(function(b){ if(b.textContent.includes('Enviar')) b.click(); });
+          }, 200);
         }
-        if (isRecording) {
-            recognition.stop();
-            return;
-        }
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        recognition = new SpeechRecognition();
-        recognition.lang = 'es-AR';
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
+        tx='';
+        document.getElementById('mic-preview').style.display='none';
+        document.getElementById('mic-send').style.display='none';
+        st('','Tocá el micrófono para dictar tu mensaje');
+        btn('','🎤');
+      };
 
-        recognition.onstart = () => {
-            isRecording = true;
-            document.getElementById('mic-btn').classList.add('recording');
-            document.getElementById('mic-btn').textContent = '⏹️';
-            document.getElementById('audio-status').textContent = '🔴 Escuchando...';
-            document.getElementById('audio-status').classList.add('active');
-        };
-
-        recognition.onresult = (event) => {
-            const transcript = event.results[0][0].transcript;
-            document.getElementById('audio-status').textContent =
-                '✅ Transcripto: ' + transcript;
-            // Poner el texto en el input de Streamlit y simular Enter
-            const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-            let botInput = null;
-            inputs.forEach(inp => {
-                if (inp.placeholder && inp.placeholder.includes('Sacá')) botInput = inp;
-            });
-            if (botInput) {
-                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                    window.parent.HTMLInputElement.prototype, 'value').set;
-                nativeInputValueSetter.call(botInput, transcript);
-                botInput.dispatchEvent(new Event('input', { bubbles: true }));
-                // Simular Enter para enviar
-                setTimeout(() => {
-                    botInput.dispatchEvent(new KeyboardEvent('keydown', {
-                        key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true
-                    }));
-                }, 300);
-            }
-        };
-
-        recognition.onerror = (event) => {
-            document.getElementById('audio-status').textContent =
-                '❌ Error: ' + event.error + '. Intentá de nuevo.';
-        };
-
-        recognition.onend = () => {
-            isRecording = false;
-            document.getElementById('mic-btn').classList.remove('recording');
-            document.getElementById('mic-btn').textContent = '🎤';
-            document.getElementById('audio-status').classList.remove('active');
-        };
-
-        recognition.start();
-    }
+      function btn(cls,ico){
+        var b=document.getElementById('mic-btn-main');
+        b.className=cls; b.textContent=ico;
+      }
+      function st(cls,txt){
+        var s=document.getElementById('mic-status');
+        s.className=cls; s.textContent=txt;
+      }
+    })();
     </script>
     """, unsafe_allow_html=True)
 
     # ── INPUT DE TEXTO ────────────────────────────────────────────────────────
-    ic1, ic2 = st.columns([5,1])
+    ic1, ic2 = st.columns([5, 1])
     with ic1:
-        txt_in = st.text_input(
+        txt_in = st.text_area(
             "msg", label_visibility="collapsed",
-            placeholder="Ej: Sacá 10 de Ibuprofeno de 01-1A  |  ¿Cuánto hay del código 200?",
-            key="bot_input"
+            placeholder="Escribí acá o usá el micrófono  ·  Ej: qué shampoo de 350ml hay?",
+            key="bot_input",
+            height=68,
+            value=_voz_nueva or "",
         )
     with ic2:
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
         send = st.button("➤ Enviar", use_container_width=True, type="primary", key="bot_send")
 
     _final = _quick or (txt_in.strip() if send and txt_in else None)
