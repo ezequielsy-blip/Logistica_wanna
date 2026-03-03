@@ -1558,46 +1558,258 @@ with tab_asist:
                        f"📤 Depósito: {dep}  Ubicación: {ubi}\n"
                        f"📊 Stock restante: {stk_post} uds")
 
+    # ── HELPERS MEJORADOS PARA ENTRADA ───────────────────────────────────────
+
+    def _fecha_flexible(t):
+        """
+        Extrae fecha de vencimiento desde lenguaje natural ultra-flexible.
+        Soporta:
+          - Formatos numéricos: 10/26, 10/2026, 05-27, 2027-05
+          - Texto con mes: "junio 2026", "jun/26", "junio del 26"
+          - Relativos: "en 6 meses", "en 1 año", "en un año"
+          - Abreviaciones: "vto 6/26", "vence 10/26"
+          - Sin fecha: devuelve ""
+        """
+        from datetime import date, timedelta
+        import re as _r
+        tn = _n(t)
+
+        _MESES = {
+            'enero':1,'ene':1,'feb':2,'febrero':2,'mar':3,'marzo':3,
+            'abr':4,'abril':4,'may':5,'mayo':5,'jun':6,'junio':6,
+            'jul':7,'julio':7,'ago':8,'agosto':8,'sep':9,'sept':9,'septiembre':9,
+            'oct':10,'octubre':10,'nov':11,'noviembre':11,'dic':12,'diciembre':12,
+        }
+
+        # 1. Formato numérico explícito: MM/AA, MM/AAAA, MM-AA, M/AA
+        m = _r.search(r'\b(\d{1,2})[/\-](\d{2,4})\b', t)
+        if m:
+            mes_s, anio_s = m.group(1), m.group(2)
+            anio = int(anio_s) + 2000 if len(anio_s) == 2 else int(anio_s)
+            if 1 <= int(mes_s) <= 12:
+                return f"{mes_s.zfill(2)}/{anio}"
+
+        # 2. Texto de mes + año: "junio 2026", "jun 26", "junio del 26"
+        for nom_mes, num_mes in sorted(_MESES.items(), key=lambda x: -len(x[0])):
+            pat = nom_mes + r'[\s\-/]*(?:del?\s*)?(\d{2,4})'
+            m2 = _r.search(pat, tn)
+            if m2:
+                anio_s = m2.group(1)
+                anio = int(anio_s) + 2000 if len(anio_s) == 2 else int(anio_s)
+                return f"{str(num_mes).zfill(2)}/{anio}"
+            # Solo mes sin año: "junio" → usa el próximo junio
+            if _r.search(r'\b' + nom_mes + r'\b', tn) and 'venc' in tn:
+                hoy = date.today()
+                anio = hoy.year if hoy.month < num_mes else hoy.year + 1
+                return f"{str(num_mes).zfill(2)}/{anio}"
+
+        # 3. Relativos: "en 6 meses", "en 1 año", "en un año"
+        m3 = _r.search(r'\ben\s+(\d+|un[ao]?|dos|tres|cuatro|seis|doce)\s+(mes(?:es)?|a[ñn]os?)', tn)
+        if m3:
+            num_map = {'un':1,'una':1,'uno':1,'dos':2,'tres':3,'cuatro':4,'seis':6,'doce':12}
+            raw = m3.group(1)
+            n_num = num_map.get(raw, int(raw) if raw.isdigit() else 1)
+            unidad = m3.group(2)
+            hoy = date.today()
+            if 'a' in unidad:  # año
+                fut = date(hoy.year + n_num, hoy.month, 1)
+            else:              # meses
+                mes_fut = hoy.month + n_num
+                anio_fut = hoy.year + (mes_fut - 1) // 12
+                mes_fut = ((mes_fut - 1) % 12) + 1
+                fut = date(anio_fut, mes_fut, 1)
+            return f"{str(fut.month).zfill(2)}/{fut.year}"
+
+        return ''
+
+    def _deposito_flex(t):
+        """
+        Extrae depósito del texto. Soporta:
+          - "depósito B", "depo 2", "en el secundario", "al depósito principal"
+          - Números solos como depósito: "al 2"
+          - Si no lo menciona: devuelve 'PRINCIPAL'
+        """
+        import re as _r
+        tn = _n(t)
+        # Nombre explícito de depósito
+        m = _r.search(r'\bdepo(?:sito)?\s*:?\s*([A-Za-z0-9_\-]+)', tn)
+        if m:
+            return m.group(1).upper()
+        # Palabras clave de depósito
+        if _r.search(r'\b(secundario|segundo|deposito\s*2|dep\s*2|b\b)', tn):
+            return 'SECUNDARIO'
+        if _r.search(r'\b(principal|primero|deposito\s*1|dep\s*1|a\b)', tn):
+            return 'PRINCIPAL'
+        # Buscar depósito en el inventario actual
+        deps_existentes = list({str(l.get('deposito','PRINCIPAL')).upper() for l in inventario if l.get('deposito')})
+        for dep in deps_existentes:
+            if dep.lower() in tn:
+                return dep
+        return 'PRINCIPAL'
+
+    def _ubi_flex(t, cod_prod=None):
+        """
+        Extrae ubicación flexible. Soporta:
+          - Formato estándar: 01-2A, 1-3, 02_4B
+          - Código 99: "la 99", "en 99", "estante 99" → busca siguiente XX-99A libre
+          - Vacía: "" para pedir al usuario
+        """
+        import re as _r
+        tn = _n(t)
+
+        # Formato estándar NN-NNA
+        m = _r.search(r'\b(\d{1,2}[-_]\d{1,2}[A-Za-z]{0,2})\b', t)
+        if m:
+            return m.group(1).upper()
+
+        # Código 99 — buscar siguiente ubicación libre del tipo XX-99
+        if _r.search(r'\b99\b', t):
+            return _sug_ubi_99(cod_prod)
+
+        # "siguiente", "la próxima", "donde corresponde" → sugerir basado en el producto
+        if _r.search(r'\b(siguiente|proxima?|corresponde|misma|donde\s+va)\b', tn):
+            if cod_prod:
+                lts = _lotes(str(cod_prod))
+                if lts:
+                    return str(lts[0].get('ubicacion', '')).upper()
+            return ''
+
+        return ''
+
+    def _sug_ubi_99(cod_prod=None):
+        """
+        Sugiere la siguiente ubicación tipo XX-99 libre.
+        Si el producto ya tiene lotes, usa el mismo pasillo (XX) que el primer lote.
+        Si no, busca la primera XX-99 disponible en el inventario.
+        """
+        import re as _r
+
+        # Obtener todas las ubicaciones XX-99 ya usadas
+        ubs_99_usadas = set()
+        for l in inventario:
+            u = str(l.get('ubicacion', '')).upper()
+            if _r.match(r'\d+-99', u):
+                ubs_99_usadas.add(u)
+
+        # Si el producto tiene lotes, usar su pasillo
+        if cod_prod:
+            lts = _lotes(str(cod_prod))
+            if lts:
+                ubi_exist = str(lts[0].get('ubicacion', '')).upper()
+                m = _r.match(r'(\d+)-', ubi_exist)
+                if m:
+                    pasillo = m.group(1)
+                    # Buscar variante libre: 01-99, 01-99A, 01-99B...
+                    for suf in ['', 'A', 'B', 'C', 'D']:
+                        cand = f"{pasillo}-99{suf}"
+                        if cand not in ubs_99_usadas:
+                            return cand
+
+        # Buscar en todos los pasillos del inventario
+        pasillos = set()
+        for l in inventario:
+            u = str(l.get('ubicacion', '')).upper()
+            m = _r.match(r'(\d+)-', u)
+            if m:
+                pasillos.add(m.group(1))
+
+        for p in sorted(pasillos):
+            for suf in ['', 'A', 'B', 'C', 'D']:
+                cand = f"{p}-99{suf}"
+                if cand not in ubs_99_usadas:
+                    return cand
+
+        return '01-99'
+
     def _exec_entrada(txt):
+        """
+        Registra una entrada de stock con lenguaje ultra-flexible.
+
+        Entiende:
+          - Producto: nombre, código, abreviación, typos
+          - Cantidad: números, palabras ("diez cajas"), no requerida en el comando inicial
+          - Fecha de vto: cualquier formato — 10/26, junio 2026, en 6 meses, sin fecha
+          - Depósito: nombre o keyword — principal, secundario, depósito B
+          - Ubicación: formato estándar, "la 99" (sugiere siguiente libre), "la misma"
+        """
         if rol in ('visita', 'vendedor'):
             return None, "❌ Tu rol no tiene permisos para registrar entradas."
+
         prod = buscar_uno(txt, maestra)
         cant = _cant(txt)
-        ubi  = _ubi(txt)
+
+        # ── Producto no encontrado ──────────────────────────────────────────
         if not prod:
             sugs = buscar_varios(txt, maestra)
             if sugs:
-                lista = "\n".join(f"  • {p['nombre']} (cod:{p['cod_int']})" for p in sugs)
+                lista = "\n".join(f"  • {p['nombre']} (cod:{p['cod_int']})" for p in sugs[:5])
                 return None, f"🔍 No encontré el producto exacto. ¿Es alguno de estos?\n\n{lista}"
             return None, "No encontré ese producto. Decime el nombre o el código."
-        if cant == 0:
-            return None, f"¿Cuántas unidades de *{prod['nombre']}* llegaron?"
-        if not ubi:
-            lts_p = _lotes(str(prod['cod_int']))
-            sug   = str(lts_p[0].get('ubicacion','')) if lts_p else "01-1A"
-            return None, f"¿En qué ubicación van las {int(cant)} uds de *{prod['nombre']}*?\nEj: en {sug}"
+
         cod, nom = str(prod['cod_int']), prod['nombre']
-        fv       = _fecha_vto(txt)
-        lts_ubi  = [l for l in inventario
-                    if str(l.get('cod_int','')) == cod
-                    and str(l.get('ubicacion','')).upper() == ubi]
+
+        # ── Cantidad ────────────────────────────────────────────────────────
+        if cant == 0:
+            return None, f"¿Cuántas unidades de *{nom}* llegaron?"
+
+        # ── Fecha de vencimiento — flexible ────────────────────────────────
+        fv = _fecha_flexible(txt)
+
+        # ── Depósito ────────────────────────────────────────────────────────
+        dep = _deposito_flex(txt)
+
+        # ── Ubicación — flexible, soporta "99" y lenguaje natural ──────────
+        ubi = _ubi_flex(txt, cod_prod=cod)
+
+        if not ubi:
+            # Sugerir basado en lotes existentes del producto
+            lts_p = _lotes(cod)
+            if lts_p:
+                sug = str(lts_p[0].get('ubicacion', '')).upper()
+                msg = f"¿En qué ubicación van las {int(cant)} uds de *{nom}*?\n"
+                msg += f"💡 Ya tenés stock en *{sug}* — podés decirme esa o cualquier otra.\n"
+                msg += f"   También podés decir *'la 99'* para la siguiente ubicación libre de tipo 99."
+            else:
+                sug99 = _sug_ubi_99(cod)
+                msg = f"¿En qué ubicación van las {int(cant)} uds de *{nom}*?\n"
+                msg += f"💡 Sugerida: *{sug99}* (próxima libre) — o decime otra."
+            return None, msg
+
+        # ── Si la ubi viene de "la 99" pero estaba en uso, informar ────────
+        ubi_es_99 = _re.search(r'\b99\b', txt) is not None
+
+        # ── Registrar en DB ─────────────────────────────────────────────────
+        lts_ubi = [l for l in inventario
+                   if str(l.get('cod_int', '')) == cod
+                   and str(l.get('ubicacion', '')).upper() == ubi
+                   and str(l.get('deposito', 'PRINCIPAL')).upper() == dep]
+
         if lts_ubi:
+            # Ya existe lote en esa ubicación y depósito → sumar cantidad
             nueva = float(lts_ubi[0].get('cantidad', 0) or 0) + cant
             sb.table("inventario").update({"cantidad": nueva}).eq("id", lts_ubi[0]["id"]).execute()
         else:
+            # Lote nuevo
             sb.table("inventario").insert({
                 "cod_int": cod, "nombre": nom, "cantidad": cant,
-                "ubicacion": ubi, "fecha": fv, "deposito": "PRINCIPAL"
+                "ubicacion": ubi, "fecha": fv, "deposito": dep
             }).execute()
+
         registrar_historial("ENTRADA", cod, nom, cant, ubi, usuario)
         recalcular_maestra(cod, inventario)
         refrescar()
+
         lts_post = _lotes(cod)
-        stk_post = int(sum(float(l.get('cantidad',0) or 0) for l in lts_post))
-        return True, (f"✅ {int(cant)} uds de *{nom}* ingresadas\n"
-                       f"📥 Ubicación: {ubi}"
-                       + (f"  Vto:{fv}" if fv else "")
-                       + f"\n📊 Stock total: {stk_post} uds")
+        stk_post = int(sum(float(l.get('cantidad', 0) or 0) for l in lts_post))
+
+        lineas = [f"✅ {int(cant)} uds de *{nom}* ingresadas"]
+        lineas.append(f"📥 Depósito: {dep}  Ubicación: {ubi}")
+        if fv:
+            lineas.append(f"📅 Vto: {fv}")
+        lineas.append(f"📊 Stock total: {stk_post} uds")
+        if ubi_es_99:
+            lineas.append(f"📍 Ubicación 99 asignada: {ubi}")
+        return True, "\n".join(lineas)
 
     def _exec_mover(txt):
         if rol in ('visita', 'vendedor'):
@@ -1986,61 +2198,208 @@ with tab_asist:
         return None
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # GROQ — responde todo lo que el motor local no entiende
+    # GROQ — CEREBRO PRINCIPAL: inventario + acciones + internet
     # ═══════════════════════════════════════════════════════════════════════════
 
-    def _groq_chat(user_msg):
-        """Groq llama-3.3-70b con TODO inventario + historial completo de conversacion."""
-        import json as _jj, urllib.request as _ur2
+    def _groq_key():
         try:
-            gk_r = sb.table("config").select("valor").eq("clave","groq_key").execute().data
-            gk   = (gk_r[0]["valor"] or "").strip() if gk_r else ""
-            if not gk or not gk.startswith("gsk_"):
-                return None
+            r = sb.table("config").select("valor").eq("clave","groq_key").execute().data
+            k = (r[0]["valor"] or "").strip() if r else ""
+            return k if k.startswith("gsk_") else None
         except:
             return None
 
-        # TODO el inventario con lotes detallados
-        lineas_inv = []
+    def _build_inventario_ctx():
+        lineas = []
         for p in maestra:
             cod = str(p.get("cod_int",""))
             nom = p.get("nombre","")
             stk = int(float(p.get("cantidad_total",0) or 0))
             lts = idx_inv.get(cod, [])
             lotes_str = "  ".join(
-                "[ubi:{} cant:{} vto:{}]".format(
-                    l.get("ubicacion","?"), int(float(l.get("cantidad",0))), l.get("fecha",""))
+                "[ubi:{} dep:{} cant:{} vto:{}]".format(
+                    l.get("ubicacion","?"), l.get("deposito","PRINCIPAL"),
+                    int(float(l.get("cantidad",0))), l.get("fecha",""))
                 for l in lts[:6]
             )
-            lineas_inv.append("{} cod:{} total:{}uds {}".format(nom, cod, stk, lotes_str))
-        ctx_inv = "\n".join(lineas_inv)
+            lineas.append("{} | cod:{} | total:{}uds | {}".format(nom, cod, stk, lotes_str))
+        return "\n".join(lineas)
 
-        # Ultimos 20 movimientos
+    def _build_hist_ctx():
         try:
-            hist_r   = cargar_historial_cache()[:20]
-            ctx_hist = "\n".join(
-                "{} | {} | {} | x{} | {} | @{}".format(
+            hist_r = cargar_historial_cache()[:25]
+            return "\n".join(
+                "{} | {} | {} | x{} | ubi:{} | @{}".format(
                     h.get("fecha_hora",""), h.get("tipo",""), h.get("nombre",""),
                     h.get("cantidad",""), h.get("ubicacion",""), h.get("usuario",""))
                 for h in hist_r
             )
         except:
-            ctx_hist = ""
+            return ""
+
+    def _sug_99_ctx():
+        import re as _rx99
+        ubs_99 = {str(l.get("ubicacion","")).upper()
+                  for l in inventario if _rx99.match(r'\d+-99', str(l.get("ubicacion","")).upper())}
+        pasillos = []
+        for l in inventario:
+            mx = _rx99.match(r'(\d+)-', str(l.get("ubicacion","")).upper())
+            if mx and mx.group(1) not in pasillos:
+                pasillos.append(mx.group(1))
+        if not pasillos:
+            pasillos = ["01"]
+        for p in sorted(pasillos):
+            for suf in ["", "A", "B", "C", "D"]:
+                cand = "{}-99{}".format(p, suf)
+                if cand not in ubs_99:
+                    return cand
+        return "01-99"
+
+    def _exec_accion_groq(accion, params):
+        import re as _rxa
+        cod  = str(params.get("cod_int","")).strip()
+        cant = float(params.get("cantidad", params.get("cantidad_nueva", 0)) or 0)
+        ubi  = str(params.get("ubicacion","")).upper().strip()
+
+        prod = next((p for p in maestra if str(p.get("cod_int",""))==cod), None)
+        if not prod:
+            prod = next((p for p in maestra if cod.upper() in str(p.get("nombre","")).upper()), None)
+            if prod: cod = str(prod["cod_int"])
+        if not prod:
+            return False, "No encontre el producto '{}'.".format(cod)
+        nom = prod["nombre"]
+
+        if accion == "salida":
+            lts_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
+            lote  = next((l for l in lts_p if str(l.get("ubicacion","")).upper()==ubi), None) if ubi else None
+            if not lote: lote = next((l for l in lts_p if float(l.get("cantidad",0))>=cant), None)
+            if not lote: lote = next((l for l in lts_p), None)
+            if not lote: return False, "Sin stock de {}.".format(nom)
+            ubi = str(lote.get("ubicacion","")).upper()
+            disp = float(lote.get("cantidad",0))
+            if disp < cant: return False, "Solo hay {} uds en {}.".format(int(disp), ubi)
+            nueva = disp - cant
+            if nueva <= 0: sb.table("inventario").delete().eq("id",lote["id"]).execute()
+            else: sb.table("inventario").update({"cantidad":nueva}).eq("id",lote["id"]).execute()
+            registrar_historial("SALIDA", cod, nom, cant, ubi, usuario)
+            recalcular_maestra(cod, inventario); refrescar()
+            return True, "Salida: {} uds de *{}* desde {}. Quedan {} uds.".format(int(cant),nom,ubi,int(nueva))
+
+        elif accion == "entrada":
+            fv  = str(params.get("fecha_vto","") or "").strip()
+            dep = str(params.get("deposito","PRINCIPAL") or "PRINCIPAL").upper().strip() or "PRINCIPAL"
+            m_fv = _rxa.match(r'^(\d{1,2})/(\d{2})$', fv)
+            if m_fv: fv = "{}/20{}".format(m_fv.group(1).zfill(2), m_fv.group(2))
+            if not ubi or "99" in ubi:
+                ubs_99 = {str(l.get("ubicacion","")).upper()
+                          for l in inventario if _rxa.match(r'\d+-99', str(l.get("ubicacion","")).upper())}
+                lts_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
+                pasillos = []
+                for lp in lts_p:
+                    mx = _rxa.match(r'(\d+)-', str(lp.get("ubicacion","")).upper())
+                    if mx and mx.group(1) not in pasillos: pasillos.append(mx.group(1))
+                for l in inventario:
+                    mx = _rxa.match(r'(\d+)-', str(l.get("ubicacion","")).upper())
+                    if mx and mx.group(1) not in pasillos: pasillos.append(mx.group(1))
+                if not pasillos: pasillos = ["01"]
+                ubi = "01-99"
+                for p2 in sorted(pasillos):
+                    for suf in ["","A","B","C","D"]:
+                        cand = "{}-99{}".format(p2,suf)
+                        if cand not in ubs_99: ubi = cand; break
+                    else: continue
+                    break
+            if not ubi:
+                lts_p2 = _lotes(cod)
+                ubi = str(lts_p2[0].get("ubicacion","01-1A")).upper() if lts_p2 else "01-1A"
+            lts_ubi = [l for l in inventario
+                       if str(l.get("cod_int",""))==cod
+                       and str(l.get("ubicacion","")).upper()==ubi
+                       and str(l.get("deposito","PRINCIPAL")).upper()==dep]
+            if lts_ubi:
+                nueva = float(lts_ubi[0].get("cantidad",0) or 0) + cant
+                sb.table("inventario").update({"cantidad":nueva}).eq("id",lts_ubi[0]["id"]).execute()
+            else:
+                sb.table("inventario").insert({
+                    "cod_int":cod,"nombre":nom,"cantidad":cant,
+                    "ubicacion":ubi,"fecha":fv,"deposito":dep
+                }).execute()
+            registrar_historial("ENTRADA", cod, nom, cant, ubi, usuario)
+            recalcular_maestra(cod, inventario); refrescar()
+            msg = "Entrada: {} uds de *{}*\nDeposito: {}  Ubicacion: {}".format(int(cant),nom,dep,ubi)
+            if fv: msg += "\nVto: {}".format(fv)
+            return True, msg
+
+        elif accion == "mover":
+            ubi_dest = str(params.get("ubicacion_destino","")).upper().strip()
+            lts_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
+            lote = next((l for l in lts_p if str(l.get("ubicacion","")).upper()==ubi), None)
+            if not lote and lts_p: lote = lts_p[0]; ubi = str(lote.get("ubicacion","")).upper()
+            if not lote: return False, "No encontre lotes de {}.".format(nom)
+            disp = float(lote.get("cantidad",0))
+            cant_mv = cant if cant > 0 else disp
+            if cant_mv > disp: return False, "Solo hay {} uds en {}.".format(int(disp),ubi)
+            nueva = disp - cant_mv
+            if nueva <= 0: sb.table("inventario").delete().eq("id",lote["id"]).execute()
+            else: sb.table("inventario").update({"cantidad":nueva}).eq("id",lote["id"]).execute()
+            sb.table("inventario").insert({
+                "cod_int":cod,"nombre":nom,"cantidad":cant_mv,
+                "ubicacion":ubi_dest,"fecha":lote.get("fecha",""),"deposito":lote.get("deposito","PRINCIPAL")
+            }).execute()
+            registrar_historial("MOVIMIENTO", cod, nom, cant_mv, "{}>{}".format(ubi,ubi_dest), usuario)
+            recalcular_maestra(cod, inventario); refrescar()
+            return True, "Movido: {} uds de *{}* | {} -> {}".format(int(cant_mv),nom,ubi,ubi_dest)
+
+        elif accion == "corregir":
+            cant_nueva = float(params.get("cantidad_nueva", cant) or cant)
+            lts_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
+            lote = next((l for l in lts_p if str(l.get("ubicacion","")).upper()==ubi), None)
+            if not lote and lts_p: lote = lts_p[0]; ubi = str(lote.get("ubicacion","")).upper()
+            if not lote: return False, "No encontre lotes de {}.".format(nom)
+            ant = float(lote.get("cantidad",0))
+            sb.table("inventario").update({"cantidad":cant_nueva}).eq("id",lote["id"]).execute()
+            registrar_historial("CORRECCION", cod, nom, cant_nueva-ant, ubi, usuario)
+            recalcular_maestra(cod, inventario); refrescar()
+            return True, "Corregido *{}* en {}: {} -> {} uds".format(nom,ubi,int(ant),int(cant_nueva))
+
+        return False, "Accion desconocida: {}".format(accion)
+
+    def _groq_completo(user_msg):
+        import json as _jj, urllib.request as _ur2, re as _rg
+
+        gk = _groq_key()
+        if not gk:
+            return False, None
+
+        ctx_inv  = _build_inventario_ctx()
+        ctx_hist = _build_hist_ctx()
+        sug_99   = _sug_99_ctx()
+        hoy      = datetime.now().strftime("%d/%m/%Y %H:%M")
 
         system = (
-            "Sos el Operario Digital de LOGIEZE, sistema de gestion de inventario de deposito.\n"
-            "Usuario: {} | Rol: {} | {}\n\n".format(usuario, rol, datetime.now().strftime("%d/%m/%Y %H:%M")) +
-            "=== INVENTARIO COMPLETO ({} productos) ===\n{}\n\n".format(len(maestra), ctx_inv) +
-            "=== ULTIMOS 20 MOVIMIENTOS ===\n{}\n\n".format(ctx_hist) +
-            "=== REGLAS ===\n"
-            "Tenes TODO el inventario arriba. NUNCA digas que no tenes info — buscala.\n"
-            "Si preguntan por un producto, buscalo y da datos concretos (stock, ubicacion, vto).\n"
-            "Si preguntan algo gracioso o fuera de tema, responde con humor rioplatense.\n"
-            "Si es una accion (entrada/salida/etc), explica que puede escribirla directamente.\n"
-            "Espanol rioplatense, directo, sin vueltas."
-        )
+            "Sos el Operario Digital de LOGIEZE, sistema de inventario de deposito.\n"
+            "Usuario: {} | Rol: {} | Fecha: {}\n"
+            "Proxima ubicacion 99 libre: {}\n\n"
+            "=== INVENTARIO ({} productos) ===\n{}\n\n"
+            "=== ULTIMOS MOVIMIENTOS ===\n{}\n\n"
+            "=== COMPORTAMIENTO ===\n"
+            "REGLA 1: Responde SIEMPRE directo. Sin mostrar pasos ni JSON visible.\n"
+            "REGLA 2: Para acciones (entrada/salida/mover/corregir) responde SOLO con JSON:\n"
+            '  {{"accion":"entrada|salida|mover|corregir","params":{{...}},"confirmacion":"texto"}}\n'
+            "  entrada:{{cod_int,cantidad,ubicacion,fecha_vto,deposito}}\n"
+            "  salida:{{cod_int,cantidad,ubicacion}}\n"
+            "  mover:{{cod_int,cantidad,ubicacion_origen,ubicacion_destino}}\n"
+            "  corregir:{{cod_int,ubicacion,cantidad_nueva}}\n\n"
+            "REGLA 3: FECHAS siempre MM/AAAA. '10/26'->'10/2026', 'junio 2026'->'06/2026', "
+            "'en 6 meses'->calcula desde hoy, sin fecha->cadena vacia.\n"
+            "REGLA 4: 'la 99' o 'a la 99'->ubicacion:'99-AUTO'. Proxima libre: {}\n"
+            "REGLA 5: DEPOSITO: principal->PRINCIPAL, secundario/B->SECUNDARIO, sin mencion->PRINCIPAL.\n"
+            "REGLA 6: Productos por nombre aprox, abrev o typo.\n"
+            "REGLA 7: Para preguntas generales (precios, etc.) usa web_search.\n"
+            "REGLA 8: Si falta info pregunta en UNA linea. Ej: 'En que ubicacion van?'\n"
+            "REGLA 9: Rioplatense, directo. Nunca digas que no tenes datos."
+        ).format(usuario, rol, hoy, sug_99, len(maestra), ctx_inv, ctx_hist, sug_99)
 
-        # Historial de conversacion completo (ultimos 20 mensajes)
         msgs = [{"role": "system", "content": system}]
         for m in st.session_state.get("bot_hist", [])[-20:]:
             msgs.append({
@@ -2050,23 +2409,96 @@ with tab_asist:
         if not msgs or msgs[-1].get("content") != user_msg:
             msgs.append({"role": "user", "content": user_msg})
 
-        payload = _jj.dumps({
-            "model":       "llama-3.3-70b-versatile",
-            "messages":    msgs,
-            "temperature": 0.8,
-            "max_tokens":  1000,
-        }).encode()
+        tools = [{
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Busca en internet info actual. Usalo para preguntas generales no relacionadas con el inventario.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"]
+                }
+            }
+        }]
 
-        req = _ur2.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
-            data=payload,
-            headers={"Authorization": "Bearer {}".format(gk), "Content-Type": "application/json"}
-        )
+        def _call_groq(messages, with_tools=True):
+            body = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": messages,
+                "temperature": 0.35,
+                "max_tokens": 1200,
+            }
+            if with_tools:
+                body["tools"] = tools
+                body["tool_choice"] = "auto"
+            req = _ur2.Request(
+                "https://api.groq.com/openai/v1/chat/completions",
+                data=_jj.dumps(body).encode(),
+                headers={"Authorization": "Bearer {}".format(gk), "Content-Type": "application/json"}
+            )
+            with _ur2.urlopen(req, timeout=25) as r2:
+                return _jj.loads(r2.read())
+
         try:
-            with _ur2.urlopen(req, timeout=20) as r2:
-                return _jj.loads(r2.read())["choices"][0]["message"]["content"]
+            data   = _call_groq(msgs)
+            choice = data["choices"][0]
+            msg_r  = choice["message"]
+
+            if choice.get("finish_reason") == "tool_calls":
+                tool_calls = msg_r.get("tool_calls", [])
+                msgs.append({"role":"assistant","content": msg_r.get("content","") or "","tool_calls": tool_calls})
+                for tc in tool_calls:
+                    if tc["function"]["name"] == "web_search":
+                        query = _jj.loads(tc["function"]["arguments"]).get("query","")
+                        try:
+                            url_q = "https://duckduckgo.com/html/?q=" + _ur2.quote(query)
+                            req_s = _ur2.Request(url_q, headers={"User-Agent":"Mozilla/5.0"})
+                            with _ur2.urlopen(req_s, timeout=8) as rs:
+                                html = rs.read().decode("utf-8","ignore")
+                            snips  = _rg.findall(r'class="result__snippet"[^>]*>(.*?)</a>', html, _rg.DOTALL)
+                            titles = _rg.findall(r'class="result__a"[^>]*>(.*?)</a>', html, _rg.DOTALL)
+                            clean  = lambda s: _rg.sub(r'<[^>]+>','',s).strip()
+                            results = "\n".join(
+                                "- {}: {}".format(clean(t), clean(s))
+                                for t,s in zip(titles[:5],snips[:5]) if clean(s)
+                            ) or "Sin resultados."
+                        except Exception as se:
+                            results = "Error buscando: {}".format(str(se)[:60])
+                        msgs.append({"role":"tool","tool_call_id": tc["id"],"content": results})
+                data2  = _call_groq(msgs, with_tools=False)
+                resp2  = data2["choices"][0]["message"]["content"].strip()
+                return None, resp2
+
+            respuesta = (msg_r.get("content") or "").strip()
+
+            m_j = _rg.search(r'\{[\s\S]*?"accion"[\s\S]*?\}', respuesta)
+            if m_j:
+                try:
+                    act  = _jj.loads(m_j.group())
+                    tipo = act.get("accion","")
+                    if tipo in ("salida","entrada","mover","corregir"):
+                        if rol in ("visita","vendedor"):
+                            return False, "Tu rol no permite ejecutar esa accion."
+                        ok, resultado = _exec_accion_groq(tipo, act.get("params",{}))
+                        conf = act.get("confirmacion","")
+                        if ok:
+                            full = "{}\n\n{}".format(conf, resultado) if conf else resultado
+                            return True, full
+                        else:
+                            return False, resultado
+                except:
+                    pass
+
+            texto = _rg.sub(r'```[a-z]*[\s\S]*?```', '', respuesta).strip()
+            return None, texto if texto else respuesta
+
         except Exception as eg:
-            return "Groq no respondio ({}). Intenta de nuevo.".format(str(eg)[:80])
+            err = str(eg)
+            if "401" in err or "403" in err: return False, "Groq Key invalida. Actualizala en ADMIN."
+            if "429" in err:                 return False, "Limite de Groq. Espera unos segundos."
+            if "timeout" in err.lower():     return False, "Groq no respondio. Intenta de nuevo."
+            return False, None
 
     # ═══════════════════════════════════════════════════════════════════════════
     # CONTEXTO PENDIENTE (multi-turno)
@@ -2076,22 +2508,28 @@ with tab_asist:
         return (anterior.get("txt", "") + " " + nuevo).strip()
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # PROCESADOR PRINCIPAL
+    # PROCESADOR PRINCIPAL — Groq primero, local de respaldo
     # ═══════════════════════════════════════════════════════════════════════════
 
     def _procesar(txt):
-        # Contexto pendiente de turno anterior
+        intent = _intent(txt)
+
+        ch = _resp_charla(intent)
+        if ch:
+            return ch
+
+        txt_c = txt
         pendiente = st.session_state.get("_ctx_pendiente")
         if pendiente:
             txt_c  = _combinar_ctx(pendiente, txt)
-            intent = pendiente.get("intent", _intent(txt_c))
+            intent = pendiente.get("intent", intent)
             st.session_state.pop("_ctx_pendiente", None)
-        else:
-            txt_c  = txt
-            intent = _intent(txt)
 
-        ch = _resp_charla(intent)
-        if ch: return ch
+        ok_g, resp_g = _groq_completo(txt_c)
+        if resp_g is not None:
+            if ok_g is None and resp_g and "?" in resp_g:
+                st.session_state["_ctx_pendiente"] = {"intent": intent, "txt": txt_c}
+            return ok_g, resp_g
 
         if intent == 'salida':        resultado = _exec_salida(txt_c)
         elif intent == 'entrada':     resultado = _exec_entrada(txt_c)
@@ -2105,21 +2543,15 @@ with tab_asist:
         elif intent == 'vencimientos':return _resp_vencimientos(txt_c)
         elif intent == 'pedidos':     return _resp_pedidos(txt_c)
         else:
-            # Consulta / fallback
             ok_c, resp_c = _resp_consulta(txt_c)
-            if resp_c is not None:
-                return ok_c, resp_c
-            # Nada encontrado → Groq lo resuelve
-            groq_r = _groq_chat(txt_c)
-            if groq_r:
-                return None, groq_r
-            return None, "No encontré ese producto. Probá con otro nombre o código."
+            if resp_c: return ok_c, resp_c
+            return None, "No encontre ese producto. Proba con otro nombre o codigo."
 
         ok, resp = resultado
-        # Guardar contexto si el bot está pidiendo más datos
-        if ok is None and resp and ("¿" in resp or "Especificá" in resp):
+        if ok is None and resp and "?" in resp:
             st.session_state["_ctx_pendiente"] = {"intent": intent, "txt": txt_c}
         return ok, resp
+
 
 
     # ── PANTALLA INICIAL ──────────────────────────────────────────────────────
@@ -2182,7 +2614,7 @@ with tab_asist:
 
     # Limpiar campo en el ciclo posterior al envío
     if st.session_state.pop("_limpiar", False):
-        st.session_state["bot_input"] = ""
+        st.session_state["_input_key"] = st.session_state.get("_input_key", 0) + 1
 
     # Micrófono via st.components — único método fiable en Streamlit web/mobile
     import streamlit.components.v1 as _stc
@@ -2303,10 +2735,11 @@ with tab_asist:
 
     ic1, ic2 = st.columns([5, 1])
     with ic1:
+        _ikey = "bot_input_" + str(st.session_state.get("_input_key", 0))
         txt_in = st.text_area(
             "msg", label_visibility="collapsed",
             placeholder="Escribi aca · Enter envia · Shift+Enter nueva linea · o usa el microfono",
-            key="bot_input",
+            key=_ikey,
             height=68,
         )
     with ic2:
@@ -2316,8 +2749,7 @@ with tab_asist:
     _final = _quick or (txt_in.strip() if send and txt_in else None)
 
     if _final:
-        st.session_state["bot_input"] = ""
-        st.session_state["_limpiar"]  = True
+        st.session_state["_limpiar"] = True
         st.session_state.bot_hist.append({"rol":"user","texto":_final})
         try:
             ok, respuesta = _procesar(_final)
