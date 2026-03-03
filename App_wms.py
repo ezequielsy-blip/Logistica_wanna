@@ -2198,16 +2198,38 @@ with tab_asist:
         return None
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # GROQ — CEREBRO PRINCIPAL: inventario + acciones + internet
+    # OLLAMA — CEREBRO LOCAL: inventario + acciones + búsqueda web
+    # Requiere: ollama corriendo en localhost con modelo llama3.2:3b
     # ═══════════════════════════════════════════════════════════════════════════
 
-    def _groq_key():
+    OLLAMA_URL   = "http://localhost:11434/api/chat"
+    OLLAMA_MODEL = "llama3.2:3b"
+
+    def _ollama_disponible():
+        import urllib.request as _ur
         try:
-            r = sb.table("config").select("valor").eq("clave","groq_key").execute().data
-            k = (r[0]["valor"] or "").strip() if r else ""
-            return k if k.startswith("gsk_") else None
-        except:
-            return None
+            with _ur.urlopen("http://localhost:11434/api/tags", timeout=2): return True
+        except: return False
+
+    def _web_buscar(query):
+        """Búsqueda web via DuckDuckGo — sin API key, sin cuenta."""
+        import urllib.request as _ur, urllib.parse as _up, re as _rx
+        try:
+            url = "https://duckduckgo.com/html/?q=" + _up.quote(query)
+            req = _ur.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with _ur.urlopen(req, timeout=8) as r:
+                html = r.read().decode("utf-8", "ignore")
+            snips  = _rx.findall(r'class="result__snippet"[^>]*>(.*?)</a>', html, _rx.DOTALL)
+            titles = _rx.findall(r'class="result__a"[^>]*>(.*?)</a>', html, _rx.DOTALL)
+            cl = lambda s: _rx.sub(r'<[^>]+>', '', s).strip()
+            resultados = []
+            for t, s in zip(titles[:4], snips[:4]):
+                titulo = cl(t); snippet = cl(s)
+                if snippet:
+                    resultados.append("• {}: {}".format(titulo, snippet))
+            return "\n".join(resultados) if resultados else "Sin resultados."
+        except Exception as e:
+            return "Error de búsqueda: {}".format(str(e)[:60])
 
     def _build_inventario_ctx():
         lineas = []
@@ -2220,82 +2242,91 @@ with tab_asist:
                 "[ubi:{} dep:{} cant:{} vto:{}]".format(
                     l.get("ubicacion","?"), l.get("deposito","PRINCIPAL"),
                     int(float(l.get("cantidad",0))), l.get("fecha",""))
-                for l in lts[:6]
+                for l in lts[:4]
             )
             lineas.append("{} | cod:{} | total:{}uds | {}".format(nom, cod, stk, lotes_str))
         return "\n".join(lineas)
 
     def _build_hist_ctx():
         try:
-            hist_r = cargar_historial_cache()[:25]
+            hist_r = cargar_historial_cache()[:20]
             return "\n".join(
                 "{} | {} | {} | x{} | ubi:{} | @{}".format(
                     h.get("fecha_hora",""), h.get("tipo",""), h.get("nombre",""),
                     h.get("cantidad",""), h.get("ubicacion",""), h.get("usuario",""))
                 for h in hist_r
             )
-        except:
-            return ""
+        except: return ""
 
-    def _sug_99_ctx():
+    def _sug_99():
         import re as _rx99
         ubs_99 = {str(l.get("ubicacion","")).upper()
                   for l in inventario if _rx99.match(r'\d+-99', str(l.get("ubicacion","")).upper())}
         pasillos = []
         for l in inventario:
             mx = _rx99.match(r'(\d+)-', str(l.get("ubicacion","")).upper())
-            if mx and mx.group(1) not in pasillos:
-                pasillos.append(mx.group(1))
-        if not pasillos:
-            pasillos = ["01"]
+            if mx and mx.group(1) not in pasillos: pasillos.append(mx.group(1))
+        if not pasillos: pasillos = ["01"]
         for p in sorted(pasillos):
-            for suf in ["", "A", "B", "C", "D"]:
+            for suf in ["","A","B","C","D"]:
                 cand = "{}-99{}".format(p, suf)
-                if cand not in ubs_99:
-                    return cand
+                if cand not in ubs_99: return cand
         return "01-99"
 
-    def _exec_accion_groq(accion, params):
+    def _exec_accion(accion, params):
+        """Ejecuta la acción en el inventario. Llamado por el cerebro Ollama."""
         import re as _rxa
         cod  = str(params.get("cod_int","")).strip()
         cant = float(params.get("cantidad", params.get("cantidad_nueva", 0)) or 0)
         ubi  = str(params.get("ubicacion","")).upper().strip()
 
+        # Buscar producto por código o por nombre parcial
         prod = next((p for p in maestra if str(p.get("cod_int",""))==cod), None)
         if not prod:
-            prod = next((p for p in maestra if cod.upper() in str(p.get("nombre","")).upper()), None)
+            # Búsqueda fuzzy por nombre
+            cod_up = cod.upper()
+            prod = next((p for p in maestra if cod_up in str(p.get("nombre","")).upper()), None)
+            if not prod:
+                # Búsqueda por cualquier token del cod
+                for token in cod_up.split():
+                    if len(token) >= 3:
+                        prod = next((p for p in maestra if token in str(p.get("nombre","")).upper()), None)
+                        if prod: break
             if prod: cod = str(prod["cod_int"])
         if not prod:
-            return False, "No encontre el producto '{}'.".format(cod)
+            return False, "No encontré el producto '{}'. Verificá el nombre o código.".format(cod)
         nom = prod["nombre"]
 
+        # ── SALIDA ──────────────────────────────────────────────────────────────
         if accion == "salida":
             lts_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
             lote  = next((l for l in lts_p if str(l.get("ubicacion","")).upper()==ubi), None) if ubi else None
             if not lote: lote = next((l for l in lts_p if float(l.get("cantidad",0))>=cant), None)
             if not lote: lote = next((l for l in lts_p), None)
             if not lote: return False, "Sin stock de {}.".format(nom)
-            ubi = str(lote.get("ubicacion","")).upper()
-            disp = float(lote.get("cantidad",0))
+            ubi   = str(lote.get("ubicacion","")).upper()
+            disp  = float(lote.get("cantidad",0))
             if disp < cant: return False, "Solo hay {} uds en {}.".format(int(disp), ubi)
             nueva = disp - cant
             if nueva <= 0: sb.table("inventario").delete().eq("id",lote["id"]).execute()
-            else: sb.table("inventario").update({"cantidad":nueva}).eq("id",lote["id"]).execute()
+            else:           sb.table("inventario").update({"cantidad":nueva}).eq("id",lote["id"]).execute()
             registrar_historial("SALIDA", cod, nom, cant, ubi, usuario)
             recalcular_maestra(cod, inventario); refrescar()
-            return True, "Salida: {} uds de *{}* desde {}. Quedan {} uds.".format(int(cant),nom,ubi,int(nueva))
+            return True, "✅ Salida registrada\n📦 {} uds de *{}* desde {}\n📊 Quedan {} uds".format(int(cant),nom,ubi,int(nueva))
 
+        # ── ENTRADA ─────────────────────────────────────────────────────────────
         elif accion == "entrada":
             fv  = str(params.get("fecha_vto","") or "").strip()
             dep = str(params.get("deposito","PRINCIPAL") or "PRINCIPAL").upper().strip() or "PRINCIPAL"
+            # Normalizar fecha MM/AA → MM/AAAA
             m_fv = _rxa.match(r'^(\d{1,2})/(\d{2})$', fv)
             if m_fv: fv = "{}/20{}".format(m_fv.group(1).zfill(2), m_fv.group(2))
+            # Resolver ubicación 99-AUTO → próxima libre
             if not ubi or "99" in ubi:
                 ubs_99 = {str(l.get("ubicacion","")).upper()
                           for l in inventario if _rxa.match(r'\d+-99', str(l.get("ubicacion","")).upper())}
-                lts_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
                 pasillos = []
-                for lp in lts_p:
+                for lp in [l for l in inventario if str(l.get("cod_int",""))==cod]:
                     mx = _rxa.match(r'(\d+)-', str(lp.get("ubicacion","")).upper())
                     if mx and mx.group(1) not in pasillos: pasillos.append(mx.group(1))
                 for l in inventario:
@@ -2326,230 +2357,178 @@ with tab_asist:
                 }).execute()
             registrar_historial("ENTRADA", cod, nom, cant, ubi, usuario)
             recalcular_maestra(cod, inventario); refrescar()
-            msg = "Entrada: {} uds de *{}*\nDeposito: {}  Ubicacion: {}".format(int(cant),nom,dep,ubi)
-            if fv: msg += "\nVto: {}".format(fv)
+            msg = "✅ Entrada registrada\n📥 {} uds de *{}*\n🏭 Depósito: {}  Ubicación: {}".format(int(cant),nom,dep,ubi)
+            if fv: msg += "\n📅 Vto: {}".format(fv)
             return True, msg
 
+        # ── MOVER ───────────────────────────────────────────────────────────────
         elif accion == "mover":
             ubi_dest = str(params.get("ubicacion_destino","")).upper().strip()
             lts_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
-            lote = next((l for l in lts_p if str(l.get("ubicacion","")).upper()==ubi), None)
+            lote  = next((l for l in lts_p if str(l.get("ubicacion","")).upper()==ubi), None)
             if not lote and lts_p: lote = lts_p[0]; ubi = str(lote.get("ubicacion","")).upper()
-            if not lote: return False, "No encontre lotes de {}.".format(nom)
-            disp = float(lote.get("cantidad",0))
+            if not lote: return False, "No encontré lotes de {}.".format(nom)
+            disp    = float(lote.get("cantidad",0))
             cant_mv = cant if cant > 0 else disp
             if cant_mv > disp: return False, "Solo hay {} uds en {}.".format(int(disp),ubi)
             nueva = disp - cant_mv
             if nueva <= 0: sb.table("inventario").delete().eq("id",lote["id"]).execute()
-            else: sb.table("inventario").update({"cantidad":nueva}).eq("id",lote["id"]).execute()
+            else:           sb.table("inventario").update({"cantidad":nueva}).eq("id",lote["id"]).execute()
             sb.table("inventario").insert({
                 "cod_int":cod,"nombre":nom,"cantidad":cant_mv,
                 "ubicacion":ubi_dest,"fecha":lote.get("fecha",""),"deposito":lote.get("deposito","PRINCIPAL")
             }).execute()
-            registrar_historial("MOVIMIENTO", cod, nom, cant_mv, "{}>{}".format(ubi,ubi_dest), usuario)
+            registrar_historial("MOVIMIENTO", cod, nom, cant_mv, "{}->{}".format(ubi,ubi_dest), usuario)
             recalcular_maestra(cod, inventario); refrescar()
-            return True, "Movido: {} uds de *{}* | {} -> {}".format(int(cant_mv),nom,ubi,ubi_dest)
+            return True, "✅ Movido\n📦 {} uds de *{}*\n🔀 {} → {}".format(int(cant_mv),nom,ubi,ubi_dest)
 
+        # ── CORREGIR ────────────────────────────────────────────────────────────
         elif accion == "corregir":
             cant_nueva = float(params.get("cantidad_nueva", cant) or cant)
             lts_p = [l for l in inventario if str(l.get("cod_int",""))==cod]
-            lote = next((l for l in lts_p if str(l.get("ubicacion","")).upper()==ubi), None)
+            lote  = next((l for l in lts_p if str(l.get("ubicacion","")).upper()==ubi), None)
             if not lote and lts_p: lote = lts_p[0]; ubi = str(lote.get("ubicacion","")).upper()
-            if not lote: return False, "No encontre lotes de {}.".format(nom)
+            if not lote: return False, "No encontré lotes de {}.".format(nom)
             ant = float(lote.get("cantidad",0))
             sb.table("inventario").update({"cantidad":cant_nueva}).eq("id",lote["id"]).execute()
             registrar_historial("CORRECCION", cod, nom, cant_nueva-ant, ubi, usuario)
             recalcular_maestra(cod, inventario); refrescar()
-            return True, "Corregido *{}* en {}: {} -> {} uds".format(nom,ubi,int(ant),int(cant_nueva))
+            return True, "✅ Corregido\n📦 *{}* en {}\n📊 {} → {} uds".format(nom,ubi,int(ant),int(cant_nueva))
 
-        return False, "Accion desconocida: {}".format(accion)
+        return False, "Acción desconocida: {}".format(accion)
 
-    def _groq_completo(user_msg):
-        import json as _jj, urllib.request as _ur2, re as _rg
+    def _cerebro_ollama(user_msg):
+        """
+        Cerebro principal — Ollama local.
+        Detecta si necesita buscar en internet y lo hace antes de responder.
+        """
+        import json as _jj, urllib.request as _ur, re as _rg, re as _rx
 
-        gk = _groq_key()
-        if not gk:
-            return False, None
+        if not _ollama_disponible():
+            return False, (
+                "⚠️ Ollama no está corriendo.\n"
+                "Abrí una terminal y ejecutá: **ollama serve**\n"
+                "Si no lo tenés instalado: descargalo en ollama.com"
+            )
 
         ctx_inv  = _build_inventario_ctx()
         ctx_hist = _build_hist_ctx()
-        sug_99   = _sug_99_ctx()
+        sug99    = _sug_99()
         hoy      = datetime.now().strftime("%d/%m/%Y %H:%M")
 
+        # Detectar si la pregunta es externa (necesita web) o interna (inventario)
+        tn = _n(user_msg)
+        necesita_web = any(k in tn for k in [
+            "precio","cuanto sale","cuanto cuesta","donde comprar","proveedor",
+            "noticias","clima","dolar","tipo de cambio","cotizacion",
+            "que es","como se usa","para que sirve","receta","formula",
+            "cuando","historia","wikipedia","busca","buscame","cheque"
+        ]) and not any(k in tn for k in [
+            "stock","inventario","ubicacion","deposito","ingres","entr","sali","mov"
+        ])
+
+        ctx_web = ""
+        if necesita_web:
+            ctx_web = "\n=== BÚSQUEDA WEB ===\n" + _web_buscar(user_msg) + "\n"
+
         system = (
-            "Sos el Operario Digital de LOGIEZE, sistema de inventario de deposito.\n"
+            "Sos el asistente de inventario de LOGIEZE. Respondés en español rioplatense, directo y sin rodeos.\n"
             "Usuario: {} | Rol: {} | Fecha: {}\n"
-            "Proxima ubicacion 99 libre: {}\n\n"
+            "Próxima ubicación 99 libre: {}\n\n"
             "=== INVENTARIO ({} productos) ===\n{}\n\n"
-            "=== ULTIMOS MOVIMIENTOS ===\n{}\n\n"
-            "=== COMPORTAMIENTO ===\n"
-            "REGLA 1: Responde SIEMPRE directo. Sin mostrar pasos ni JSON visible.\n"
-            "REGLA 2: Para acciones (entrada/salida/mover/corregir) responde SOLO con JSON:\n"
-            '  {{"accion":"entrada|salida|mover|corregir","params":{{...}},"confirmacion":"texto"}}\n'
-            "  entrada:{{cod_int,cantidad,ubicacion,fecha_vto,deposito}}\n"
-            "  salida:{{cod_int,cantidad,ubicacion}}\n"
-            "  mover:{{cod_int,cantidad,ubicacion_origen,ubicacion_destino}}\n"
-            "  corregir:{{cod_int,ubicacion,cantidad_nueva}}\n\n"
-            "REGLA 3: FECHAS siempre MM/AAAA. '10/26'->'10/2026', 'junio 2026'->'06/2026', "
-            "'en 6 meses'->calcula desde hoy, sin fecha->cadena vacia.\n"
-            "REGLA 4: 'la 99' o 'a la 99'->ubicacion:'99-AUTO'. Proxima libre: {}\n"
-            "REGLA 5: DEPOSITO: principal->PRINCIPAL, secundario/B->SECUNDARIO, sin mencion->PRINCIPAL.\n"
-            "REGLA 6: Productos por nombre aprox, abrev o typo.\n"
-            "REGLA 7: Para preguntas generales (precios, etc.) usa web_search.\n"
-            "REGLA 8: Si falta info pregunta en UNA linea. Ej: 'En que ubicacion van?'\n"
-            "REGLA 9: Rioplatense, directo. Nunca digas que no tenes datos."
-        ).format(usuario, rol, hoy, sug_99, len(maestra), ctx_inv, ctx_hist, sug_99)
+            "=== ÚLTIMOS MOVIMIENTOS ===\n{}\n"
+            "{}\n"
+            "=== INSTRUCCIONES CRÍTICAS ===\n"
+            "1. NUNCA muestres JSON en tu respuesta. El usuario no debe ver JSON jamás.\n"
+            "2. Cuando el usuario pide registrar ENTRADA, SALIDA, MOVER o CORREGIR:\n"
+            "   Respondé SOLO con este JSON exacto (nada más, nada menos):\n"
+            '   ACTION:{"accion":"entrada","params":{"cod_int":"X","cantidad":N,"ubicacion":"XX-YY","fecha_vto":"MM/AAAA","deposito":"PRINCIPAL"},"msg":"texto confirmación"}\n'
+            '   ACTION:{"accion":"salida","params":{"cod_int":"X","cantidad":N,"ubicacion":"XX-YY"},"msg":"texto"}\n'
+            '   ACTION:{"accion":"mover","params":{"cod_int":"X","cantidad":N,"ubicacion_origen":"XX-YY","ubicacion_destino":"XX-YY"},"msg":"texto"}\n'
+            '   ACTION:{"accion":"corregir","params":{"cod_int":"X","ubicacion":"XX-YY","cantidad_nueva":N},"msg":"texto"}\n'
+            "3. FECHAS: convertí siempre a MM/AAAA. Ej: 06/26→06/2026 | junio 2026→06/2026 | en 6 meses→calculá | sin fecha→vacío\n"
+            "4. UBICACIÓN 99: si dice 'la 99' o 'al 99' → ubicacion:'99-AUTO'\n"
+            "5. DEPÓSITO: principal→PRINCIPAL | secundario/B→SECUNDARIO | sin mención→PRINCIPAL\n"
+            "6. PRODUCTO: buscá por nombre parcial. ibu→Ibuprofeno | kera→Keratina | gel→primer gel que encuentres\n"
+            "7. Si falta algún dato (cantidad, ubicación) → preguntá en UNA sola línea corta.\n"
+            "8. Para consultas de inventario → respondé con los datos del contexto.\n"
+            "9. Para preguntas externas (precios, info general) → usá los resultados web del contexto.\n"
+            "10. EJEMPLOS de cómo entender ingresos:\n"
+            "    'entraron 50 ibuprofeno 400 en 01-2A vencen 06/26' → ACTION con accion=entrada, cod del ibu 400, cant=50, ubi=01-2A, fecha=06/2026\n"
+            "    'llego el pedido de loreal, 30 cajas, la 99, vence diciembre' → ACTION entrada, busca loreal, cant=30, ubi=99-AUTO, fecha=12/año_actual\n"
+            "    'salida de 5 gel desde 01-2A' → ACTION salida\n"
+        ).format(usuario, rol, hoy, sug99, len(maestra), ctx_inv, ctx_hist, ctx_web)
 
-        msgs = [{"role": "system", "content": system}]
-        for m in st.session_state.get("bot_hist", [])[-20:]:
-            msgs.append({
-                "role": "user" if m["rol"] == "user" else "assistant",
-                "content": m["texto"]
-            })
+        hist = st.session_state.get("bot_hist", [])[-16:]
+        msgs = [{"role":"system","content":system}]
+        for m in hist:
+            msgs.append({"role":"user" if m["rol"]=="user" else "assistant","content":m["texto"]})
         if not msgs or msgs[-1].get("content") != user_msg:
-            msgs.append({"role": "user", "content": user_msg})
-
-        tools = [{
-            "type": "function",
-            "function": {
-                "name": "web_search",
-                "description": "Busca en internet info actual. Usalo para preguntas generales no relacionadas con el inventario.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"query": {"type": "string"}},
-                    "required": ["query"]
-                }
-            }
-        }]
-
-        def _call_groq(messages, with_tools=True):
-            body = {
-                "model": "llama-3.3-70b-versatile",
-                "messages": messages,
-                "temperature": 0.35,
-                "max_tokens": 1200,
-            }
-            if with_tools:
-                body["tools"] = tools
-                body["tool_choice"] = "auto"
-            req = _ur2.Request(
-                "https://api.groq.com/openai/v1/chat/completions",
-                data=_jj.dumps(body).encode(),
-                headers={"Authorization": "Bearer {}".format(gk), "Content-Type": "application/json"}
-            )
-            with _ur2.urlopen(req, timeout=25) as r2:
-                return _jj.loads(r2.read())
+            msgs.append({"role":"user","content":user_msg})
 
         try:
-            data   = _call_groq(msgs)
-            choice = data["choices"][0]
-            msg_r  = choice["message"]
+            import json as _jj, urllib.request as _ur
+            body = _jj.dumps({
+                "model":    OLLAMA_MODEL,
+                "messages": msgs,
+                "stream":   False,
+                "options":  {"temperature":0.1, "num_predict":600}
+            }).encode()
+            req = _ur.Request(OLLAMA_URL, data=body,
+                              headers={"Content-Type":"application/json"})
+            with _ur.urlopen(req, timeout=60) as r:
+                resp_raw = _jj.loads(r.read())["message"]["content"].strip()
 
-            if choice.get("finish_reason") == "tool_calls":
-                tool_calls = msg_r.get("tool_calls", [])
-                msgs.append({"role":"assistant","content": msg_r.get("content","") or "","tool_calls": tool_calls})
-                for tc in tool_calls:
-                    if tc["function"]["name"] == "web_search":
-                        query = _jj.loads(tc["function"]["arguments"]).get("query","")
-                        try:
-                            url_q = "https://duckduckgo.com/html/?q=" + _ur2.quote(query)
-                            req_s = _ur2.Request(url_q, headers={"User-Agent":"Mozilla/5.0"})
-                            with _ur2.urlopen(req_s, timeout=8) as rs:
-                                html = rs.read().decode("utf-8","ignore")
-                            snips  = _rg.findall(r'class="result__snippet"[^>]*>(.*?)</a>', html, _rg.DOTALL)
-                            titles = _rg.findall(r'class="result__a"[^>]*>(.*?)</a>', html, _rg.DOTALL)
-                            clean  = lambda s: _rg.sub(r'<[^>]+>','',s).strip()
-                            results = "\n".join(
-                                "- {}: {}".format(clean(t), clean(s))
-                                for t,s in zip(titles[:5],snips[:5]) if clean(s)
-                            ) or "Sin resultados."
-                        except Exception as se:
-                            results = "Error buscando: {}".format(str(se)[:60])
-                        msgs.append({"role":"tool","tool_call_id": tc["id"],"content": results})
-                data2  = _call_groq(msgs, with_tools=False)
-                resp2  = data2["choices"][0]["message"]["content"].strip()
-                return None, resp2
-
-            respuesta = (msg_r.get("content") or "").strip()
-
-            m_j = _rg.search(r'\{[\s\S]*?"accion"[\s\S]*?\}', respuesta)
-            if m_j:
+            # Detectar ACTION:{...} en la respuesta
+            m_act = _rg.search(r'ACTION:\s*(\{[\s\S]*?\})', resp_raw)
+            if m_act:
                 try:
-                    act  = _jj.loads(m_j.group())
+                    act  = _jj.loads(m_act.group(1))
                     tipo = act.get("accion","")
                     if tipo in ("salida","entrada","mover","corregir"):
                         if rol in ("visita","vendedor"):
-                            return False, "Tu rol no permite ejecutar esa accion."
-                        ok, resultado = _exec_accion_groq(tipo, act.get("params",{}))
-                        conf = act.get("confirmacion","")
-                        if ok:
-                            full = "{}\n\n{}".format(conf, resultado) if conf else resultado
-                            return True, full
-                        else:
-                            return False, resultado
-                except:
-                    pass
+                            return False, "Tu rol no permite esa acción."
+                        ok, resultado = _exec_accion(tipo, act.get("params",{}))
+                        msg_conf = act.get("msg","") or resultado
+                        return (True, msg_conf) if ok else (False, resultado)
+                except Exception: pass
 
-            texto = _rg.sub(r'```[a-z]*[\s\S]*?```', '', respuesta).strip()
-            return None, texto if texto else respuesta
+            # Limpiar cualquier JSON o ACTION residual que haya quedado
+            limpio = _rg.sub(r'ACTION:\s*\{[\s\S]*?\}', '', resp_raw)
+            limpio = _rg.sub(r'```[\s\S]*?```', '', limpio).strip()
+            return None, limpio if limpio else resp_raw
 
-        except Exception as eg:
-            err = str(eg)
-            if "401" in err or "403" in err: return False, "Groq Key invalida. Actualizala en ADMIN."
-            if "429" in err:                 return False, "Limite de Groq. Espera unos segundos."
-            if "timeout" in err.lower():     return False, "Groq no respondio. Intenta de nuevo."
-            return False, None
+        except Exception as e:
+            err = str(e)
+            if "111" in err or "Connection refused" in err:
+                return False, "⚠️ Ollama no está corriendo. Abrí una terminal y ejecutá: **ollama serve**"
+            if "timeout" in err.lower():
+                return False, "⏱️ Ollama tardó demasiado. El modelo puede estar cargando, probá de nuevo en unos segundos."
+            return False, "Error del asistente: {}".format(err[:120])
 
     # ═══════════════════════════════════════════════════════════════════════════
     # CONTEXTO PENDIENTE (multi-turno)
     # ═══════════════════════════════════════════════════════════════════════════
 
     def _combinar_ctx(anterior, nuevo):
-        return (anterior.get("txt", "") + " " + nuevo).strip()
+        return (anterior.get("txt","") + " " + nuevo).strip()
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # PROCESADOR PRINCIPAL — Groq primero, local de respaldo
+    # PROCESADOR PRINCIPAL — Ollama, todo pasa por acá
     # ═══════════════════════════════════════════════════════════════════════════
 
     def _procesar(txt):
-        intent = _intent(txt)
-
-        ch = _resp_charla(intent)
-        if ch:
-            return ch
-
         txt_c = txt
         pendiente = st.session_state.get("_ctx_pendiente")
         if pendiente:
-            txt_c  = _combinar_ctx(pendiente, txt)
-            intent = pendiente.get("intent", intent)
+            txt_c = _combinar_ctx(pendiente, txt)
             st.session_state.pop("_ctx_pendiente", None)
 
-        ok_g, resp_g = _groq_completo(txt_c)
-        if resp_g is not None:
-            if ok_g is None and resp_g and "?" in resp_g:
-                st.session_state["_ctx_pendiente"] = {"intent": intent, "txt": txt_c}
-            return ok_g, resp_g
+        ok, resp = _cerebro_ollama(txt_c)
 
-        if intent == 'salida':        resultado = _exec_salida(txt_c)
-        elif intent == 'entrada':     resultado = _exec_entrada(txt_c)
-        elif intent == 'mover':       resultado = _exec_mover(txt_c)
-        elif intent == 'corregir':    resultado = _exec_corregir(txt_c)
-        elif intent == 'historial':   return _resp_historial(txt_c)
-        elif intent == 'resumen':     return _resp_resumen(txt_c)
-        elif intent == 'bajo_stock':  return _resp_bajo_stock(txt_c)
-        elif intent == 'top_stock':   return _resp_top_stock(txt_c)
-        elif intent == 'ubicaciones': return _resp_ubicaciones(txt_c)
-        elif intent == 'vencimientos':return _resp_vencimientos(txt_c)
-        elif intent == 'pedidos':     return _resp_pedidos(txt_c)
-        else:
-            ok_c, resp_c = _resp_consulta(txt_c)
-            if resp_c: return ok_c, resp_c
-            return None, "No encontre ese producto. Proba con otro nombre o codigo."
-
-        ok, resp = resultado
         if ok is None and resp and "?" in resp:
-            st.session_state["_ctx_pendiente"] = {"intent": intent, "txt": txt_c}
+            st.session_state["_ctx_pendiente"] = {"txt": txt_c}
+
         return ok, resp
 
 
