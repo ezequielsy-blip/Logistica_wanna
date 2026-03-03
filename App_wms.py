@@ -1148,96 +1148,252 @@ with tab_asist:
             c for c in s if _ud.category(c) != 'Mn').lower().strip())
 
     # Stopwords: nunca son nombre de producto
+    """
+    Motor de búsqueda v3 — blindado para nombres con variantes (tonos, tamaños).
+
+    PROBLEMAS RESUELTOS:
+      1. "8/00" vs "7/00" — penalty -800pts por número faltante
+      2. "400" en query no se confunde con tono "4/00" — dos normalizadores separados
+      3. Búsqueda por código de barras (EAN-13, UPC, QR, cualquier campo)
+      4. Búsqueda por código interno (paso previo al scoring)
+      5. Step 3 no confunde partes de tonos (8 de "8/00") con cod_int
+    """
+    import re as _re, unicodedata as _ud
+
     _SW = {
         'de','del','al','el','la','los','las','un','una','unos','unas',
         'en','a','y','o','e','si','no','ni','por','para','con','sin','que',
-        'sacar','saca','saque','sacame','bajame','baja','bajen',
-        'retirar','retira','retiro','quitar','quita','usar','usamos',
-        'consumir','consume','gastamos','gasta','salida','despachar',
-        'despacho','egreso','descontar','desconta',
-        'agregar','agrega','agreg','ingresar','ingresa','entrada',
-        'recibir','recibio','llego','llegaron','sumar','suma',
-        'cargar','carga','compramos','compra','trajeron',
-        'meter','mete','poneme','pone','poner',
-        'mover','move','mueve','movi','manda','mandar',
-        'trasladar','traslada','reubicar','reubica',
-        'pasar','llevar','transferir',
-        'corregir','correg','ajustar','ajusta','fijar','actualizar',
+        'sacar','saca','saque','sacame','bajame','baja','retirar','retira',
+        'quitar','quita','usar','consumir','salida','despachar','despacho',
+        'agregar','agrega','ingresar','ingresa','entrada','recibir',
+        'llego','llegaron','sumar','suma','cargar','carga','compra',
+        'mover','move','mueve','manda','mandar','trasladar','traslada',
+        'corregir','ajustar','ajusta','fijar','actualizar',
         'cuanto','cuanta','cuantos','cuantas','hay','queda','quedan',
         'tiene','tenemos','existe','disponible','stock','dame','deme',
-        'mostrame','ver','listar','buscar','fijate','decime',
-        'codigo','cod','articulo','producto','lote','unidades','uds',
-        'total','me','nos','te','se','lo',
+        'ver','listar','buscar','donde','codigo','cod','producto','lote',
+        'unidades','uds','total','me','nos','te','se','lo',
     }
 
-    def _palabras_prod(txt):
-        t = _n(txt)
+    _UNIDADES = {'mg','ml','gr','grs','g','kg','l','lt','lts','cc','cm','mm',
+                 'comp','caps','tab','uds','x','u','comprimidos','tabletas'}
+
+    _SUFIJOS_TONO = {'00','01','02','03','04','05','06','07','08','09',
+                     '10','11','12','13','14','15','16','17','18','19',
+                     '20','21','22','33','44','45','46','47','55','65','66','77','88','99'}
+
+    _BARRAS = ('barras','ean','ean13','upc','upc12','gtin',
+               'cod_barras','codigo_barras','barcode','qr')
+
+
+    def _strip(t):
+        """Base: sin tildes, minúsculas, sin puntuación especial."""
+        s = _ud.normalize('NFD', str(t))
+        s = ''.join(c for c in s if _ud.category(c) != 'Mn').lower()
+        s = _re.sub(r'[¿¡!?,;:\(\)\[\]\{\}"\'.`*#@]', ' ', s)
+        return _re.sub(r'\s+', ' ', s).strip()
+
+
+    def _nn(nombre):
+        """
+        Normaliza un NOMBRE DE PRODUCTO (de la maestra).
+        Convierte tonos reales: "8/00", "8.00" → "8/00".
+        NO convierte dosis: "400mg" → "400 mg" (separado pero sin tono).
+        """
+        s = _strip(nombre)
+        # Separar letra+número pegados
+        s = _re.sub(r'([a-z])(\d)', r'\1 \2', s)
+        s = _re.sub(r'(\d)([a-z])', r'\1 \2', s)
+        s = _re.sub(r'\s+', ' ', s).strip()
+        # Convertir 8.00 → 8/00 solo si NO hay unidad inmediata después
+        def _sep_nom(m):
+            n1, n2 = m.group(1), m.group(2)
+            sig = (m.string[m.end():].strip().split() or [''])[0].lower()
+            if sig in _UNIDADES: return m.group(0)
+            return f'{n1}/{n2}' if n2 in _SUFIJOS_TONO else m.group(0)
+        s = _re.sub(r'\b(\d+)[.,](\d{2,3})\b', _sep_nom, s)
+        return _re.sub(r'\s+', ' ', s).strip()
+
+
+    def _nq(query):
+        """
+        Normaliza un QUERY del usuario.
+        Más conservador: solo convierte tonos EXPLÍCITOS (ya escritos con /).
+        Un número solo como "400" no se convierte a "4/00".
+        """
+        s = _strip(str(query))
+        # Separar letra+número pegados (primont8/00 → primont 8/00)
+        s = _re.sub(r'([a-z])(\d)', r'\1 \2', s)
+        s = _re.sub(r'(\d)([a-z])', r'\1 \2', s)
+        s = _re.sub(r'\s+', ' ', s).strip()
+        # Convertir 8.00 → 8/00 (tono escrito con punto), NO 400 → 4/00
+        def _sep_q(m):
+            n1, n2 = m.group(1), m.group(2)
+            sig = (m.string[m.end():].strip().split() or [''])[0].lower()
+            if sig in _UNIDADES: return m.group(0)
+            # Solo convertir si N es 1 dígito (tonos son siempre N/NN, no NN/NN)
+            if len(n1) == 1 and n2 in _SUFIJOS_TONO: return f'{n1}/{n2}'
+            return m.group(0)
+        s = _re.sub(r'\b(\d+)[.,](\d{2,3})\b', _sep_q, s)
+        return _re.sub(r'\s+', ' ', s).strip()
+
+
+    def _tok_q(txt):
+        """
+        Tokeniza un QUERY preservando tonos (8/00) y sus partes.
+        También intenta la versión "tono compacto": "800" → busca como "8/00"
+        para tolerar ese error de escritura.
+        """
+        t = _nq(txt)
+        # Quitar ubicaciones de depósito (01-2A)
         t = _re.sub(r'\b\d{1,2}[-_]\d{1,2}[a-z]{0,2}\b', ' ', t)
-        t = _re.sub(r'\b\d+\b', ' ', t)
-        return [w for w in t.split() if len(w) >= 2 and w not in _SW]
+        out = set()
+        for w in t.split():
+            if not w or w in _SW: continue
+            out.add(w)
+            if '/' in w:
+                # Tono 8/00 → también buscar "8" y "00" por separado
+                for p in w.split('/'):
+                    if p: out.add(p)
+            else:
+                # Número de 3 dígitos sin unidad → también intentar como tono
+                m = _re.match(r'^([1-9])(\d{2})$', w)
+                if m and m.group(2) in _SUFIJOS_TONO:
+                    out.add(f'{m.group(1)}/{m.group(2)}')  # "800" → también "8/00"
+        return list(out)
 
-    def _score_prod(nom_n, pals, q_n):
-        if not nom_n or not pals: return 0.0
-        if nom_n == q_n: return 99999.0
-        if q_n and len(q_n) > 3 and q_n in nom_n: return 5000.0
-        hits = sum(1 for w in pals if w in nom_n)
-        if hits == 0: return 0.0
-        sc = hits * 100 + (hits / len(pals)) * 200
-        if hits == len(pals): sc += 300
-        for w in pals:
-            if nom_n.startswith(w): sc += 50
-            sc += len(w) * 5
-            for tok in nom_n.split():
-                if len(w) >= 3 and w in tok and w != tok: sc += 25
-        sc -= len(nom_n) * 0.05
-        return sc
 
-    def _buscar_prod(query):
-        """Busca por codigo interno, barras EAN/UPC, o nombre parcial."""
-        qn = _n(query)
-        q_strip = query.strip()
-        # 1. Codigo interno exacto
+    def _en(token, nom_n):
+        """Busca token como PALABRA COMPLETA en nombre normalizado."""
+        padded = f' {nom_n} '
+        return (f' {token} ' in padded or
+                f'/{token} ' in padded or
+                f' {token}/' in padded or
+                f'/{token}/' in padded)
+
+
+    def _score(nom, query):
+        """
+        Score inteligente:
+        - Token numérico del query faltante en nombre → -800 pts (penalización severa)
+        - Todos los tokens presentes → +500 pts bonus
+        - Retorna 0 si score neto es negativo
+        """
+        nn = _nn(nom)
+        qn = _nq(query)
+        if nn == qn: return 99999.0
+        if len(qn) > 3 and qn in nn: return 8000.0
+
+        qt = _tok_q(query)
+        if not qt: return 0.0
+
+        score = 0.0
+        falt  = []
+        for w in qt:
+            found = _en(w, nn)
+            # Substring solo para palabras largas sin números
+            if not found and len(w) >= 5 and not _re.search(r'\d', w):
+                found = any(w in tok for tok in nn.split())
+            if found:
+                score += 400.0 if _re.search(r'\d', w) else 100.0
+                score += len(w) * 8.0
+            else:
+                falt.append(w)
+
+        for w in falt:
+            if _re.search(r'\d', w):
+                # Si el token tiene alternativa tono (800↔8/00) y la alternativa sí matchea,
+                # no penalizar (ya se contó el match de la alternativa)
+                m3 = _re.match(r'^([1-9])(\d{2})$', w)
+                alt_tono = f'{m3.group(1)}/{m3.group(2)}' if m3 else None
+                if alt_tono and _en(alt_tono, nn):
+                    pass  # alternativa matchea → no penalizar
+                else:
+                    score -= 800.0
+            else:
+                score -= 150.0
+        if not falt:
+            score += 500.0
+        score -= len(nn) * 0.1
+        return max(score, 0.0)
+
+
+    def buscar_uno(query, maestra):
+        """
+        Búsqueda blindada — 4 pasos en orden de precisión:
+        1. Código interno exacto
+        2. Código de barras exacto (EAN-13, UPC, QR — cualquier campo)
+        3. Número en texto = código (ignora partes de tonos como "8" de "8/00")
+        4. Nombre con scoring (penaliza variantes incorrectas)
+        """
+        if not query or not str(query).strip(): return None
+        qs = str(query).strip()
+        qn = _nq(qs)
+
+        # ── 1. Código interno exacto ──────────────────────────────────────
         for p in maestra:
-            if _n(str(p.get('cod_int',''))) == qn: return p
-        # 2. Codigo de barras exacto
-        for campo in ('barras','ean','upc','cod_barras','codigo_barras','barcode'):
+            c = str(p.get('cod_int', '')).strip()
+            if c and c == qs: return p
+            if c and _nq(c) == qn: return p
+
+        # ── 2. Código de barras ───────────────────────────────────────────
+        for campo in _BARRAS:
             for p in maestra:
-                v = str(p.get(campo,'')).strip()
-                if v and (v == q_strip or _n(v) == qn): return p
-        # 3. Numero en texto = codigo
-        limpio = _re.sub(r'\b\d{1,2}[-_]\d{1,2}[A-Za-z]{0,2}\b', ' ', query)
-        limpio = _re.sub(r'"[^"]*"', ' ', limpio)
-        for m in _re.finditer(r'\b(\d+)\b', limpio):
+                v = str(p.get(campo, '')).strip()
+                if v and v == qs: return p
+                if v and _nq(v) == qn: return p
+
+        # ── 3. Número en texto = código (SOLO números "solos", no partes de tono) ──
+        # Quitar tonos tipo N/NN del texto para que "8" de "8/00" no matchee cod_int 8
+        limpio = _re.sub(r'\b\d{1,2}[-_]\d{1,2}[A-Za-z]{0,2}\b', ' ', qs)  # ubicaciones
+        limpio = _re.sub(r'\b\d{1,2}/\d{2}\b', ' __TONO__ ', limpio)        # tonos N/NN
+        for m in _re.finditer(r'\b(\d{2,13})\b', limpio):  # mínimo 2 dígitos
+            num = m.group(1)
+            if 'TONO' in limpio[max(0,m.start()-10):m.end()+10]: continue
+            for p in maestra:
+                if str(p.get('cod_int', '')).strip() == num: return p
+            for campo in _BARRAS:
+                for p in maestra:
+                    if str(p.get(campo, '')).strip() == num: return p
+
+        # ── 4. EAN largo suelto (8-13 dígitos) ───────────────────────────
+        for m in _re.finditer(r'\b(\d{8,13})\b', qs):
             num = m.group(1)
             for p in maestra:
-                if str(p.get('cod_int','')) == num: return p
-            for campo in ('barras','ean','upc','barcode'):
+                if str(p.get('cod_int', '')).strip() == num: return p
+            for campo in _BARRAS:
                 for p in maestra:
-                    if str(p.get(campo,'')) == num: return p
-        # 4. Nombre con scoring
-        mc = _re.search(r'"([^"]+)"', query) or _re.search(r"'([^']+)'", query)
-        qp   = mc.group(1) if mc else query
-        qpn  = _n(qp)
-        pals = _palabras_prod(qp)
-        if not pals: return None
-        mejores = []
-        for p in maestra:
-            sc = _score_prod(_n(p.get('nombre','')), pals, qpn)
-            if sc > 0: mejores.append((sc, p))
-        if not mejores: return None
-        mejores.sort(key=lambda x: -x[0])
-        return mejores[0][1] if mejores[0][0] >= 15 else None
+                    if str(p.get(campo, '')).strip() == num: return p
 
-    def _buscar_varios(query, top=6):
-        mc   = _re.search(r'"([^"]+)"', query) or _re.search(r"'([^']+)'", query)
-        qp   = mc.group(1) if mc else query
-        qpn  = _n(qp)
-        pals = _palabras_prod(qp)
-        if not pals: return []
-        res  = [(  _score_prod(_n(p.get('nombre','')), pals, qpn), p) for p in maestra]
-        res  = [(sc, p) for sc, p in res if sc > 0]
-        res.sort(key=lambda x: -x[0])
-        return [p for _, p in res[:top]]
+        # ── 5. Scoring por nombre ─────────────────────────────────────────
+        qt = _tok_q(qs)
+        if not qt: return None
+
+        mej = []
+        for p in maestra:
+            sc = _score(p.get('nombre', ''), qs)
+            if sc >= 50:
+                mej.append((sc, p))
+
+        if not mej: return None
+        mej.sort(key=lambda x: -x[0])
+
+        # Empate sin discriminador numérico → ambiguo (mostrar opciones)
+        if len(mej) >= 2:
+            has_num = any(_re.search(r'\d', w) for w in qt)
+            if mej[0][0] - mej[1][0] < 50 and mej[0][0] < 5000 and not has_num:
+                return None
+
+        return mej[0][1]
+
+
+    def buscar_varios(query, maestra, top=8):
+        """Lista los N productos más relevantes para mostrar opciones."""
+        if not query or not str(query).strip(): return []
+        mej = [(sc, p) for p in maestra
+               for sc in [_score(p.get('nombre', ''), query)] if sc > 0]
+        mej.sort(key=lambda x: -x[0])
+        return [p for _, p in mej[:top]]
 
     def _cant(t):
         limpio = _re.sub(r'\b\d{1,2}[-_]\d{1,2}[A-Za-z]{0,2}\b', ' ', t)
@@ -1358,11 +1514,11 @@ with tab_asist:
     def _exec_salida(txt):
         if rol in ('visita', 'vendedor'):
             return None, "❌ Tu rol no tiene permisos para registrar salidas."
-        prod = _buscar_prod(txt)
+        prod = buscar_uno(txt, maestra)
         cant = _cant(txt)
         ubi  = _ubi(txt)
         if not prod:
-            sugs = _buscar_varios(txt)
+            sugs = buscar_varios(txt, maestra)
             if sugs:
                 lista = "\n".join(f"  • {p['nombre']} (cod:{p['cod_int']})" for p in sugs)
                 return None, f"🔍 No encontré el producto exacto. ¿Es alguno de estos?\n\n{lista}"
@@ -1403,11 +1559,11 @@ with tab_asist:
     def _exec_entrada(txt):
         if rol in ('visita', 'vendedor'):
             return None, "❌ Tu rol no tiene permisos para registrar entradas."
-        prod = _buscar_prod(txt)
+        prod = buscar_uno(txt, maestra)
         cant = _cant(txt)
         ubi  = _ubi(txt)
         if not prod:
-            sugs = _buscar_varios(txt)
+            sugs = buscar_varios(txt, maestra)
             if sugs:
                 lista = "\n".join(f"  • {p['nombre']} (cod:{p['cod_int']})" for p in sugs)
                 return None, f"🔍 No encontré el producto exacto. ¿Es alguno de estos?\n\n{lista}"
@@ -1442,11 +1598,11 @@ with tab_asist:
     def _exec_mover(txt):
         if rol in ('visita', 'vendedor'):
             return None, "❌ Tu rol no tiene permisos para mover lotes."
-        prod  = _buscar_prod(txt)
+        prod  = buscar_uno(txt, maestra)
         cant  = _cant(txt)
         ubics = _ubis(txt)
         if not prod:
-            sugs = _buscar_varios(txt)
+            sugs = buscar_varios(txt, maestra)
             if sugs:
                 lista = "\n".join(f"  • {p['nombre']} (cod:{p['cod_int']})" for p in sugs)
                 return None, f"🔍 ¿Cuál producto querés mover?\n\n{lista}"
@@ -1486,7 +1642,7 @@ with tab_asist:
     def _exec_corregir(txt):
         if rol in ('visita', 'vendedor'):
             return None, "❌ Tu rol no tiene permisos para corregir stock."
-        prod = _buscar_prod(txt)
+        prod = buscar_uno(txt, maestra)
         cant = _cant(txt)
         ubi  = _ubi(txt)
         if not prod:
@@ -1515,7 +1671,7 @@ with tab_asist:
         try:
             data = sb.table("historial").select("*").order("id",desc=True).limit(30).execute().data or []
             if not data: return None, "No hay movimientos registrados aún."
-            prod = _buscar_prod(txt) if any(w in _n(txt) for w in ['de','del','sobre']) else None
+            prod = buscar_uno(txt, maestra) if any(w in _n(txt) for w in ['de','del','sobre']) else None
             if prod:
                 data = [r for r in data if str(r.get('cod_int','')) == str(prod['cod_int'])]
             icons = {"ENTRADA":"📥","SALIDA":"📤","MOVIMIENTO":"🔀","CORRECCIÓN":"✏️"}
@@ -1578,7 +1734,7 @@ with tab_asist:
         return None, f"🏆 Top {n_top} por stock:\n\n" + "\n".join(lineas)
 
     def _resp_ubicaciones(txt):
-        prod = _buscar_prod(txt)
+        prod = buscar_uno(txt, maestra)
         if prod:
             lts = _lotes(str(prod['cod_int']))
             if not lts: return None, f"📦 *{prod['nombre']}* no tiene stock activo."
@@ -1597,7 +1753,7 @@ with tab_asist:
         return None, f"📍 Ubicaciones activas ({len(todas)}):\n\n" + "\n".join(lines)
 
     def _resp_consulta(txt):
-        prod = _buscar_prod(txt)
+        prod = buscar_uno(txt, maestra)
         if prod:
             cod = str(prod['cod_int'])
             stk = int(float(prod.get('cantidad_total', 0) or 0))
@@ -1607,7 +1763,7 @@ with tab_asist:
                 + (f"  Vto:{l.get('fecha','')}" if l.get('fecha') else "")
                 for l in lts) if lts else "  Sin lotes activos"
             return None, f"📦 *{prod['nombre']}*\nCódigo: {cod}  ·  Stock total: **{stk} uds**\n\n{det}"
-        sugs = _buscar_varios(txt)
+        sugs = buscar_varios(txt, maestra)
         if sugs:
             lineas = [f"  📦 {p['nombre']} (cod:{p['cod_int']}) — {int(float(p.get('cantidad_total',0) or 0))} uds"
                       for p in sugs]
