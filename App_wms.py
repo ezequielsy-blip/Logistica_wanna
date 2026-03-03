@@ -1558,46 +1558,258 @@ with tab_asist:
                        f"📤 Depósito: {dep}  Ubicación: {ubi}\n"
                        f"📊 Stock restante: {stk_post} uds")
 
+    # ── HELPERS MEJORADOS PARA ENTRADA ───────────────────────────────────────
+
+    def _fecha_flexible(t):
+        """
+        Extrae fecha de vencimiento desde lenguaje natural ultra-flexible.
+        Soporta:
+          - Formatos numéricos: 10/26, 10/2026, 05-27, 2027-05
+          - Texto con mes: "junio 2026", "jun/26", "junio del 26"
+          - Relativos: "en 6 meses", "en 1 año", "en un año"
+          - Abreviaciones: "vto 6/26", "vence 10/26"
+          - Sin fecha: devuelve ""
+        """
+        from datetime import date, timedelta
+        import re as _r
+        tn = _n(t)
+
+        _MESES = {
+            'enero':1,'ene':1,'feb':2,'febrero':2,'mar':3,'marzo':3,
+            'abr':4,'abril':4,'may':5,'mayo':5,'jun':6,'junio':6,
+            'jul':7,'julio':7,'ago':8,'agosto':8,'sep':9,'sept':9,'septiembre':9,
+            'oct':10,'octubre':10,'nov':11,'noviembre':11,'dic':12,'diciembre':12,
+        }
+
+        # 1. Formato numérico explícito: MM/AA, MM/AAAA, MM-AA, M/AA
+        m = _r.search(r'\b(\d{1,2})[/\-](\d{2,4})\b', t)
+        if m:
+            mes_s, anio_s = m.group(1), m.group(2)
+            anio = int(anio_s) + 2000 if len(anio_s) == 2 else int(anio_s)
+            if 1 <= int(mes_s) <= 12:
+                return f"{mes_s.zfill(2)}/{anio}"
+
+        # 2. Texto de mes + año: "junio 2026", "jun 26", "junio del 26"
+        for nom_mes, num_mes in sorted(_MESES.items(), key=lambda x: -len(x[0])):
+            pat = nom_mes + r'[\s\-/]*(?:del?\s*)?(\d{2,4})'
+            m2 = _r.search(pat, tn)
+            if m2:
+                anio_s = m2.group(1)
+                anio = int(anio_s) + 2000 if len(anio_s) == 2 else int(anio_s)
+                return f"{str(num_mes).zfill(2)}/{anio}"
+            # Solo mes sin año: "junio" → usa el próximo junio
+            if _r.search(r'\b' + nom_mes + r'\b', tn) and 'venc' in tn:
+                hoy = date.today()
+                anio = hoy.year if hoy.month < num_mes else hoy.year + 1
+                return f"{str(num_mes).zfill(2)}/{anio}"
+
+        # 3. Relativos: "en 6 meses", "en 1 año", "en un año"
+        m3 = _r.search(r'\ben\s+(\d+|un[ao]?|dos|tres|cuatro|seis|doce)\s+(mes(?:es)?|a[ñn]os?)', tn)
+        if m3:
+            num_map = {'un':1,'una':1,'uno':1,'dos':2,'tres':3,'cuatro':4,'seis':6,'doce':12}
+            raw = m3.group(1)
+            n_num = num_map.get(raw, int(raw) if raw.isdigit() else 1)
+            unidad = m3.group(2)
+            hoy = date.today()
+            if 'a' in unidad:  # año
+                fut = date(hoy.year + n_num, hoy.month, 1)
+            else:              # meses
+                mes_fut = hoy.month + n_num
+                anio_fut = hoy.year + (mes_fut - 1) // 12
+                mes_fut = ((mes_fut - 1) % 12) + 1
+                fut = date(anio_fut, mes_fut, 1)
+            return f"{str(fut.month).zfill(2)}/{fut.year}"
+
+        return ''
+
+    def _deposito_flex(t):
+        """
+        Extrae depósito del texto. Soporta:
+          - "depósito B", "depo 2", "en el secundario", "al depósito principal"
+          - Números solos como depósito: "al 2"
+          - Si no lo menciona: devuelve 'PRINCIPAL'
+        """
+        import re as _r
+        tn = _n(t)
+        # Nombre explícito de depósito
+        m = _r.search(r'\bdepo(?:sito)?\s*:?\s*([A-Za-z0-9_\-]+)', tn)
+        if m:
+            return m.group(1).upper()
+        # Palabras clave de depósito
+        if _r.search(r'\b(secundario|segundo|deposito\s*2|dep\s*2|b\b)', tn):
+            return 'SECUNDARIO'
+        if _r.search(r'\b(principal|primero|deposito\s*1|dep\s*1|a\b)', tn):
+            return 'PRINCIPAL'
+        # Buscar depósito en el inventario actual
+        deps_existentes = list({str(l.get('deposito','PRINCIPAL')).upper() for l in inventario if l.get('deposito')})
+        for dep in deps_existentes:
+            if dep.lower() in tn:
+                return dep
+        return 'PRINCIPAL'
+
+    def _ubi_flex(t, cod_prod=None):
+        """
+        Extrae ubicación flexible. Soporta:
+          - Formato estándar: 01-2A, 1-3, 02_4B
+          - Código 99: "la 99", "en 99", "estante 99" → busca siguiente XX-99A libre
+          - Vacía: "" para pedir al usuario
+        """
+        import re as _r
+        tn = _n(t)
+
+        # Formato estándar NN-NNA
+        m = _r.search(r'\b(\d{1,2}[-_]\d{1,2}[A-Za-z]{0,2})\b', t)
+        if m:
+            return m.group(1).upper()
+
+        # Código 99 — buscar siguiente ubicación libre del tipo XX-99
+        if _r.search(r'\b99\b', t):
+            return _sug_ubi_99(cod_prod)
+
+        # "siguiente", "la próxima", "donde corresponde" → sugerir basado en el producto
+        if _r.search(r'\b(siguiente|proxima?|corresponde|misma|donde\s+va)\b', tn):
+            if cod_prod:
+                lts = _lotes(str(cod_prod))
+                if lts:
+                    return str(lts[0].get('ubicacion', '')).upper()
+            return ''
+
+        return ''
+
+    def _sug_ubi_99(cod_prod=None):
+        """
+        Sugiere la siguiente ubicación tipo XX-99 libre.
+        Si el producto ya tiene lotes, usa el mismo pasillo (XX) que el primer lote.
+        Si no, busca la primera XX-99 disponible en el inventario.
+        """
+        import re as _r
+
+        # Obtener todas las ubicaciones XX-99 ya usadas
+        ubs_99_usadas = set()
+        for l in inventario:
+            u = str(l.get('ubicacion', '')).upper()
+            if _r.match(r'\d+-99', u):
+                ubs_99_usadas.add(u)
+
+        # Si el producto tiene lotes, usar su pasillo
+        if cod_prod:
+            lts = _lotes(str(cod_prod))
+            if lts:
+                ubi_exist = str(lts[0].get('ubicacion', '')).upper()
+                m = _r.match(r'(\d+)-', ubi_exist)
+                if m:
+                    pasillo = m.group(1)
+                    # Buscar variante libre: 01-99, 01-99A, 01-99B...
+                    for suf in ['', 'A', 'B', 'C', 'D']:
+                        cand = f"{pasillo}-99{suf}"
+                        if cand not in ubs_99_usadas:
+                            return cand
+
+        # Buscar en todos los pasillos del inventario
+        pasillos = set()
+        for l in inventario:
+            u = str(l.get('ubicacion', '')).upper()
+            m = _r.match(r'(\d+)-', u)
+            if m:
+                pasillos.add(m.group(1))
+
+        for p in sorted(pasillos):
+            for suf in ['', 'A', 'B', 'C', 'D']:
+                cand = f"{p}-99{suf}"
+                if cand not in ubs_99_usadas:
+                    return cand
+
+        return '01-99'
+
     def _exec_entrada(txt):
+        """
+        Registra una entrada de stock con lenguaje ultra-flexible.
+
+        Entiende:
+          - Producto: nombre, código, abreviación, typos
+          - Cantidad: números, palabras ("diez cajas"), no requerida en el comando inicial
+          - Fecha de vto: cualquier formato — 10/26, junio 2026, en 6 meses, sin fecha
+          - Depósito: nombre o keyword — principal, secundario, depósito B
+          - Ubicación: formato estándar, "la 99" (sugiere siguiente libre), "la misma"
+        """
         if rol in ('visita', 'vendedor'):
             return None, "❌ Tu rol no tiene permisos para registrar entradas."
+
         prod = buscar_uno(txt, maestra)
         cant = _cant(txt)
-        ubi  = _ubi(txt)
+
+        # ── Producto no encontrado ──────────────────────────────────────────
         if not prod:
             sugs = buscar_varios(txt, maestra)
             if sugs:
-                lista = "\n".join(f"  • {p['nombre']} (cod:{p['cod_int']})" for p in sugs)
+                lista = "\n".join(f"  • {p['nombre']} (cod:{p['cod_int']})" for p in sugs[:5])
                 return None, f"🔍 No encontré el producto exacto. ¿Es alguno de estos?\n\n{lista}"
             return None, "No encontré ese producto. Decime el nombre o el código."
-        if cant == 0:
-            return None, f"¿Cuántas unidades de *{prod['nombre']}* llegaron?"
-        if not ubi:
-            lts_p = _lotes(str(prod['cod_int']))
-            sug   = str(lts_p[0].get('ubicacion','')) if lts_p else "01-1A"
-            return None, f"¿En qué ubicación van las {int(cant)} uds de *{prod['nombre']}*?\nEj: en {sug}"
+
         cod, nom = str(prod['cod_int']), prod['nombre']
-        fv       = _fecha_vto(txt)
-        lts_ubi  = [l for l in inventario
-                    if str(l.get('cod_int','')) == cod
-                    and str(l.get('ubicacion','')).upper() == ubi]
+
+        # ── Cantidad ────────────────────────────────────────────────────────
+        if cant == 0:
+            return None, f"¿Cuántas unidades de *{nom}* llegaron?"
+
+        # ── Fecha de vencimiento — flexible ────────────────────────────────
+        fv = _fecha_flexible(txt)
+
+        # ── Depósito ────────────────────────────────────────────────────────
+        dep = _deposito_flex(txt)
+
+        # ── Ubicación — flexible, soporta "99" y lenguaje natural ──────────
+        ubi = _ubi_flex(txt, cod_prod=cod)
+
+        if not ubi:
+            # Sugerir basado en lotes existentes del producto
+            lts_p = _lotes(cod)
+            if lts_p:
+                sug = str(lts_p[0].get('ubicacion', '')).upper()
+                msg = f"¿En qué ubicación van las {int(cant)} uds de *{nom}*?\n"
+                msg += f"💡 Ya tenés stock en *{sug}* — podés decirme esa o cualquier otra.\n"
+                msg += f"   También podés decir *'la 99'* para la siguiente ubicación libre de tipo 99."
+            else:
+                sug99 = _sug_ubi_99(cod)
+                msg = f"¿En qué ubicación van las {int(cant)} uds de *{nom}*?\n"
+                msg += f"💡 Sugerida: *{sug99}* (próxima libre) — o decime otra."
+            return None, msg
+
+        # ── Si la ubi viene de "la 99" pero estaba en uso, informar ────────
+        ubi_es_99 = _re.search(r'\b99\b', txt) is not None
+
+        # ── Registrar en DB ─────────────────────────────────────────────────
+        lts_ubi = [l for l in inventario
+                   if str(l.get('cod_int', '')) == cod
+                   and str(l.get('ubicacion', '')).upper() == ubi
+                   and str(l.get('deposito', 'PRINCIPAL')).upper() == dep]
+
         if lts_ubi:
+            # Ya existe lote en esa ubicación y depósito → sumar cantidad
             nueva = float(lts_ubi[0].get('cantidad', 0) or 0) + cant
             sb.table("inventario").update({"cantidad": nueva}).eq("id", lts_ubi[0]["id"]).execute()
         else:
+            # Lote nuevo
             sb.table("inventario").insert({
                 "cod_int": cod, "nombre": nom, "cantidad": cant,
-                "ubicacion": ubi, "fecha": fv, "deposito": "PRINCIPAL"
+                "ubicacion": ubi, "fecha": fv, "deposito": dep
             }).execute()
+
         registrar_historial("ENTRADA", cod, nom, cant, ubi, usuario)
         recalcular_maestra(cod, inventario)
         refrescar()
+
         lts_post = _lotes(cod)
-        stk_post = int(sum(float(l.get('cantidad',0) or 0) for l in lts_post))
-        return True, (f"✅ {int(cant)} uds de *{nom}* ingresadas\n"
-                       f"📥 Ubicación: {ubi}"
-                       + (f"  Vto:{fv}" if fv else "")
-                       + f"\n📊 Stock total: {stk_post} uds")
+        stk_post = int(sum(float(l.get('cantidad', 0) or 0) for l in lts_post))
+
+        lineas = [f"✅ {int(cant)} uds de *{nom}* ingresadas"]
+        lineas.append(f"📥 Depósito: {dep}  Ubicación: {ubi}")
+        if fv:
+            lineas.append(f"📅 Vto: {fv}")
+        lineas.append(f"📊 Stock total: {stk_post} uds")
+        if ubi_es_99:
+            lineas.append(f"📍 Ubicación 99 asignada: {ubi}")
+        return True, "\n".join(lineas)
 
     def _exec_mover(txt):
         if rol in ('visita', 'vendedor'):
