@@ -1764,593 +1764,647 @@ with tab_asist:
     # ═══════════════════════════════════════════════════════════════════════════
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # MOTOR LOGIEZE — 100% propio, sin IA externa
+    # ═══════════════════════════════════════════════════════════════════════════
+    # MOTOR LOGIEZE v3 — Operario Digital Experto
+    # Acceso total: inventario, lotes, ubicaciones vacías, 99+1,
+    # pedidos, despachos, historial completo, ingresos/egresos/movimientos
     # ═══════════════════════════════════════════════════════════════════════════
 
+    import re as _re, unicodedata as _ud
+
     def _nn(t):
-        """Normaliza texto: minúsculas sin tildes."""
-        import unicodedata as _ud
         return _ud.normalize('NFD', str(t).lower()).encode('ascii','ignore').decode()
 
+    # ────────────────────────────────────────────────────────── MEDIDAS ────────
+
     def _medida(txt):
-        """Extrae medida: '350ml', '5l', '5 L', '1.5kg', '200 g', etc."""        # Patrón 1: unidades compuestas (ml, cc, kg, gr, etc.) — con o sin espacio
-        m = _re.search(
-            r'(\d+(?:[.,]\d+)?)\s*(ml|cc|cl|lt|lts|litros?|grs?|gramos?|kilos?|kg|mg|oz)',
-            _nn(txt))
-        # Patrón 2: unidades de una letra (l, g, u) — sólo si no están pegadas a letra
+        n = _nn(txt)
+        m = _re.search(r'(\d+(?:[.,]\d+)?)\s*(ml|cc|cl|lt|lts|litros?|grs?|gramos?|kilos?|kg|mg|oz)', n)
         if not m:
-            m = _re.search(r'(\d+(?:[.,]\d+)?)\s*([lgu])(?![a-z\d])', _nn(txt))
+            m = _re.search(r'(\d+(?:[.,]\d+)?)\s*([lgu])(?![a-z\d])', n)
         if not m: return None
         num = float(m.group(1).replace(',','.'))
         raw = m.group(2)
-        u   = {'ml':'ml','cc':'ml','cl':'ml','l':'l','lt':'l','lts':'l','litro':'l','litros':'l',
-               'g':'g','gr':'g','grs':'g','gramo':'g','gramos':'g',
-               'kg':'kg','kilo':'kg','kilos':'kg','mg':'mg',
-               'oz':'oz','u':'un'}.get(raw, raw)
+        u = {'ml':'ml','cc':'ml','cl':'ml','l':'l','lt':'l','lts':'l','litro':'l','litros':'l',
+             'g':'g','gr':'g','grs':'g','gramo':'g','gramos':'g','kg':'kg','kilo':'kg',
+             'kilos':'kg','mg':'mg','oz':'oz','u':'un'}.get(raw, raw)
         return (num, u, m.group(0).strip())
 
-    def _medida_ok(nom_n, num, u):
+    def _med_ok(nom_n, num, u):
         ns = str(int(num)) if num == int(num) else str(num)
         vs = {ns+u}
-        if u=='l':   vs.update([str(int(num*1000))+'ml',str(int(num*1000))+'cc',ns+'lt',ns+'lts'])
+        if u=='l':   vs.update([str(int(num*1000))+'ml', str(int(num*1000))+'cc', ns+'lt', ns+'lts'])
         elif u=='ml': vs.add(ns+'cc')
-        elif u=='kg': vs.update([str(int(num*1000))+'g',str(int(num*1000))+'gr',ns+'kilo'])
-        elif u=='g':  vs.update([ns+'gr',ns+'grs'])
+        elif u=='kg': vs.update([str(int(num*1000))+'g', str(int(num*1000))+'gr', ns+'kilo'])
+        elif u=='g':  vs.update([ns+'gr', ns+'grs'])
         return any(v in nom_n for v in vs)
 
-    def _buscar_prod(query):
-        """Busca el mejor producto. Si hay medida en el texto, no usa búsqueda por código."""
+    # ───────────────────────────────────────────────── BÚSQUEDA PRECISA ────────
+
+    def _buscar_prod(query, score_min=2):
         n = _nn(query)
-        tiene_medida = bool(_re.search(r'\d+\s*(?:ml|cc|l|lt|g|gr|kg|kilo|mg|oz)', n))
-        if not tiene_medida:
+        tiene_med = bool(_re.search(r'\d+\s*(?:ml|cc|l|lt|g|gr|kg|kilo|mg|oz)', n))
+        if not tiene_med:
             m = _re.search(r'\b(\d{3,6})\b', n)
             if m:
-                cod = m.group(1)
-                p   = next((x for x in maestra if str(x.get('cod_int',''))==cod), None)
+                p = next((x for x in maestra if str(x.get('cod_int',''))==m.group(1)), None)
                 if p: return p
-        stops = {'el','la','los','las','de','del','un','una','hay','tengo','en',
-                 'me','que','cuanto','cual','stock','producto','codigo','dame','busca',
-                 'buscame','mostrame','ver','cuantos','donde','esta','para','con','tenes'}
-        tokens = [w for w in n.split() if w not in stops and len(w) > 2
+        _STOPS = {'el','la','los','las','de','del','un','una','hay','tengo','en','me','que',
+                  'cuanto','cual','stock','codigo','dame','ver','cuantos','donde','esta','para',
+                  'con','tenes','es','son','tiene','cual','se','al','su','sus'}
+        tokens = [w for w in n.split() if w not in _STOPS and len(w)>2
                   and not _re.match(r'^\d+$',w)
                   and not _re.match(r'^\d+(?:ml|cc|l|lt|g|gr|kg|mg|oz)$',w)]
+        if not tokens: return None
         best, bsc = None, 0
         for p in maestra:
-            nn  = _nn(p.get('nombre',''))
-            nnt = nn.split()
-            sc  = 0
-            import re as _re2
-            for w in tokens:
-                if w not in nn: continue
-                if _re2.search(r'(?<![a-z])' + _re2.escape(w) + r'(?![a-z])', nn):
-                    pts = len(w)
-                    if nnt and w == nnt[0]: pts *= 3
-                    elif w in nnt:          pts *= 2
-                    sc += pts
+            pn = _nn(p.get('nombre',''))
+            pw = pn.split()
+            sc  = sum((3 if w==pw[0] else 2 if len(pw)>1 and w==pw[1] else 1)
+                      for w in tokens if w in pn)
+            # Penalizar si ningún token coincide con las primeras 2 palabras
+            bonus = 1 if any(w in pw[:2] for w in tokens) else 0
+            sc += bonus
             if sc > bsc: bsc, best = sc, p
-        return best if bsc >= 4 else None
+        return best if bsc >= score_min else None
 
     def _detalle_prod(prod):
-        """Texto con stock + lotes detallados."""
-        cod  = str(prod['cod_int'])
-        stk  = int(float(prod.get('cantidad_total',0) or 0))
-        lts  = idx_inv.get(cod, [])
+        cod = str(prod['cod_int'])
+        stk = int(float(prod.get('cantidad_total',0) or 0))
+        lts = idx_inv.get(cod, [])
         if not lts:
-            return f"📦 {prod['nombre']} (cod:{cod})\nSin stock."
-        lines = [f"📦 **{prod['nombre']}** (cod:{cod}) — **{stk} uds totales**"]
+            return f"📦 **{prod['nombre']}** (cod:{cod})\n⛔ Sin stock en ninguna ubicación."
+        lines = [f"📦 **{prod['nombre']}** (cod:{cod}) — **{stk} uds totales**\n"]
         for l in sorted(lts, key=lambda x: -float(x.get('cantidad',0) or 0)):
             cant = int(float(l.get('cantidad',0)))
             ubi  = l.get('ubicacion','?')
             fv   = l.get('fecha','')
             dep  = l.get('deposito','')
-            lines.append(f"  📍 {ubi}{('  · '+dep) if dep else ''} — {cant} uds"
-                         + (f"  · Vto:{fv}" if fv else ""))
+            lines.append(f"  📍 **{ubi}**{(' ['+dep+']') if dep else ''} — {cant} uds"
+                         +(f"  ·  Vto:{fv}" if fv else ""))
         return "\n".join(lines)
 
-    def _lista_categoria(txt):
-        """Lista productos de una categoría, filtrada por medida si se especificó."""
-        n    = _nn(txt)
-        med  = _medida(txt)
-        stops= {'que','cual','cuales','tengo','tienen','hay','de','del','en',
-                'los','las','un','una','me','como','donde','esta','estan',
-                'todo','todos','toda','todas','dame','lista','listame',
-                'mostrame','ver','veo','cuanto','cuantos','stock','producto',
-                'productos','tenes','tiene','busco','quiero','mostrar',
-                'hay','a','el','la','con','por','para','sobre'}
+    # ─────────────────────────────────────────── UBICACIONES LIBRES / 99 ────────
+
+    def _ubis_ocupadas():
+        return {str(l.get('ubicacion','')).upper()
+                for ls in idx_inv.values() for l in ls if l.get('ubicacion')}
+
+    def _resp_ubic_libres():
+        ocupadas = _ubis_ocupadas()
+        vacias   = calcular_vacias_rapido(ocupadas, max_n=12)
+        sug99    = calcular_sug99(ocupadas)
+        lines    = ["📍 **Ubicaciones disponibles:**\n"]
+        if vacias:
+            lines.append(f"🟢 **Libres en estanterías ({len(vacias)}):**")
+            for v in vacias: lines.append(f"  • {v}")
+        lines.append(f"\n📦 **Zona 99 — siguiente libre:** `{sug99}`")
+        return "\n".join(lines)
+
+    # ──────────────────────────────────────────────── LISTA POR CATEGORÍA ────────
+
+    def _lista_cat(txt):
+        n   = _nn(txt)
+        med = _medida(txt)
+        _ST = {'que','cual','cuales','tengo','tienen','hay','de','del','en','los','las',
+               'un','una','me','como','donde','esta','estan','todo','todos','toda','todas',
+               'dame','lista','listame','mostrame','ver','cuanto','cuantos','stock',
+               'producto','productos','tenes','tiene','busco','a','el','la','con','por',
+               'para','sobre','listar','hay','es','son','cual'}
         if med:
             ns = str(int(med[0])) if med[0]==int(med[0]) else str(med[0])
-            stops.update([ns, med[1]] + list(med[2].split()))
-
-        pals = [w for w in n.split() if w not in stops and len(w) > 1]
+            _ST.update([ns, med[1]] + list(med[2].split()))
+        pals = [w for w in n.split() if w not in _ST and len(w)>1
+                and not _re.match(r'^\d+(?:ml|cc|l|lt|g|gr|kg|mg|oz)?$', w)]
         if not pals: return None
-
         cands = []
         for p in maestra:
-            nn   = _nn(p.get('nombre',''))
-            nnt  = nn.split()
-            sc   = 0
-            for w in pals:
-                if w not in nn: continue
-                # Palabra exacta en el nombre (no substring de otra)
-                import re as _re2
-                if _re2.search(r'(?<![a-z])' + _re2.escape(w) + r'(?![a-z])', nn):
-                    pts = len(w)          # longitud = peso base
-                    if nnt and w == nnt[0]: pts *= 3   # primera palabra del nombre: triple
-                    elif w in nnt:          pts *= 2   # palabra completa: doble
-                    sc += pts
+            pn = _nn(p.get('nombre',''))
+            pw = pn.split()
+            sc = sum((3 if w==pw[0] else 2 if len(pw)>1 and w==pw[1] else 1)
+                     for w in pals if w in pn)
             if sc > 0: cands.append((sc, p))
         if not cands: return None
-
         filtro = ""
         if med:
             num, u, tm = med
-            fil = [(sc,p) for sc,p in cands if _medida_ok(_nn(p.get('nombre','')), num, u)]
+            fil = [(sc,p) for sc,p in cands if _med_ok(_nn(p.get('nombre','')), num, u)]
             if fil:
                 cands, filtro = fil, f" de **{tm}**"
             else:
-                otras = sorted({
-                    (mm.group(0).strip())
+                otras = sorted({mm.group(0).strip()
                     for _,p in cands
                     for mm in [_re.search(r'\b\d+(?:[.,]\d+)?\s*(?:ml|cc|l|lt|g|gr|kg|mg|oz)\b',
                                           _nn(p.get('nombre','')))]
-                    if mm
-                })[:8]
-                msg = f"No hay productos de esa categoría con **{tm}**."
+                    if mm})[:8]
+                msg = f"Sin productos de esa categoría con medida **{tm}**."
                 if otras: msg += f"\nMedidas disponibles: {', '.join(otras)}"
                 return msg
-
-        cands.sort(key=lambda x: (-x[0], x[1].get('nombre','')))
+        cands.sort(key=lambda x:(-x[0], x[1].get('nombre','')))
         if len(cands)==1: return _detalle_prod(cands[0][1])
-
         total_stk = sum(int(float(p.get('cantidad_total',0) or 0)) for _,p in cands)
-        lines = [f"📋 **{len(cands)} producto(s)**{filtro} — Stock total: **{total_stk:,} uds**\n"]
-        for _,p in cands[:60]:
+        lines = [f"📋 **{len(cands)} producto(s)**{filtro} — Stock: **{total_stk:,} uds**\n"]
+        for _,p in cands[:80]:
             cod  = str(p['cod_int'])
             stk  = int(float(p.get('cantidad_total',0) or 0))
-            lts  = idx_inv.get(cod, [])
+            lts  = idx_inv.get(cod,[])
             ico  = "⛔" if stk==0 else ("⚠️" if stk<10 else "✅")
             ubis = " | ".join(
-                f"{l.get('ubicacion','?')}: {int(float(l.get('cantidad',0)))}u"
-                + (f"[{l.get('fecha','')}]" if l.get('fecha') else "")
+                f"{l.get('ubicacion','?')}:{int(float(l.get('cantidad',0)))}u"
+                +(f"[{l.get('fecha','')}]" if l.get('fecha') else "")
                 for l in lts[:4]) or "sin stock"
-            lines.append(f"{ico} **{p['nombre']}** (cod:{cod}) — {stk} uds  →  {ubis}")
-        if len(cands)>60: lines.append(f"*...y {len(cands)-60} más*")
+            lines.append(f"{ico} **{p['nombre']}** (cod:{cod}) — {stk}u  →  {ubis}")
+        if len(cands)>80: lines.append(f"*...y {len(cands)-80} más*")
         return "\n".join(lines)
 
-    # ── Respuestas de consulta ────────────────────────────────────────────────
+    # ─────────────────────────────────────── RESPUESTAS DE CONSULTA ────────────
 
     def _resp_venc(n):
-        from datetime import datetime as _dtt
-        hoy  = _dtt.now()
+        hoy  = datetime.now()
         dias = 30
-        if _re.search(r'\b(hoy|urgente|vencido)\b', n):    dias = 7
-        elif _re.search(r'\b(3.?mes|90.?dia)\b', n):       dias = 90
-        elif _re.search(r'\b(6.?mes|180.?dia)\b', n):      dias = 180
-        elif _re.search(r'\b(anio|año|365|todo)\b', n):    dias = 365
-
-        lotes_vto = []
+        if _re.search(r'\b(hoy|urgente|vencido|vencidos)\b', n): dias = 7
+        elif _re.search(r'\b(esta.sem|7.dia)\b', n):             dias = 7
+        elif _re.search(r'\b(3.?mes|90.?dia)\b', n):             dias = 90
+        elif _re.search(r'\b(6.?mes|180)\b', n):                 dias = 180
+        elif _re.search(r'\b(anio|ano|365|todo)\b', n):          dias = 365
+        lv = []
         for p in maestra:
             cod = str(p.get('cod_int',''))
             for l in idx_inv.get(cod,[]):
                 fv = str(l.get('fecha','') or '').strip()
                 if not fv: continue
                 try:
-                    pts = fv.replace('-','/').split('/')
+                    pts=fv.replace('-','/').split('/')
                     if len(pts)==2:
-                        mm,aa = int(pts[0]),int(pts[1])
+                        mm2,aa=int(pts[0]),int(pts[1])
                         if aa<100: aa+=2000
-                        from datetime import datetime as _dtt2
-                        delta = (_dtt2(aa,mm,1)-hoy).days
-                        lotes_vto.append((delta, p['nombre'], int(float(l.get('cantidad',0))),
-                                          l.get('ubicacion','?'), fv))
+                        from datetime import datetime as _d2
+                        delta=(_d2(aa,mm2,1)-hoy).days
+                        lv.append((delta, p['nombre'], int(float(l.get('cantidad',0))),
+                                   l.get('ubicacion','?'), fv, l.get('deposito','')))
                 except: pass
-
-        lotes_vto.sort(key=lambda x: x[0])
-        filtrados = [(d,nm,c,u,fv) for d,nm,c,u,fv in lotes_vto if d<=dias]
-        if not filtrados:
-            return f"✅ Sin vencimientos en los próximos {dias} días."
-
-        venc = [(d,nm,c,u,fv) for d,nm,c,u,fv in filtrados if d<0]
-        prox = [(d,nm,c,u,fv) for d,nm,c,u,fv in filtrados if d>=0]
-        lines = [f"📅 Vencimientos — próximos {dias} días:\n"]
+        lv.sort(key=lambda x:x[0])
+        fil = [(d,nm,c,u,fv,dep) for d,nm,c,u,fv,dep in lv if d<=dias]
+        if not fil: return f"✅ Sin vencimientos en los próximos {dias} días."
+        venc = [(d,nm,c,u,fv,dep) for d,nm,c,u,fv,dep in fil if d<0]
+        prox = [(d,nm,c,u,fv,dep) for d,nm,c,u,fv,dep in fil if d>=0]
+        lines= [f"📅 **Vencimientos — {dias} días:**\n"]
         if venc:
-            lines.append(f"🚨 **VENCIDOS ({len(venc)})**:")
-            for d,nm,c,u,fv in venc[:20]:
-                lines.append(f"  ⛔ {nm} | {c} uds | {u} | Vto:{fv} (hace {abs(d)}d)")
+            lines.append(f"🚨 **VENCIDOS ({len(venc)}):**")
+            for d,nm,c,u,fv,dep in venc[:25]:
+                lines.append(f"  ⛔ {nm} | {c}u | {u}{' ['+dep+']' if dep else ''} | {fv} (hace {abs(d)}d)")
         if prox:
-            lines.append(f"\n⏰ **PRÓXIMOS ({len(prox)})**:")
-            for d,nm,c,u,fv in prox[:30]:
+            lines.append(f"\n⏰ **PRÓXIMOS ({len(prox)}):**")
+            for d,nm,c,u,fv,dep in prox[:40]:
                 ico = "🔴" if d<=7 else ("🟡" if d<=30 else "🟢")
-                lines.append(f"  {ico} {nm} | {c} uds | {u} | Vto:{fv} (en {d}d)")
+                lines.append(f"  {ico} {nm} | {c}u | {u}{' ['+dep+']' if dep else ''} | {fv} (en {d}d)")
         return "\n".join(lines)
 
     def _resp_ubic(txt, n):
-        prod = _buscar_prod(txt)
-        if prod: return _detalle_prod(prod)
+        # Posición específica
         ubis_q = _re.findall(r'\b(\d{2}[-_]\d{1,2}[A-Za-z]{0,2})\b', txt.upper())
         if ubis_q:
-            uq = ubis_q[0]
-            lts = [l for ls in idx_inv.values() for l in ls if str(l.get('ubicacion','')).upper()==uq]
+            uq  = ubis_q[0]
+            lts = [l for ls in idx_inv.values() for l in ls
+                   if str(l.get('ubicacion','')).upper()==uq]
             if not lts: return f"📍 Posición **{uq}** vacía."
-            lines = [f"📍 **{uq}** ({len(lts)} lotes):"]
+            lines = [f"📍 **{uq}** — {len(lts)} lote(s):\n"]
             for l in lts:
                 cod = str(l.get('cod_int',''))
                 nom = next((p.get('nombre','') for p in maestra if str(p.get('cod_int',''))==cod), cod)
-                lines.append(f"  📦 {nom} — {int(float(l.get('cantidad',0)))} uds"
-                             + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else ""))
+                lines.append(f"  📦 {nom} (cod:{cod}) — {int(float(l.get('cantidad',0)))}u"
+                             +(f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
+                             +(f" [{l.get('deposito','')}]" if l.get('deposito') else ""))
             return "\n".join(lines)
+        prod = _buscar_prod(txt, score_min=1)
+        if prod: return _detalle_prod(prod)
         # Mapa completo
         mapa = {}
         for lts in idx_inv.values():
             for l in lts:
                 u = str(l.get('ubicacion','')).upper()
                 if u: mapa[u] = mapa.get(u,0)+float(l.get('cantidad',0) or 0)
-        lines = [f"📍 **{len(mapa)} ubicaciones** en uso:\n"]
-        for u,t in sorted(mapa.items())[:80]:
-            lines.append(f"  {u} — {int(t)} uds")
+        lines = [f"📍 **{len(mapa)} ubicaciones en uso:**\n"]
+        for u,t in sorted(mapa.items())[:100]: lines.append(f"  {u} — {int(t)} uds")
         return "\n".join(lines)
 
     def _resp_bajo(n):
-        m = _re.search(r'(menos.de|menor.a|debajo.de)\s*(\d+)', n)
+        m      = _re.search(r'(menos.de|menor.a|debajo.de)\s*(\d+)', n)
         umbral = int(m.group(2)) if m else 10
         sin    = [p for p in maestra if int(float(p.get('cantidad_total',0) or 0))==0]
         bajo   = sorted([p for p in maestra if 0<int(float(p.get('cantidad_total',0) or 0))<=umbral],
-                        key=lambda p: float(p.get('cantidad_total',0) or 0))
-        if not sin and not bajo:
-            return f"✅ Todo por encima de {umbral} uds."
+                        key=lambda p:float(p.get('cantidad_total',0) or 0))
+        if not sin and not bajo: return f"✅ Todo por encima de {umbral} uds."
         lines = [f"📉 **Bajo stock** (umbral: {umbral} uds):\n"]
         if sin:
-            lines.append(f"⛔ **SIN STOCK** ({len(sin)}):")
-            for p in sin[:20]: lines.append(f"  • {p['nombre']} (cod:{p['cod_int']})")
+            lines.append(f"⛔ **SIN STOCK ({len(sin)}):**")
+            for p in sin[:25]: lines.append(f"  • {p['nombre']} (cod:{p['cod_int']})")
         if bajo:
-            lines.append(f"\n⚠️ **CRÍTICO** ({len(bajo)}):")
-            for p in bajo[:30]:
-                stk = int(float(p.get('cantidad_total',0) or 0))
-                cod = str(p['cod_int'])
-                lts = idx_inv.get(cod,[])
-                ubis = " | ".join(f"{l.get('ubicacion','?')}: {int(float(l.get('cantidad',0)))}u" for l in lts[:2])
-                lines.append(f"  ⚠️ {p['nombre']} — {stk} uds  →  {ubis}")
+            lines.append(f"\n⚠️ **CRÍTICO ({len(bajo)}):**")
+            for p in bajo[:40]:
+                stk  = int(float(p.get('cantidad_total',0) or 0))
+                cod  = str(p['cod_int'])
+                ubis = " | ".join(f"{l.get('ubicacion','?')}:{int(float(l.get('cantidad',0)))}u"
+                                  for l in idx_inv.get(cod,[])[:3])
+                lines.append(f"  ⚠️ {p['nombre']} — {stk}u  →  {ubis or 'sin ubi'}")
         return "\n".join(lines)
 
     def _resp_resumen():
-        from datetime import datetime as _dtt
-        hoy   = _dtt.now()
+        hoy     = datetime.now()
         total_p = len(maestra)
         total_u = sum(int(float(p.get('cantidad_total',0) or 0)) for p in maestra)
         sin_s   = sum(1 for p in maestra if int(float(p.get('cantidad_total',0) or 0))==0)
         bajo_s  = sum(1 for p in maestra if 0<int(float(p.get('cantidad_total',0) or 0))<=10)
-        ubis    = {str(l.get('ubicacion','')).upper() for ls in idx_inv.values() for l in ls if l.get('ubicacion')}
+        ocupadas= _ubis_ocupadas()
+        vacias  = calcular_vacias_rapido(ocupadas, max_n=5)
+        sug99   = calcular_sug99(ocupadas)
         venc    = 0
         for ls in idx_inv.values():
             for l in ls:
-                fv = str(l.get('fecha','') or '').strip()
+                fv=str(l.get('fecha','') or '').strip()
                 if not fv: continue
                 try:
                     pts=fv.replace('-','/').split('/')
                     if len(pts)==2:
-                        mm,aa=int(pts[0]),int(pts[1])
+                        mm2,aa=int(pts[0]),int(pts[1])
                         if aa<100: aa+=2000
-                        from datetime import datetime as _dtt2
-                        if _dtt2(aa,mm,1)<hoy: venc+=1
+                        from datetime import datetime as _d2
+                        if _d2(aa,mm2,1)<hoy: venc+=1
                 except: pass
         return (
-            f"📊 **Resumen del inventario** — {hoy.strftime('%d/%m/%Y %H:%M')}\n\n"
-            f"  📦 Productos distintos: **{total_p}**\n"
-            f"  🔢 Unidades totales:    **{total_u:,}**\n"
-            f"  📍 Ubicaciones en uso:  **{len(ubis)}**\n"
-            f"  ⛔ Sin stock:           **{sin_s}**\n"
-            f"  ⚠️ Bajo stock (≤10):   **{bajo_s}**\n"
-            f"  🚨 Lotes vencidos:      **{venc}**"
+            f"📊 **Resumen — {hoy.strftime('%d/%m/%Y %H:%M')}**\n\n"
+            f"  📦 Productos:       **{total_p}**\n"
+            f"  🔢 Unidades totales: **{total_u:,}**\n"
+            f"  📍 Ubis en uso:     **{len(ocupadas)}**\n"
+            f"  🟢 Próximas libres: {', '.join(vacias[:4]) or '—'}\n"
+            f"  📦 Zona 99 libre:   **{sug99}**\n"
+            f"  ⛔ Sin stock:       **{sin_s}**\n"
+            f"  ⚠️ Bajo stock≤10:  **{bajo_s}**\n"
+            f"  🚨 Lotes vencidos:  **{venc}**"
         )
 
     def _resp_historial(txt, n):
-        try:
-            hist = cargar_historial_cache()
-        except:
-            hist = []
+        try: hist = cargar_historial_cache()
+        except: hist = []
         if not hist: return "Sin movimientos registrados."
-        prod = _buscar_prod(txt)
+        prod = _buscar_prod(txt, score_min=1)
         if prod:
-            nom_n = _nn(prod['nombre'])
-            hist  = [h for h in hist if _nn(h.get('nombre','')) == nom_n or
-                     str(h.get('cod_int','')) == str(prod['cod_int'])]
+            cp = str(prod['cod_int']); nn2 = _nn(prod['nombre'])
+            hist = [h for h in hist if _nn(h.get('nombre',''))==nn2 or str(h.get('cod_int',''))==cp]
             if not hist: return f"Sin movimientos de {prod['nombre']}."
-        # Filtrar por tipo
         if _re.search(r'\b(salida|despacho|egreso)\b', n):
-            hist = [h for h in hist if h.get('tipo','').upper()=='SALIDA']
+            hist=[h for h in hist if h.get('tipo','').upper()=='SALIDA']
         elif _re.search(r'\b(entrada|ingreso|recepcion)\b', n):
-            hist = [h for h in hist if h.get('tipo','').upper()=='ENTRADA']
+            hist=[h for h in hist if h.get('tipo','').upper()=='ENTRADA']
         elif _re.search(r'\b(movimiento|traslado)\b', n):
-            hist = [h for h in hist if h.get('tipo','').upper()=='MOVIMIENTO']
-        # Filtrar por usuario
-        m_u = _re.search(r'\b(usuario|operario|de)\s+([\w]+)\b', n)
-        if m_u:
-            usr = m_u.group(2)
-            hist = [h for h in hist if _nn(h.get('usuario','')) == _nn(usr)]
+            hist=[h for h in hist if h.get('tipo','').upper()=='MOVIMIENTO']
+        elif _re.search(r'\b(correccion|ajuste)\b', n):
+            hist=[h for h in hist if h.get('tipo','').upper()=='CORRECCION']
+        mu = _re.search(r'\b(usuario|operario)\s+([\w]+)\b', n)
+        if mu: hist=[h for h in hist if _nn(h.get('usuario',''))==_nn(mu.group(2))]
         mm  = _re.search(r'\b(ultimos?|primeros?)\s+(\d+)\b', n)
-        top = int(mm.group(2)) if mm else 20
-        iconos = {'SALIDA':'📤','ENTRADA':'📥','MOVIMIENTO':'🔀','CORRECCION':'✏️'}
-        lines  = [f"📋 **Últimos {min(top,len(hist))} movimientos**:\n"]
+        top = int(mm.group(2)) if mm else 25
+        ico = {'SALIDA':'📤','ENTRADA':'📥','MOVIMIENTO':'🔀','CORRECCION':'✏️'}
+        lines=[f"📋 **Últimos {min(top,len(hist))} movimientos:**\n"]
         for h in hist[:top]:
-            ico = iconos.get(h.get('tipo',''),'▪️')
-            lines.append(
-                f"  {ico} {h.get('fecha_hora','')} | {h.get('nombre','')[:22]} | "
-                f"x{h.get('cantidad','')} | {h.get('ubicacion','')} | @{h.get('usuario','')}")
+            lines.append(f"  {ico.get(h.get('tipo',''),'▪️')} {h.get('fecha_hora','')} | "
+                         f"{h.get('nombre','')[:24]} | x{h.get('cantidad','')} | "
+                         f"{h.get('ubicacion','')} | @{h.get('usuario','')}")
         return "\n".join(lines)
 
     def _resp_top(n):
         m     = _re.search(r'\b(top|primeros?)\s+(\d+)\b', n)
         top_n = int(m.group(2)) if m else 20
-        top   = sorted(maestra, key=lambda p: -float(p.get('cantidad_total',0) or 0))[:top_n]
+        top   = sorted(maestra, key=lambda p:-float(p.get('cantidad_total',0) or 0))[:top_n]
         lines = [f"🏆 **Top {top_n} por stock:**\n"]
         for i,p in enumerate(top,1):
             stk  = int(float(p.get('cantidad_total',0) or 0))
             cod  = str(p['cod_int'])
-            lts  = idx_inv.get(cod,[])
-            ubis = " | ".join(f"{l.get('ubicacion','?')}: {int(float(l.get('cantidad',0)))}u" for l in lts[:2])
-            lines.append(f"  {i}. {p['nombre']} — {stk} uds  →  {ubis}")
+            ubis = " | ".join(f"{l.get('ubicacion','?')}:{int(float(l.get('cantidad',0)))}u"
+                              for l in idx_inv.get(cod,[])[:3])
+            lines.append(f"  {i}. {p['nombre']} — **{stk}u**  →  {ubis or '—'}")
         return "\n".join(lines)
 
-    # ── Extracción de parámetros para acciones ────────────────────────────────
+    def _resp_pedidos():
+        try:
+            peds = sb.table("pedidos").select("id,nombre,fecha,estado,items") \
+                     .in_("estado",["pendiente","en_proceso"]) \
+                     .order("id",desc=True).limit(30).execute().data or []
+        except Exception as e:
+            return f"❌ No pude acceder a pedidos: {e}"
+        if not peds: return "📋 Sin pedidos pendientes ni en proceso."
+        lines=[f"📋 **{len(peds)} pedido(s) activo(s):**\n"]
+        for p in peds:
+            items=p.get('items') or []
+            if isinstance(items,str):
+                try: import json as _j; items=_j.loads(items)
+                except: items=[]
+            total_u=sum(int(float(str(it.get('cantidad',it.get('cant',0))))) for it in items)
+            lines.append(f"  📦 **#{p['id']} {p['nombre']}** [{p.get('estado','')}] "
+                         f"— {len(items)} ítem(s) · {total_u}u · {p.get('fecha','')}")
+            for it in items[:5]:
+                lines.append(f"    · {it.get('nombre','?')} x{it.get('cantidad',it.get('cant','?'))}")
+        return "\n".join(lines)
+
+    # ──────────────────────────────── EXTRACCIÓN DE PARÁMETROS ────────────────
 
     def _extraer_cant(t):
         n = _nn(t)
-        for pat in [
-            r'(llegar?on|ingresa|saca|bajame|sali[do])\s+(\d+)',
-            r'(\d+)\s*(unidades?|uds?|u)\b',
-        ]:
-            m = _re.search(pat, n)
-            if m:
-                gs = m.groups()
-                return float(next(g for g in gs if g and g.isdigit()))
-        nums = _re.findall(r'\b(\d+)\b', n)
+        for pat in [r'(?:llegaron?|ingresaron?|sacar?|sacame|bajame|despachar?|salida.de)\s+(\d+)',
+                    r'(\d+)\s*(?:unidades?|uds?)\b', r'(?:por|x)\s+(\d+)']:
+            m=_re.search(pat,n)
+            if m: return float(m.group(1))
         codigos = {str(p.get('cod_int','')) for p in maestra}
         ubis_n  = set(_re.findall(r'\b\d{2}[-_]\d{1,2}[a-zA-Z]{0,2}\b', n))
-        for num in nums:
-            if num not in codigos and num not in ubis_n and len(num) <= 4:
+        for num in _re.findall(r'\b(\d+)\b', n):
+            if num not in codigos and num not in ubis_n and 1<=len(num)<=4:
                 return float(num)
         return 0.0
 
     def _extraer_ubis(txt):
-        return _re.findall(r'\b(\d{2}[-_]\d{1,2}[A-Za-z]{0,2})\b', txt.upper())
+        return [u.upper() for u in _re.findall(r'\b(\d{2}[-_]\d{1,2}[A-Za-z]{0,2})\b', txt)]
 
-    def _extraer_fecha_vto(t):
-        m = _re.search(r'\b(\d{1,2}[/-]\d{2,4})\b', t)
-        return m.group(1).replace('-','/') if m else ""
+    def _extraer_dep(t):
+        n=_nn(t)
+        for kw,dep in [('frio','FRIO'),('fria','FRIO'),('frigori','FRIO'),
+                       ('seco','SECO'),('quimico','QUIMICO'),('exterior','EXTERIOR'),
+                       ('salon','SALON'),('farmacia','FARMACIA'),('principal','PRINCIPAL')]:
+            if kw in n: return dep
+        return "PRINCIPAL"
 
-    # ── Ejecutar acciones sobre inventario ────────────────────────────────────
+    def _extraer_fv(t):
+        m=_re.search(r'\b(?:vto|vence|vencimiento|fecha).{0,5}(\d{1,2}[/-]\d{2,4})\b', _nn(t))
+        if m: return m.group(1).replace('-','/')
+        m=_re.search(r'\b(\d{1,2}/\d{2,4})\b', t)
+        return m.group(1) if m else ""
+
+    # ──────────────────────────────────── EJECUTAR ACCIONES ────────────────────
 
     def _exec(tipo, txt):
-        """Ejecuta salida/entrada/mover/corregir. Retorna (ok:bool, msg:str)."""
-        if rol in ('visita', 'vendedor'):
-            return False, "Tu rol no permite ejecutar movimientos."
-
-        prod = _buscar_prod(txt)
+        if rol in ('visita','vendedor'):
+            return False, "🚫 Tu rol no permite ejecutar movimientos."
+        prod = _buscar_prod(txt, score_min=1)
         if not prod:
-            return None, "¿De qué producto? Indicá el nombre o código."
-        cod  = str(prod['cod_int'])
-        nom  = prod['nombre']
+            return None, "❓ ¿De qué producto? Indicá nombre o código."
+        cod  = str(prod['cod_int']); nom = prod['nombre']
         cant = _extraer_cant(txt)
         ubis = _extraer_ubis(txt)
         ubi  = ubis[0] if ubis else ""
         ubi2 = ubis[1] if len(ubis)>1 else ""
+        dep  = _extraer_dep(txt)
+        fv   = _extraer_fv(txt)
 
-        if tipo == "salida":
-            if cant <= 0:
-                return None, f"¿Cuántas unidades de {nom} querés sacar?"
-            lotes_p = idx_inv.get(cod, [])
-            if not lotes_p:
-                return False, f"Sin stock de {nom}."
-            lote = next((l for l in lotes_p if str(l.get('ubicacion','')).upper()==ubi), None) if ubi else None
+        # ─── SALIDA ──────────────────────────────────────────────────────────
+        if tipo=="salida":
+            if cant<=0: return None, f"❓ ¿Cuántas uds de **{nom}** querés sacar?"
+            lotes_p = idx_inv.get(cod,[])
+            if not lotes_p: return False, f"⛔ Sin stock de **{nom}**."
+            lote = next((l for l in lotes_p if str(l.get('ubicacion','')).upper()==ubi),None) if ubi else None
             if not lote:
-                lote = next((l for l in sorted(lotes_p, key=lambda x:-float(x.get('cantidad',0) or 0))
-                             if float(l.get('cantidad',0) or 0) >= cant), None)
+                # FEFO: primero el que vence antes con cantidad suficiente
+                con_cant = sorted([l for l in lotes_p if float(l.get('cantidad',0) or 0)>=cant],
+                                  key=lambda l:l.get('fecha','9999'))
+                lote = con_cant[0] if con_cant else None
                 if not lote:
                     tot = sum(float(l.get('cantidad',0) or 0) for l in lotes_p)
-                    return False, f"Solo hay {int(tot)} uds de {nom} en total."
+                    if tot>=cant and tot>0:
+                        dets="\n".join(f"  • {l.get('ubicacion','?')}: {int(float(l.get('cantidad',0)))}u"
+                                       for l in lotes_p[:6])
+                        return None, (f"❓ No hay un lote con {int(cant)}u de **{nom}** en una sola ubicación.\n"
+                                      f"Stock total: {int(tot)}u en {len(lotes_p)} lote(s):\n{dets}\n"
+                                      f"¿Desde qué posición la sacamos?")
+                    return False, f"❌ Solo hay {int(tot)}u de **{nom}** en total."
                 ubi = str(lote.get('ubicacion',''))
             disp  = float(lote.get('cantidad',0) or 0)
-            if disp < cant:
-                return False, f"Solo hay {int(disp)} uds de {nom} en {ubi}."
-            nueva = disp - cant
-            lid   = lote['id']
+            if disp<cant: return False, f"❌ Solo hay **{int(disp)}u** de {nom} en {ubi}."
+            nueva = disp-cant; lid = lote['id']
             def _db():
-                if nueva <= 0:
-                    sb.table("inventario").delete().eq("id",lid).execute()
-                else:
-                    sb.table("inventario").update({"cantidad":nueva}).eq("id",lid).execute()
+                if nueva<=0: sb.table("inventario").delete().eq("id",lid).execute()
+                else:        sb.table("inventario").update({"cantidad":nueva}).eq("id",lid).execute()
                 sb.table("historial").insert({"fecha_hora":datetime.now().strftime("%d/%m/%Y %H:%M"),
                     "usuario":usuario,"tipo":"SALIDA","cod_int":cod,"nombre":nom,
                     "cantidad":cant,"ubicacion":ubi}).execute()
                 cargar_historial_cache.clear()
             import threading as _th; _th.Thread(target=_db,daemon=True).start()
-            # Actualizar cache local
-            if nueva <= 0:
-                idx_inv[cod] = [l for l in idx_inv.get(cod,[]) if l['id']!=lid]
+            if nueva<=0: idx_inv[cod]=[l for l in idx_inv.get(cod,[]) if l['id']!=lid]
             else:
-                for l in idx_inv.get(cod,[]): 
+                for l in idx_inv.get(cod,[]):
                     if l['id']==lid: l['cantidad']=nueva
-            prod['cantidad_total'] = str(float(prod.get('cantidad_total',0) or 0)-cant)
-            return True, f"✅ Salida: **{int(cant)} uds de {nom}** desde **{ubi}**. Quedan {int(nueva)} uds."
+            prod['cantidad_total']=str(float(prod.get('cantidad_total',0) or 0)-cant)
+            resto = int(float(prod.get('cantidad_total',0) or 0))
+            return True, (f"✅ **SALIDA registrada**\n"
+                          f"  Producto: {nom} (cod:{cod})\n"
+                          f"  {int(cant)}u desde **{ubi}**"
+                          +(f" — quedan {int(nueva)}u en {ubi}" if nueva>0 else f" — {ubi} **agotado**")
+                          +f"\n  Stock total restante: **{resto}u**")
 
-        elif tipo == "entrada":
-            if cant <= 0:
-                return None, f"¿Cuántas unidades de {nom} entraron?"
+        # ─── ENTRADA ─────────────────────────────────────────────────────────
+        elif tipo=="entrada":
+            if cant<=0: return None, f"❓ ¿Cuántas uds de **{nom}** entraron?"
             if not ubi:
-                return None, f"¿En qué posición (ubi) ponemos las {int(cant)} uds de {nom}?"
-            fv = _extraer_fecha_vto(txt)
-            lotes_ubi = [l for l in idx_inv.get(cod,[]) if str(l.get('ubicacion','')).upper()==ubi]
+                ocupadas = _ubis_ocupadas()
+                vacias   = calcular_vacias_rapido(ocupadas, max_n=6)
+                sug99    = calcular_sug99(ocupadas)
+                opts     = "\n".join(f"  • {v}" for v in vacias[:5])+(f"\n  • {sug99} (zona 99)")
+                return None, (f"❓ ¿En qué posición ubicamos **{int(cant)}u de {nom}**?\n"
+                              f"📍 Ubicaciones disponibles:\n{opts}")
+            lotes_ubi=[l for l in idx_inv.get(cod,[]) if str(l.get('ubicacion','')).upper()==ubi]
             def _db():
                 if lotes_ubi:
-                    lote = lotes_ubi[0]
-                    nc   = float(lote.get('cantidad',0) or 0)+cant
-                    sb.table("inventario").update({"cantidad":nc}).eq("id",lote["id"]).execute()
+                    lt=lotes_ubi[0]; nc=float(lt.get('cantidad',0) or 0)+cant
+                    sb.table("inventario").update({"cantidad":nc,
+                        "fecha":fv or lt.get('fecha','')}).eq("id",lt["id"]).execute()
                 else:
                     sb.table("inventario").insert({"cod_int":cod,"nombre":nom,"cantidad":cant,
-                        "ubicacion":ubi,"fecha":fv,"deposito":"PRINCIPAL"}).execute()
+                        "ubicacion":ubi,"fecha":fv,"deposito":dep}).execute()
                 sb.table("historial").insert({"fecha_hora":datetime.now().strftime("%d/%m/%Y %H:%M"),
                     "usuario":usuario,"tipo":"ENTRADA","cod_int":cod,"nombre":nom,
                     "cantidad":cant,"ubicacion":ubi}).execute()
                 cargar_historial_cache.clear()
             import threading as _th; _th.Thread(target=_db,daemon=True).start()
-            if lotes_ubi:
-                lotes_ubi[0]['cantidad'] = float(lotes_ubi[0].get('cantidad',0) or 0)+cant
-            prod['cantidad_total'] = str(float(prod.get('cantidad_total',0) or 0)+cant)
-            return True, f"✅ Entrada: **{int(cant)} uds de {nom}** en **{ubi}**{(' · Vto:'+fv) if fv else ''}."
+            if lotes_ubi: lotes_ubi[0]['cantidad']=float(lotes_ubi[0].get('cantidad',0) or 0)+cant
+            else: idx_inv.setdefault(cod,[]).append({"cod_int":cod,"nombre":nom,"cantidad":cant,
+                      "ubicacion":ubi,"fecha":fv,"deposito":dep,"id":"tmp_e"})
+            prod['cantidad_total']=str(float(prod.get('cantidad_total',0) or 0)+cant)
+            return True, (f"✅ **ENTRADA registrada**\n"
+                          f"  Producto: {nom} (cod:{cod})\n"
+                          f"  **{int(cant)}u** → **{ubi}**"
+                          +(f"  [{dep}]" if dep!="PRINCIPAL" else "")
+                          +(f"  · Vto:{fv}" if fv else "")
+                          +f"\n  Stock total: **{int(float(prod.get('cantidad_total',0) or 0))}u**")
 
-        elif tipo == "mover":
+        # ─── MOVER ───────────────────────────────────────────────────────────
+        elif tipo=="mover":
+            lotes_p=idx_inv.get(cod,[])
+            if not lotes_p: return False, f"⛔ Sin stock de **{nom}**."
             if not ubi:
-                return None, f"¿Desde qué posición movemos {nom}?"
+                dets="\n".join(f"  • {l.get('ubicacion','?')}: {int(float(l.get('cantidad',0)))}u"
+                               for l in lotes_p[:8])
+                return None, f"❓ ¿Desde qué posición movemos **{nom}**?\n{dets}"
+            lote=next((l for l in lotes_p if str(l.get('ubicacion','')).upper()==ubi),None)
+            if not lote: return False, f"❌ No hay lote de **{nom}** en **{ubi}**."
             if not ubi2:
-                return None, f"¿A qué posición movemos {nom} desde {ubi}?"
-            lotes_p = idx_inv.get(cod, [])
-            lote    = next((l for l in lotes_p if str(l.get('ubicacion','')).upper()==ubi), None)
-            if not lote: return False, f"No hay lote de {nom} en {ubi}."
-            disp     = float(lote.get('cantidad',0) or 0)
-            cant_mov = cant if cant > 0 else disp
-            if cant_mov > disp: return False, f"Solo hay {int(disp)} uds en {ubi}."
-            nueva = disp - cant_mov
-            lid   = lote['id']
-            fv    = lote.get('fecha','')
-            dep   = lote.get('deposito','PRINCIPAL')
+                ocupadas=_ubis_ocupadas(); vacias=calcular_vacias_rapido(ocupadas,max_n=5)
+                sug99=calcular_sug99(ocupadas)
+                return None, (f"❓ ¿A qué posición movemos **{nom}** desde {ubi}?\n"
+                              f"📍 Libres: {', '.join(vacias[:4]) or sug99}")
+            disp=float(lote.get('cantidad',0) or 0)
+            cant_mov=cant if cant>0 else disp
+            if cant_mov>disp: return False, f"❌ Solo hay {int(disp)}u en {ubi}."
+            nueva=disp-cant_mov; lid=lote['id']
+            fv_l=lote.get('fecha',''); dep_l=lote.get('deposito',dep)
             def _db():
-                if nueva <= 0:
-                    sb.table("inventario").delete().eq("id",lid).execute()
-                else:
-                    sb.table("inventario").update({"cantidad":nueva}).eq("id",lid).execute()
+                if nueva<=0: sb.table("inventario").delete().eq("id",lid).execute()
+                else:        sb.table("inventario").update({"cantidad":nueva}).eq("id",lid).execute()
                 sb.table("inventario").insert({"cod_int":cod,"nombre":nom,"cantidad":cant_mov,
-                    "ubicacion":ubi2,"fecha":fv,"deposito":dep}).execute()
+                    "ubicacion":ubi2,"fecha":fv_l,"deposito":dep_l}).execute()
                 sb.table("historial").insert({"fecha_hora":datetime.now().strftime("%d/%m/%Y %H:%M"),
                     "usuario":usuario,"tipo":"MOVIMIENTO","cod_int":cod,"nombre":nom,
                     "cantidad":cant_mov,"ubicacion":f"{ubi}->{ubi2}"}).execute()
                 cargar_historial_cache.clear()
             import threading as _th; _th.Thread(target=_db,daemon=True).start()
-            if nueva <= 0:
-                idx_inv[cod] = [l for l in idx_inv.get(cod,[]) if l['id']!=lid]
+            if nueva<=0: idx_inv[cod]=[l for l in idx_inv.get(cod,[]) if l['id']!=lid]
             else:
                 for l in idx_inv.get(cod,[]):
                     if l['id']==lid: l['cantidad']=nueva
             idx_inv.setdefault(cod,[]).append({"cod_int":cod,"nombre":nom,"cantidad":cant_mov,
-                "ubicacion":ubi2,"fecha":fv,"deposito":dep,"id":"tmp"})
-            return True, f"✅ Movido: **{int(cant_mov)} uds de {nom}** de **{ubi}** a **{ubi2}**."
+                "ubicacion":ubi2,"fecha":fv_l,"deposito":dep_l,"id":"tmp_m"})
+            return True, (f"✅ **MOVIMIENTO registrado**\n"
+                          f"  {nom} (cod:{cod})\n"
+                          f"  **{int(cant_mov)}u** de **{ubi}** → **{ubi2}**"
+                          +(f"\n  Quedan {int(nueva)}u en {ubi}." if nueva>0 else f"\n  **{ubi} quedó vacío.**"))
 
-        elif tipo == "corregir":
-            if cant <= 0:
-                return None, f"¿A cuántas uds corregimos {nom}?"
-            lotes_p = idx_inv.get(cod, [])
-            lote = next((l for l in lotes_p if str(l.get('ubicacion','')).upper()==ubi), None)
-            if not lote and lotes_p: lote=lotes_p[0]; ubi=str(lote.get('ubicacion',''))
-            if not lote: return False, f"No hay lotes de {nom}."
-            ant = float(lote.get('cantidad',0) or 0)
-            lid = lote['id']
+        # ─── CORREGIR ────────────────────────────────────────────────────────
+        elif tipo=="corregir":
+            if cant<=0: return None, f"❓ ¿A cuántas uds corregimos **{nom}**?"
+            lotes_p=idx_inv.get(cod,[])
+            lote=next((l for l in lotes_p if str(l.get('ubicacion','')).upper()==ubi),None)
+            if not lote and lotes_p:
+                if len(lotes_p)==1: lote=lotes_p[0]; ubi=str(lote.get('ubicacion',''))
+                else:
+                    dets="\n".join(f"  • {l.get('ubicacion','?')}: {int(float(l.get('cantidad',0)))}u"
+                                   for l in lotes_p[:6])
+                    return None, f"❓ ¿En qué ubicación corregimos **{nom}**?\n{dets}"
+            if not lote:
+                if not ubi: return None, f"❓ ¿En qué posición está el stock de **{nom}**?"
+                def _db():
+                    sb.table("inventario").insert({"cod_int":cod,"nombre":nom,"cantidad":cant,
+                        "ubicacion":ubi,"fecha":fv,"deposito":dep}).execute()
+                    sb.table("historial").insert({"fecha_hora":datetime.now().strftime("%d/%m/%Y %H:%M"),
+                        "usuario":usuario,"tipo":"CORRECCION","cod_int":cod,"nombre":nom,
+                        "cantidad":cant,"ubicacion":ubi}).execute()
+                    cargar_historial_cache.clear()
+                import threading as _th; _th.Thread(target=_db,daemon=True).start()
+                idx_inv.setdefault(cod,[]).append({"cod_int":cod,"nombre":nom,"cantidad":cant,
+                    "ubicacion":ubi,"fecha":fv,"deposito":dep,"id":"tmp_c"})
+                prod['cantidad_total']=str(float(prod.get('cantidad_total',0) or 0)+cant)
+                return True, f"✅ **Corrección:** {nom} en {ubi} → **{int(cant)}u** (lote nuevo creado)."
+            ant=float(lote.get('cantidad',0) or 0); lid=lote['id']; dif=cant-ant
             def _db():
                 sb.table("inventario").update({"cantidad":cant}).eq("id",lid).execute()
                 sb.table("historial").insert({"fecha_hora":datetime.now().strftime("%d/%m/%Y %H:%M"),
                     "usuario":usuario,"tipo":"CORRECCION","cod_int":cod,"nombre":nom,
-                    "cantidad":cant-ant,"ubicacion":ubi}).execute()
+                    "cantidad":dif,"ubicacion":ubi}).execute()
                 cargar_historial_cache.clear()
             import threading as _th; _th.Thread(target=_db,daemon=True).start()
-            lote['cantidad'] = cant
-            prod['cantidad_total'] = str(float(prod.get('cantidad_total',0) or 0)+(cant-ant))
-            return True, f"✅ Corregido {nom} en {ubi}: {int(ant)} → **{int(cant)} uds**."
+            lote['cantidad']=cant
+            prod['cantidad_total']=str(float(prod.get('cantidad_total',0) or 0)+dif)
+            signo=f"+{int(dif)}" if dif>0 else str(int(dif))
+            return True, (f"✅ **CORRECCIÓN registrada**\n"
+                          f"  {nom} en **{ubi}**: {int(ant)}u → **{int(cant)}u** ({signo})")
 
         return False, "Acción desconocida."
 
-    # ── Intent detection ──────────────────────────────────────────────────────
+    # ──────────────────────────────────── INTENT ────────────────────────────────
 
     def _intent(n):
-        if _re.search(r'\b(hola|buenas|buen.?dia|como.estas|hey|que.tal|que.onda|buenas.tardes|buenas.noches)\b', n): return 'saludo'
-        if _re.search(r'\b(gracias|gracia|genial|perfecto|excelente|barbaro|de.nada|copado)\b', n): return 'gracias'
-        if _re.search(r'\b(ayuda|que.podes|que.sabes|como.funciona|comandos|que.puedo|que.hace)\b', n): return 'ayuda'
-        if _re.search(r'\b(venc[eio]|vencen|vencidos|vencimiento|por.vencer|expiran|fecha.vto|caducidad)\b', n): return 'venc'
-        if _re.search(r'\b(donde.est[ae]|donde.hay|donde.queda|ubicacion|posicion|en.que.lugar|guardado|mapa)\b', n): return 'ubic'
-        if _re.search(r'\b(bajo.stock|poco.stock|sin.stock|agotado|critico|falta.reponer|hay.poco|punto.critico|escaso)\b', n): return 'bajo'
-        if _re.search(r'\b(top|ranking|mas.stock|mayor.stock|mas.cantidad|los.que.mas|top.\d)\b', n): return 'top'
-        if _re.search(r'\b(resumen|panorama|balance|estado.del.inventario|como.estamos|inventario.completo|todo.el.stock)\b', n): return 'resumen'
+        if _re.search(r'\b(hola|buenas|buen.?dia|como.estas|hey|que.tal|que.onda|buenos.dias)\b', n): return 'saludo'
+        if _re.search(r'\b(gracias|gracia|genial|perfecto|excelente|barbaro|de.nada|copado|listo)\b', n): return 'gracias'
+        if _re.search(r'\b(ayuda|que.podes|que.sabes|como.funciona|comandos|que.puedo|manual)\b', n): return 'ayuda'
+        if _re.search(r'\b(venc[eio]|vencen|vencidos|vencimiento|por.vencer|expiran|fecha.vto|caducidad|caduca)\b', n): return 'venc'
+        if _re.search(r'\b(ubicacion.libre|posicion.libre|vacia|vacias|libre|disponible|donde.pongo|donde.ubico|sugerencia)\b', n): return 'ubic_libre'
+        if _re.search(r'\b(donde.est[ae]|donde.hay|donde.queda|ubicacion|posicion|en.que.lugar|guardado|mapa|en.que.ubi)\b', n): return 'ubic'
+        if _re.search(r'\b(bajo.stock|poco.stock|sin.stock|agotado|critico|falta.reponer|hay.poco|escaso|minimo|reponer)\b', n): return 'bajo'
+        if _re.search(r'\b(top|ranking|mas.stock|mayor.stock|mas.cantidad|los.que.mas)\b', n): return 'top'
+        if _re.search(r'\b(resumen|panorama|balance|estado.del.inventario|como.estamos|inventario.completo)\b', n): return 'resumen'
         if _re.search(r'\b(historial|movimientos|ultimos|ultimo|registro|que.paso|bitacora|actividad)\b', n): return 'hist'
-        if _re.search(r'\b(lista|listame|mostrame|todos.los|todas.las|que.productos|cuales|dame.la.lista|listar|que.hay|cuantos.hay|tenes.de|hay.de)\b', n): return 'lista'
-        if _re.search(r'\b(sac[ao]|sacame|baj[ao]|bajame|retir[ao]|salida|despacha|consum[eo]|egres[ao]|quitar|quit[ao])\b', n): return 'salida'
-        if _re.search(r'\b(agreg[ao]|ingres[ao]|recib[io]|llegaron|llego|carg[ao]|entrada|incorpor[ao]|sum[ao]|pus[eo])\b', n): return 'entrada'
-        if _re.search(r'\b(mov[eo]|movi|mand[ao]|traslad[ao]|pas[ao]\s+(a|al)|llev[ao]\s+(a|al)|cambi[ao].+ubic|trasfer[io])\b', n): return 'mover'
-        if _re.search(r'\b(correg[io]|ajust[ao]|fij[ao]|actualiz[ao]|en.realidad.hay|inventario.fisico|ajuste)\b', n): return 'corregir'
+        if _re.search(r'\b(pedido|pedidos|encargo|orden.de.compra|orden.pendiente)\b', n): return 'pedidos'
+        if _re.search(r'\b(lista|listame|mostrame|todos.los|todas.las|que.productos|cuales|listar|que.hay|cuantos.hay|tenes)\b', n): return 'lista'
+        if _re.search(r'\b(sac[ao]|sacame|baj[ao]|bajame|retir[ao]|salida|despacha|consum[eo]|egres[ao]|quitar|descontar)\b', n): return 'salida'
+        if _re.search(r'\b(agreg[ao]|ingres[ao]|recib[io]|llegaron|llego|carg[ao]|entrada|incorpor[ao]|sum[ao]|pus[eo]|nuevo.stock)\b', n): return 'entrada'
+        if _re.search(r'\b(mov[eo]|movi|mand[ao]|traslad[ao]|pas[ao]\s+(a|al)|llev[ao]\s+(a|al)|cambi[ao].+ubic|reubicar)\b', n): return 'mover'
+        if _re.search(r'\b(correg[io]|ajust[ao]|fij[ao]|actualiz[ao]|en.realidad.hay|inventario.fisico|recuento|conteo)\b', n): return 'corregir'
         return 'consulta'
 
-    # ── Contexto multi-turno ──────────────────────────────────────────────────
+    # ──────────────────────────────── PROCESADOR PRINCIPAL ─────────────────────
 
     def _procesar(txt):
         n   = _nn(txt)
         ctx = st.session_state.get("_ctx", {})
-
-        # Si hay contexto pendiente, combinar
         if ctx:
-            txt_c  = (ctx.get("txt","") + " " + txt).strip()
+            txt_c  = (ctx.get("txt","")+" "+txt).strip()
             n      = _nn(txt_c)
             intent = ctx.get("intent", _intent(n))
             st.session_state.pop("_ctx", None)
         else:
-            txt_c  = txt
+            txt_c = txt
             intent = _intent(n)
 
         hora = datetime.now().hour
         sal  = "Buenos días" if hora<12 else ("Buenas tardes" if hora<20 else "Buenas noches")
 
-        if intent == 'saludo':
-            return None, f"👋 {sal}, {usuario}! Soy el Operario Digital de LOGIEZE. ¿Qué necesitás?"
-        if intent == 'gracias':
-            return None, "✅ ¡De nada! Para eso estoy. ¿Algo más?"
-        if intent == 'ayuda':
-            return None, (
-                "🤖 **Podés preguntarme o pedirme:**\n\n"
-                "📦  «¿Cuánto hay de ibuprofeno?»\n"
-                "📋  «Listame todos los geles de 5L»\n"
-                "📋  «Mostrame los shampoos de 350ml»\n"
-                "📍  «¿Dónde está el código 150?»\n"
-                "📍  «¿Qué hay en la posición 01-2A?»\n"
-                "⏰  «¿Qué vence este mes?»\n"
-                "⏰  «Vencimientos de los próximos 90 días»\n"
-                "📉  «¿Qué nos falta reponer?»\n"
-                "📊  «Resumen del inventario»\n"
-                "📋  «Historial de movimientos de hoy»\n"
-                "📋  «Últimos 30 movimientos»\n"
-                "🏆  «Top 10 productos con más stock»\n"
-                "📤  «Sacá 10 de ibuprofeno de 01-1A»\n"
-                "📥  «Llegaron 50 de gel en 03-2B, vto 06/26»\n"
-                "🔀  «Pasá todo de 01-1A a 02-3B»\n"
-                "🔀  «Mové 20 del código 200 de 01-1A a 03-2C»\n"
-                "✏️   «Corregí el gel en 01-1A a 25 uds»"
+        if intent=='saludo':
+            return None,(f"👋 {sal}, **{usuario}**! Soy el **Operario Digital LOGIEZE**.\n"
+                         f"Acceso completo: {len(maestra)} productos, lotes, ubicaciones, pedidos e historial.\n"
+                         f"Preguntame lo que necesités o dictame un movimiento.")
+        if intent=='gracias':  return None,"✅ ¡De nada! ¿Algo más?"
+        if intent=='ayuda':
+            return None,(
+                "🤖 **Operario Digital — comandos:**\n\n"
+                "**📋 Consultas:**\n"
+                "  • «¿Cuánto hay de ibuprofeno?»\n"
+                "  • «Listame geles de 5L»\n"
+                "  • «¿Dónde está el código 150?»\n"
+                "  • «¿Qué hay en 01-2A?»\n"
+                "  • «Ubicaciones vacías / libres»\n"
+                "  • «¿Qué vence este mes?»\n"
+                "  • «Qué nos falta reponer»\n"
+                "  • «Resumen del inventario»\n"
+                "  • «Pedidos pendientes»\n"
+                "  • «Últimos 30 movimientos»\n"
+                "  • «Top 15 por stock»\n\n"
+                "**📦 Movimientos:**\n"
+                "  • «Sacá 10 de ibuprofeno de 01-1A»\n"
+                "  • «Llegaron 50 de gel en 03-2B vto 06/26»\n"
+                "  • «Pasá todo de 01-1A a 02-3B»\n"
+                "  • «Corregí el gel en 01-1A a 25 uds»"
             )
-
-        if intent == 'venc':    return None, _resp_venc(n)
-        if intent == 'ubic':    return None, _resp_ubic(txt_c, n)
-        if intent == 'bajo':    return None, _resp_bajo(n)
-        if intent == 'top':     return None, _resp_top(n)
-        if intent == 'resumen': return None, _resp_resumen()
-        if intent == 'hist':    return None, _resp_historial(txt_c, n)
-        if intent == 'lista':
-            r = _lista_categoria(txt_c)
+        if intent=='venc':       return None, _resp_venc(n)
+        if intent=='ubic_libre': return None, _resp_ubic_libres()
+        if intent=='ubic':       return None, _resp_ubic(txt_c, n)
+        if intent=='bajo':       return None, _resp_bajo(n)
+        if intent=='top':        return None, _resp_top(n)
+        if intent=='resumen':    return None, _resp_resumen()
+        if intent=='hist':       return None, _resp_historial(txt_c, n)
+        if intent=='pedidos':    return None, _resp_pedidos()
+        if intent=='lista':
+            r=_lista_cat(txt_c)
             if r: return None, r
-
         if intent in ('salida','entrada','mover','corregir'):
             ok, resp = _exec(intent, txt_c)
-            if ok is None:  # falta info → pedir y guardar contexto
-                st.session_state["_ctx"] = {"intent":intent,"txt":txt_c}
+            if ok is None: st.session_state["_ctx"]={"intent":intent,"txt":txt_c}
             return ok, resp
-
-        # Consulta genérica — si incluye medida, va directo a lista de categoría
+        # Consulta genérica
         if _medida(txt_c):
-            r = _lista_categoria(txt_c)
-            if r: return None, r
-        prod = _buscar_prod(txt_c)
+            r=_lista_cat(txt_c)
+            if r: return None,r
+        prod=_buscar_prod(txt_c, score_min=1)
         if prod: return None, _detalle_prod(prod)
-
-        r = _lista_categoria(txt_c)
-        if r: return None, r
-
-        total = sum(int(float(p.get('cantidad_total',0) or 0)) for p in maestra)
-        return None, (
-            f"No entendí bien. Tenemos **{len(maestra)} productos** con **{total:,} uds** en stock.\n"
-            "Preguntame por nombre, código, ubicación, vencimientos, o hacé un movimiento."
-        )
+        r=_lista_cat(txt_c)
+        if r: return None,r
+        total=sum(int(float(p.get('cantidad_total',0) or 0)) for p in maestra)
+        return None,(f"No entendí bien. Tenemos **{len(maestra)} productos** · **{total:,}u** en stock.\n"
+                     "Escribí **ayuda** para ver todos los comandos.")
 
     # ── PANTALLA INICIAL ──────────────────────────────────────────────────────
 
