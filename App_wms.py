@@ -2253,14 +2253,61 @@ with tab_asist:
 
         # ─── ENTRADA ─────────────────────────────────────────────────────────
         elif tipo=="entrada":
-            if cant<=0: return None, f"❓ ¿Cuántas uds de **{nom}** entraron?"
+            # Paso 1: cantidad
+            if cant<=0:
+                return None, f"❓ ¿Cuántas uds de **{nom}** entraron?"
+
+            # Paso 2: ubicación
             if not ubi:
                 ocupadas = _ubis_ocupadas()
                 vacias   = calcular_vacias_rapido(ocupadas, max_n=6)
                 sug99    = calcular_sug99(ocupadas)
-                opts     = "\n".join(f"  • {v}" for v in vacias[:5])+(f"\n  • {sug99} (zona 99)")
+                # Mostrar lotes existentes del producto si los hay
+                lotes_exist = idx_inv.get(cod, [])
+                extra = ""
+                if lotes_exist:
+                    extra = ("\n\n📦 **Lotes actuales de este producto:**\n" +
+                             "\n".join(f"  • {l.get('ubicacion','?')} — {int(float(l.get('cantidad',0)))}u"
+                                        + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
+                                        + f" [{l.get('deposito','PRINCIPAL')}]"
+                                        for l in lotes_exist[:6]))
+                opts = "\n".join(f"  • {v}" for v in vacias[:5]) + (f"\n  • {sug99} (zona 99)")
                 return None, (f"❓ ¿En qué posición ubicamos **{int(cant)}u de {nom}**?\n"
-                              f"📍 Ubicaciones disponibles:\n{opts}")
+                              f"📍 Ubicaciones disponibles:\n{opts}{extra}")
+
+            # Paso 3: fecha de vencimiento (si no viene en el texto)
+            if not fv:
+                return None, (f"❓ ¿Cuál es la **fecha de vencimiento** de este lote de {nom}?\n"
+                              f"  Formato: MM/AA o MM/AAAA — o escribí **sin vto** si no vence.")
+
+            # Normalizar "sin vto"
+            if _nn(fv) in ("sin vto","sin vencimiento","no vence","sv","s/v","n/a","na"):
+                fv = ""
+
+            # Paso 4: depósito (solo si hay más de uno configurado o si el texto no lo menciona)
+            ctx_dep = st.session_state.get("_ctx",{}).get("dep_confirmado", False)
+            if dep == "PRINCIPAL" and not ctx_dep:
+                # Preguntar depósito
+                st.session_state["_ctx"] = {
+                    "intent": "entrada",
+                    "txt": txt_c,
+                    "dep_confirmado": True,
+                    "fv_confirmado": fv,
+                }
+                return None, (f"❓ ¿En qué **depósito** va este lote?\n"
+                              f"  Opciones: **PRINCIPAL** · **FRIO** · **SECO** · **SALON** · **EXTERIOR**\n"
+                              f"  (escribí el nombre o **P** para PRINCIPAL)")
+
+            # Usar dep guardado en contexto si viene de vuelta
+            if ctx_dep:
+                dep_ctx = _extraer_dep(txt) if txt.strip().lower() not in ("p","principal","1") else "PRINCIPAL"
+                dep = dep_ctx
+
+            # Usar fv guardado en contexto
+            fv_ctx = st.session_state.get("_ctx",{}).get("fv_confirmado","") if fv=="" else fv
+            fv = fv_ctx if fv_ctx else fv
+
+            # ── Guardar ──────────────────────────────────────────────────────
             lotes_ubi=[l for l in idx_inv.get(cod,[]) if str(l.get('ubicacion','')).upper()==ubi]
             def _db():
                 if lotes_ubi:
@@ -2281,9 +2328,8 @@ with tab_asist:
             prod['cantidad_total']=str(float(prod.get('cantidad_total',0) or 0)+cant)
             return True, (f"✅ **ENTRADA registrada**\n"
                           f"  Producto: {nom} (cod:{cod})\n"
-                          f"  **{int(cant)}u** → **{ubi}**"
-                          +(f"  [{dep}]" if dep!="PRINCIPAL" else "")
-                          +(f"  · Vto:{fv}" if fv else "")
+                          f"  **{int(cant)}u** → **{ubi}** [{dep}]"
+                          +(f"  · Vto: {fv}" if fv else "  · Sin vencimiento")
                           +f"\n  Stock total: **{int(float(prod.get('cantidad_total',0) or 0))}u**")
 
         # ─── MOVER ───────────────────────────────────────────────────────────
@@ -2398,7 +2444,8 @@ with tab_asist:
             txt_c  = (ctx.get("txt","")+" "+txt).strip()
             n      = _nn(txt_c)
             intent = ctx.get("intent", _intent(n))
-            st.session_state.pop("_ctx", None)
+            # NO borrar _ctx todavía — _exec lo maneja internamente
+            # Solo se borra si la acción termina (ok=True/False) o si no es acción
         else:
             txt_c = txt
             intent = _intent(n)
@@ -2445,7 +2492,13 @@ with tab_asist:
             if r: return None, r
         if intent in ('salida','entrada','mover','corregir'):
             ok, resp = _exec(intent, txt_c)
-            if ok is None: st.session_state["_ctx"]={"intent":intent,"txt":txt_c}
+            if ok is None:
+                # Si _exec no guardó su propio _ctx, guardar el básico
+                if "_ctx" not in st.session_state or not st.session_state["_ctx"]:
+                    st.session_state["_ctx"] = {"intent":intent,"txt":txt_c}
+            else:
+                # Acción completada — limpiar contexto
+                st.session_state.pop("_ctx", None)
             return ok, resp
         # Consulta genérica
         if _medida(txt_c):
