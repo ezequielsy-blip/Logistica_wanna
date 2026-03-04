@@ -1911,33 +1911,48 @@ with tab_asist:
                'un','una','me','como','donde','esta','estan','todo','todos','toda','todas',
                'dame','lista','listame','mostrame','ver','cuanto','cuantos','stock',
                'producto','productos','tenes','tiene','busco','a','el','la','con','por',
-               'para','sobre','listar','hay','es','son','cual'}
+               'para','sobre','listar','hay','es','son','cual','quiero','saber','info',
+               'mostrar','traer','trae','dame','decime','dime'}
         if med:
             ns = str(int(med[0])) if med[0]==int(med[0]) else str(med[0])
             _ST.update([ns, med[1]] + list(med[2].split()))
         pals = [w for w in n.split() if w not in _ST and len(w)>1
                 and not _re.match(r'^\d+(?:ml|cc|l|lt|g|gr|kg|mg|oz)?$', w)]
         if not pals: return None
-        # Sinónimos: expandir variantes de la misma palabra
+
         _SINO = {'champu':'shampoo','acond':'acondicionador','cond':'acondicionador',
-                 'soap':'jabon','oil':'aceite','trat':'tratamiento','repar':'reparador'}
+                 'soap':'jabon','oil':'aceite','trat':'tratamiento','repar':'reparador',
+                 'crema':'crema','gel':'gel','wax':'cera','pomada':'pomada'}
         pals_ext = list(pals)
         for w in pals:
             if w in _SINO and _SINO[w] not in pals_ext: pals_ext.append(_SINO[w])
+
+        # ── Score: cada palabra buscada vs nombre del producto ────────────
+        # Palabras cortas (2-3 chars) como "l3", "v8" se tratan como marca exacta
         cands = []
         for p in maestra:
             pn = _nn(p.get('nombre',''))
-            pw = pn.split()
-            sc = sum((3 if w==pw[0] else 2 if len(pw)>1 and w==pw[1] else 1)
-                     for w in pals_ext if w in pn)
+            sc = 0
+            for w in pals_ext:
+                if w in pn:
+                    # Palabra al inicio del nombre = marca probable → peso alto
+                    if pn.startswith(w): sc += 5
+                    # Palabra exacta como token separado → peso medio-alto
+                    elif _re.search(r'\b' + _re.escape(w) + r'\b', pn): sc += 3
+                    # Substring dentro del nombre → peso bajo
+                    else: sc += 1
             if sc > 0: cands.append((sc, p))
-        # Fuzzy fallback: substring de 4+ chars si no hubo ningún match
+
+        # Fuzzy fallback: si no hubo nada, probar substring de 3+ chars
         if not cands:
             for p in maestra:
                 pn = _nn(p.get('nombre',''))
-                sc = sum(1 for w in pals_ext if len(w)>=4 and w in pn)
+                sc = sum(2 for w in pals_ext if len(w)>=3 and w in pn)
                 if sc > 0: cands.append((sc, p))
+
         if not cands: return None
+
+        # ── Filtro por medida si se especificó ───────────────────────────
         filtro = ""
         if med:
             num, u, tm = med
@@ -1953,21 +1968,32 @@ with tab_asist:
                 msg = f"Sin productos de esa categoría con medida **{tm}**."
                 if otras: msg += f"\nMedidas disponibles: {', '.join(otras)}"
                 return msg
+
         cands.sort(key=lambda x:(-x[0], x[1].get('nombre','')))
-        if len(cands)==1: return _detalle_prod(cands[0][1])
+
+        # ── Si es un solo resultado SIN pedido de lista → detalle completo ──
+        if len(cands)==1 and not pide_lista: return _detalle_prod(cands[0][1])
+
+        # ── Lista detallada ───────────────────────────────────────────────
         total_stk = sum(int(float(p.get('cantidad_total',0) or 0)) for _,p in cands)
-        lines = [f"📋 **{len(cands)} producto(s)**{filtro} — Stock: **{total_stk:,} uds**\n"]
-        for _,p in cands[:80]:
+        marca_txt = " · ".join(dict.fromkeys(w.upper() for w in pals if len(w)>=3))
+        lines = [f"🔍 **{marca_txt}** — {len(cands)} producto(s) · Stock total: **{total_stk:,} uds**\n"]
+        for _,p in cands:
             cod  = str(p['cod_int'])
             stk  = int(float(p.get('cantidad_total',0) or 0))
             lts  = idx_inv.get(cod,[])
             ico  = "⛔" if stk==0 else ("⚠️" if stk<10 else "✅")
-            ubis = " | ".join(
-                f"{l.get('ubicacion','?')}:{int(float(l.get('cantidad',0)))}u"
-                +(f"[{l.get('fecha','')}]" if l.get('fecha') else "")
-                for l in lts[:4]) or "sin stock"
-            lines.append(f"{ico} **{p['nombre']}** (cod:{cod}) — {stk}u  →  {ubis}")
-        if len(cands)>80: lines.append(f"*...y {len(cands)-80} más*")
+            # Lotes detallados: ubicacion, cantidad, vto, deposito
+            if lts:
+                lotes_det = "\n".join(
+                    f"      📍 {l.get('ubicacion','?')} [{l.get('deposito','DEPO 1')}]"
+                    f" — {int(float(l.get('cantidad',0)))}u"
+                    + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
+                    for l in lts)
+                lines.append(f"{ico} **{p['nombre']}** (cod:{cod}) — **{stk}u** totales\n{lotes_det}")
+            else:
+                lines.append(f"{ico} **{p['nombre']}** (cod:{cod}) — sin stock")
+        
         return "\n".join(lines)
 
     # ─────────────────────────────────────── RESPUESTAS DE CONSULTA ────────────
@@ -2381,14 +2407,12 @@ with tab_asist:
                     # Guardar todo y preguntar depósito
                     _guardar(cod=cod, nom=nom, cant=cant, ubi=ubi, fv=fv, dep="", paso=4)
                     return None, (f"❓ ¿En qué **depósito** va este lote?\n"
-                                  f"  **1** DEPO 1 (principal) · **2** DEPO 2 (secundario)")
+                                  f"  Escribí  **1**  para DEPO 1  ·  **2**  para DEPO 2")
 
             # Resolver depósito desde texto si viene del paso 4
             if dep == "" or (paso == 4 and not dep_ctx):
-                dep_map = {"1":"PRINCIPAL","p":"PRINCIPAL","principal":"PRINCIPAL",
-                           "2":"FRIO","frio":"FRIO","f":"FRIO","frigorifico":"FRIO",
-                           "3":"SECO","seco":"SECO","4":"SALON","salon":"SALON",
-                           "5":"EXTERIOR","exterior":"EXTERIOR","ext":"EXTERIOR","depo 1":"PRINCIPAL","depo 2":"FRIO"}
+                dep_map = {"1":"DEPO 1","depo 1":"DEPO 1","depo1":"DEPO 1","d1":"DEPO 1",
+                         "2":"DEPO 2","depo 2":"DEPO 2","depo2":"DEPO 2","d2":"DEPO 2"}
                 dep = dep_map.get(txt.strip().lower(), dep_txt if dep_explicito else "DEPO 1")
 
             # ── REGISTRAR ────────────────────────────────────────────────────
@@ -2596,14 +2620,11 @@ with tab_asist:
             ok, resp = _exec(intent, txt_c)
             # _exec maneja su propio contexto — no interferir
             return ok, resp
-        # Consulta genérica
-        if _medida(txt_c):
-            r=_lista_cat(txt_c)
-            if r: return None,r
-        prod=_buscar_prod(txt_c, score_min=1)
-        if prod: return None, _detalle_prod(prod)
+        # Consulta genérica — primero lista, luego producto individual
         r=_lista_cat(txt_c)
         if r: return None,r
+        prod=_buscar_prod(txt_c, score_min=1)
+        if prod: return None, _detalle_prod(prod)
         total=sum(int(float(p.get('cantidad_total',0) or 0)) for p in maestra)
         return None,(f"No entendí bien. Tenemos **{len(maestra)} productos** · **{total:,}u** en stock.\n"
                      "Escribí **ayuda** para ver todos los comandos.")
