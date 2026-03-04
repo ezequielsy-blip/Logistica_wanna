@@ -1634,7 +1634,7 @@ with tab_asist:
         sb.table("inventario").insert({
             "cod_int": cod, "nombre": nom, "cantidad": cant_mv,
             "ubicacion": ubi_d, "fecha": lote.get("fecha",""),
-            "deposito": lote.get("deposito","PRINCIPAL")
+            "deposito": lote.get("deposito","DEPO 1")
         }).execute()
         registrar_historial("MOVIMIENTO", cod, nom, cant_mv, f"{ubi_o}→{ubi_d}", usuario)
         recalcular_maestra(cod, inventario)
@@ -2184,9 +2184,9 @@ with tab_asist:
 
     def _extraer_dep(t):
         n=_nn(t)
-        for kw,dep in [('frio','FRIO'),('fria','FRIO'),('frigori','FRIO'),
-                       ('seco','SECO'),('quimico','QUIMICO'),('exterior','EXTERIOR'),
-                       ('salon','SALON'),('farmacia','FARMACIA'),('principal','PRINCIPAL')]:
+        for kw,dep in [('depo 1','DEPO 1'),('depo1','DEPO 1'),('deposito 1','DEPO 1'),
+                       ('depo 2','DEPO 2'),('depo2','DEPO 2'),('deposito 2','DEPO 2'),
+                       ('1','DEPO 1'),('2','DEPO 2'),('principal','DEPO 1'),('segundo','DEPO 2')]:
             if kw in n: return dep
         return "PRINCIPAL"
 
@@ -2236,7 +2236,7 @@ with tab_asist:
 
         # Depósito explícito: solo si el usuario menciona una palabra clave de depósito
         dep_explicito = bool(_re.search(
-            r'\b(frio|frigorifico|seco|salon|exterior|principal|depo\s*[12]|deposito)\b',
+            r'\b(depo\s*[12]|deposito\s*[12]|depo1|depo2|principal|segundo)\b',
             _nn(txt)))
 
         # ── PRODUCTO — solo buscar si no está en contexto ─────────────────────
@@ -2285,7 +2285,7 @@ with tab_asist:
                 dets = "\n".join(
                     f"  • **{l.get('ubicacion','?')}** — {int(float(l.get('cantidad',0)))}u"
                     + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
-                    + f" [{l.get('deposito','PRINCIPAL')}]"
+                    + f" [{l.get('deposito','DEPO 1')}]"
                     for l in lotes_p)
                 _guardar(cod=cod, nom=nom, cant=cant, paso=2)
                 return None, (f"❓ ¿Desde qué lote sacamos **{int(cant)}u de {nom}**?\n"
@@ -2338,7 +2338,7 @@ with tab_asist:
                     lotes_txt_e = ("\n\n📦 **Lotes actuales de " + nom + ":**\n" +
                         "\n".join(f"  • {l.get('ubicacion','?')} — {int(float(l.get('cantidad',0)))}u"
                             + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
-                            + f" [{l.get('deposito','PRINCIPAL')}]"
+                            + f" [{l.get('deposito','DEPO 1')}]"
                             for l in lotes_exist[:8]))
                 opts = "\n".join(f"  • {v}" for v in vacias[:5]) + f"\n  • {sug99} (zona 99)"
                 _guardar(cod=cod, nom=nom, cant=cant, paso=2)
@@ -2381,7 +2381,7 @@ with tab_asist:
                     # Guardar todo y preguntar depósito
                     _guardar(cod=cod, nom=nom, cant=cant, ubi=ubi, fv=fv, dep="", paso=4)
                     return None, (f"❓ ¿En qué **depósito** va este lote?\n"
-                                  f"  **1** PRINCIPAL · **2** FRIO · **3** SECO · **4** SALON · **5** EXTERIOR")
+                                  f"  **1** DEPO 1 (principal) · **2** DEPO 2 (secundario)")
 
             # Resolver depósito desde texto si viene del paso 4
             if dep == "" or (paso == 4 and not dep_ctx):
@@ -2389,12 +2389,12 @@ with tab_asist:
                            "2":"FRIO","frio":"FRIO","f":"FRIO","frigorifico":"FRIO",
                            "3":"SECO","seco":"SECO","4":"SALON","salon":"SALON",
                            "5":"EXTERIOR","exterior":"EXTERIOR","ext":"EXTERIOR","depo 1":"PRINCIPAL","depo 2":"FRIO"}
-                dep = dep_map.get(txt.strip().lower(), dep_txt if dep_explicito else "PRINCIPAL")
+                dep = dep_map.get(txt.strip().lower(), dep_txt if dep_explicito else "DEPO 1")
 
             # ── REGISTRAR ────────────────────────────────────────────────────
             lotes_ubi = [l for l in idx_inv.get(cod,[])
                          if str(l.get('ubicacion','')).upper() == ubi.upper()
-                         and str(l.get('deposito','PRINCIPAL')).upper() == dep.upper()]
+                         and str(l.get('deposito','DEPO 1')).upper() == dep.upper()]
             def _db_ent():
                 if lotes_ubi:
                     lt = lotes_ubi[0]
