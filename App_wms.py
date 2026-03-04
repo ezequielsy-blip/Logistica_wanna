@@ -1791,13 +1791,48 @@ with tab_asist:
         return (num, u, m.group(0).strip())
 
     def _med_ok(nom_n, num, u):
+        """Verifica si un nombre de producto coincide con una medida buscada.
+        Maneja espacios, sinónimos (ml=cc, l=lt=lts, g=gr=grs, kg=kilo) y
+        equivalencias (1l=1000ml, 1kg=1000g)."""
+        import re as _r2
         ns = str(int(num)) if num == int(num) else str(num)
-        vs = {ns+u}
-        if u=='l':   vs.update([str(int(num*1000))+'ml', str(int(num*1000))+'cc', ns+'lt', ns+'lts'])
-        elif u=='ml': vs.add(ns+'cc')
-        elif u=='kg': vs.update([str(int(num*1000))+'g', str(int(num*1000))+'gr', ns+'kilo'])
-        elif u=='g':  vs.update([ns+'gr', ns+'grs'])
-        return any(v in nom_n for v in vs)
+        # Variantes de texto que deben aparecer en el nombre (con o sin espacio)
+        # Para cada variante generamos 2: pegada y con espacio
+        base = []
+        if u == 'ml':
+            base = [ns+'ml', ns+'cc', ns+'cl']
+            # también equivalencia en litros: 350ml = 0.35l (no útil) / 1000ml = 1l
+            if num % 1000 == 0:
+                lns = str(int(num//1000))
+                base += [lns+'l', lns+'lt', lns+'lts', lns+' l', lns+' lt', lns+' lts']
+        elif u == 'l':
+            base = [ns+'l', ns+'lt', ns+'lts']
+            mns = str(int(num*1000))
+            base += [mns+'ml', mns+'cc', mns+'cl', mns+' ml', mns+' cc']
+        elif u == 'g':
+            base = [ns+'g', ns+'gr', ns+'grs']
+            if num % 1000 == 0:
+                kns = str(int(num//1000))
+                base += [kns+'kg', kns+'kilo', kns+'kilos', kns+' kg']
+        elif u == 'kg':
+            base = [ns+'kg', ns+'kilo', ns+'kilos']
+            gns = str(int(num*1000))
+            base += [gns+'g', gns+'gr', gns+'grs', gns+' g', gns+' gr']
+        elif u == 'un':
+            base = [ns+'un', ns+' un', ns+'u', 'x'+ns, 'x '+ns]
+        else:
+            base = [ns+u]
+        # Para cada variante base, agregar versión con espacio y sin espacio
+        variantes = set()
+        for v in base:
+            variantes.add(v)                           # pegado: "350ml"
+            # con espacio antes de unidad: "350 ml"
+            parts = _r2.match(r'^(\d+[.,]?\d*)(\D+)$', v)
+            if parts:
+                variantes.add(parts.group(1)+' '+parts.group(2).strip())
+        # Buscar cualquier variante en el nombre normalizado
+        return any(v in nom_n for v in variantes)
+
 
     # ───────────────────────────────────────────────── BÚSQUEDA PRECISA ────────
 
@@ -1822,11 +1857,17 @@ with tab_asist:
             pw = pn.split()
             sc  = sum((3 if w==pw[0] else 2 if len(pw)>1 and w==pw[1] else 1)
                       for w in tokens if w in pn)
-            # Penalizar si ningún token coincide con las primeras 2 palabras
             bonus = 1 if any(w in pw[:2] for w in tokens) else 0
             sc += bonus
             if sc > bsc: bsc, best = sc, p
-        return best if bsc >= score_min else None
+        if bsc >= score_min: return best
+        # Fallback barcode: número largo ≥ 7 dígitos → buscar en campos de código de barras
+        for tok in tokens:
+            if len(tok)>=7 and tok.isdigit():
+                for field in ('cod_barras','ean','barcode','cod_barra','barra','ean13'):
+                    p = next((x for x in maestra if str(x.get(field,'')).strip()==tok), None)
+                    if p: return p
+        return None
 
     def _detalle_prod(prod):
         cod = str(prod['cod_int'])
@@ -1877,13 +1918,25 @@ with tab_asist:
         pals = [w for w in n.split() if w not in _ST and len(w)>1
                 and not _re.match(r'^\d+(?:ml|cc|l|lt|g|gr|kg|mg|oz)?$', w)]
         if not pals: return None
+        # Sinónimos: expandir variantes de la misma palabra
+        _SINO = {'champu':'shampoo','acond':'acondicionador','cond':'acondicionador',
+                 'soap':'jabon','oil':'aceite','trat':'tratamiento','repar':'reparador'}
+        pals_ext = list(pals)
+        for w in pals:
+            if w in _SINO and _SINO[w] not in pals_ext: pals_ext.append(_SINO[w])
         cands = []
         for p in maestra:
             pn = _nn(p.get('nombre',''))
             pw = pn.split()
             sc = sum((3 if w==pw[0] else 2 if len(pw)>1 and w==pw[1] else 1)
-                     for w in pals if w in pn)
+                     for w in pals_ext if w in pn)
             if sc > 0: cands.append((sc, p))
+        # Fuzzy fallback: substring de 4+ chars si no hubo ningún match
+        if not cands:
+            for p in maestra:
+                pn = _nn(p.get('nombre',''))
+                sc = sum(1 for w in pals_ext if len(w)>=4 and w in pn)
+                if sc > 0: cands.append((sc, p))
         if not cands: return None
         filtro = ""
         if med:
@@ -1894,7 +1947,7 @@ with tab_asist:
             else:
                 otras = sorted({mm.group(0).strip()
                     for _,p in cands
-                    for mm in [_re.search(r'\b\d+(?:[.,]\d+)?\s*(?:ml|cc|l|lt|g|gr|kg|mg|oz)\b',
+                    for mm in [_re.search(r'\b\d+(?:[.,]\d+)?\s*(?:ml|cc|cl|l|lt|lts|g|gr|grs|kg|kilo|mg|oz)\b',
                                           _nn(p.get('nombre','')))]
                     if mm})[:8]
                 msg = f"Sin productos de esa categoría con medida **{tm}**."
