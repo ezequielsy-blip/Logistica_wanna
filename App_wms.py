@@ -2168,9 +2168,14 @@ with tab_asist:
             m=_re.search(pat,n)
             if m: return float(m.group(1))
         codigos = {str(p.get('cod_int','')) for p in maestra}
-        ubis_n  = set(_re.findall(r'\b\d{2}[-_]\d{1,2}[a-zA-Z]{0,2}\b', n))
+        # Excluir TODOS los dígitos que forman parte de una ubicación (ej: 99 de 99-59B)
+        ubi_matches = _re.findall(r'\b(\d{1,2})[-_]\d{1,2}[a-zA-Z]{0,2}\b', n)
+        ubi_matches += _re.findall(r'\b\d{1,2}[-_](\d{1,2})[a-zA-Z]{0,2}\b', n)
+        ubis_partes = set(ubi_matches)
+        ubis_completas = set(_re.findall(r'\b\d{2}[-_]\d{1,2}[a-zA-Z]{0,2}\b', n))
+        excluir = codigos | ubis_partes | ubis_completas
         for num in _re.findall(r'\b(\d+)\b', n):
-            if num not in codigos and num not in ubis_n and 1<=len(num)<=4:
+            if num not in excluir and 1<=len(num)<=4:
                 return float(num)
         return 0.0
 
@@ -2253,7 +2258,9 @@ with tab_asist:
             # Cantidad
             cant = cant_ctx if cant_ctx > 0 else cant_txt
             if cant <= 0:
-                _guardar(cod=cod, nom=nom, cant=0, paso=1)
+                # Si el usuario mandó una ubicación sin cantidad, guardarla para después
+                ubi_early = ubis_txt[0] if ubis_txt else ""
+                _guardar(cod=cod, nom=nom, cant=0, paso=1, ubi=ubi_early)
                 return None, f"❓ ¿Cuántas uds de **{nom}** querés sacar?"
 
             # Ubicación — si viene en el texto actual, usarla
