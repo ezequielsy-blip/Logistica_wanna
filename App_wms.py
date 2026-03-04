@@ -2194,150 +2194,206 @@ with tab_asist:
     # ──────────────────────────────────── EJECUTAR ACCIONES ────────────────────
 
     def _exec(tipo, txt):
+        """
+        Ejecutor con estado persistente en _ctx.
+        El contexto guarda: intent, cod, nom, cant, ubi, dep, fv, paso
+        Cada llamada SOLO parsea lo que todavía falta — nunca re-parsea lo ya guardado.
+        """
         if rol in ('visita','vendedor'):
             return False, "🚫 Tu rol no permite ejecutar movimientos."
-        prod = _buscar_prod(txt, score_min=1)
-        if not prod:
-            return None, "❓ ¿De qué producto? Indicá nombre o código."
-        cod  = str(prod['cod_int']); nom = prod['nombre']
-        cant = _extraer_cant(txt)
-        ubis = _extraer_ubis(txt)
-        ubi  = ubis[0] if ubis else ""
-        ubi2 = ubis[1] if len(ubis)>1 else ""
-        dep  = _extraer_dep(txt)
-        fv   = _extraer_fv(txt)
 
+        ctx = st.session_state.get("_ctx", {})
+        es_continuacion = ctx.get("intent") == tipo
+
+        def _guardar(**kw):
+            base = st.session_state.get("_ctx", {})
+            base.update({"intent": tipo})
+            base.update(kw)
+            st.session_state["_ctx"] = base
+
+        def _limpiar():
+            st.session_state.pop("_ctx", None)
+
+        # ── Recuperar datos ya guardados en el contexto ───────────────────────
+        cod_ctx  = ctx.get("cod","")   if es_continuacion else ""
+        nom_ctx  = ctx.get("nom","")   if es_continuacion else ""
+        cant_ctx = ctx.get("cant",0)   if es_continuacion else 0
+        ubi_ctx  = ctx.get("ubi","")   if es_continuacion else ""
+        dep_ctx  = ctx.get("dep","")   if es_continuacion else ""
+        fv_ctx   = ctx.get("fv","__NOPREGUNTADO__") if es_continuacion else "__NOPREGUNTADO__"
+        paso     = ctx.get("paso",0)   if es_continuacion else 0
+
+        # ── Parsear solo lo que viene en el mensaje actual ────────────────────
+        ubis_txt = _extraer_ubis(txt)
+        cant_txt = _extraer_cant(txt)
+        dep_txt  = _extraer_dep(txt)    # default PRINCIPAL si no menciona
+        fv_txt   = _extraer_fv(txt)
+
+        # Depósito explícito: solo si el usuario menciona una palabra clave de depósito
+        dep_explicito = bool(_re.search(
+            r'\b(frio|frigorifico|seco|salon|exterior|principal|depo\s*[12]|deposito)\b',
+            _nn(txt)))
+
+        # ── PRODUCTO — solo buscar si no está en contexto ─────────────────────
+        if cod_ctx:
+            cod = cod_ctx; nom = nom_ctx
+            prod = next((p for p in maestra if str(p.get('cod_int',''))==cod), None)
+        else:
+            # Buscar en el texto actual
+            prod = _buscar_prod(txt, score_min=1)
+            if not prod:
+                return None, "❓ No identifiqué el producto. Indicá nombre o código."
+            cod = str(prod['cod_int']); nom = prod['nombre']
+            _guardar(cod=cod, nom=nom)
+
+        # ══════════════════════════════════════════════════════════════════════
         # ─── SALIDA ──────────────────────────────────────────────────────────
-        if tipo=="salida":
-            if cant<=0:
+        # ══════════════════════════════════════════════════════════════════════
+        if tipo == "salida":
+            # Cantidad
+            cant = cant_ctx if cant_ctx > 0 else cant_txt
+            if cant <= 0:
+                _guardar(cod=cod, nom=nom, cant=0, paso=1)
                 return None, f"❓ ¿Cuántas uds de **{nom}** querés sacar?"
+
+            # Ubicación — si viene en el texto actual, usarla
+            ubi = ""
+            if ubis_txt:
+                ubi = ubis_txt[0]
+            elif ubi_ctx:
+                ubi = ubi_ctx
+
             lotes_p = idx_inv.get(cod, [])
             if not lotes_p:
+                _limpiar()
                 return False, f"⛔ Sin stock de **{nom}**."
 
-            # Si dijeron la ubicación exacta, usarla directo
-            lote = next((l for l in lotes_p if str(l.get('ubicacion','')).upper()==ubi), None) if ubi else None
-
-            # Si no eligieron lote todavía — mostrar TODOS los lotes y pedir que elijan
+            # Sin ubicación → mostrar lotes y pedir que elija
+            lote = next((l for l in lotes_p if str(l.get('ubicacion','')).upper()==ubi.upper()), None) if ubi else None
             if not lote:
                 tot = sum(float(l.get('cantidad',0) or 0) for l in lotes_p)
                 if tot < cant:
-                    return False, f"❌ Solo hay **{int(tot)}u** de {nom} en total (pedís {int(cant)}u)."
-                # Mostrar lotes disponibles para elegir
+                    _limpiar()
+                    return False, f"❌ Solo hay **{int(tot)}u** de {nom} (pedís {int(cant)}u)."
                 dets = "\n".join(
                     f"  • **{l.get('ubicacion','?')}** — {int(float(l.get('cantidad',0)))}u"
                     + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
                     + f" [{l.get('deposito','PRINCIPAL')}]"
-                    for l in lotes_p
-                )
-                st.session_state["_ctx"] = {"intent":"salida","txt":txt_c}
+                    for l in lotes_p)
+                _guardar(cod=cod, nom=nom, cant=cant, paso=2)
                 return None, (f"❓ ¿Desde qué lote sacamos **{int(cant)}u de {nom}**?\n"
-                              f"📦 Lotes disponibles:\n{dets}\n\n"
-                              f"  Respondé con la ubicación (ej: **01-2A**)")
+                              f"📦 Lotes disponibles:\n{dets}\n\n  Respondé con la ubicación (ej: **01-2A**)")
 
-            # Lote elegido — validar cantidad
             disp = float(lote.get('cantidad',0) or 0)
             if disp < cant:
-                return False, (f"❌ Solo hay **{int(disp)}u** de {nom} en **{ubi}**.\n"
-                               f"Stock total: {int(sum(float(l.get('cantidad',0) or 0) for l in lotes_p))}u en {len(lotes_p)} lote(s).")
-            nueva = disp - cant
-            lid = lote['id']
-            def _db():
+                _limpiar()
+                return False, f"❌ Solo hay **{int(disp)}u** en **{ubi}**."
+            nueva = disp - cant; lid = lote['id']
+            def _db_sal():
                 if nueva<=0: sb.table("inventario").delete().eq("id",lid).execute()
                 else:        sb.table("inventario").update({"cantidad":nueva}).eq("id",lid).execute()
                 sb.table("historial").insert({"fecha_hora":datetime.now().strftime("%d/%m/%Y %H:%M"),
                     "usuario":usuario,"tipo":"SALIDA","cod_int":cod,"nombre":nom,
                     "cantidad":cant,"ubicacion":ubi}).execute()
                 cargar_historial_cache.clear()
-            import threading as _th; _th.Thread(target=_db,daemon=True).start()
+            import threading as _th; _th.Thread(target=_db_sal,daemon=True).start()
             if nueva<=0: idx_inv[cod]=[l for l in idx_inv.get(cod,[]) if l['id']!=lid]
             else:
-                for l in idx_inv.get(cod,[]):
-                    if l['id']==lid: l['cantidad']=nueva
+                for l in idx_inv.get(cod,[]): l['cantidad']=nueva if l['id']==lid else l['cantidad']
             prod['cantidad_total']=str(float(prod.get('cantidad_total',0) or 0)-cant)
-            resto=int(float(prod.get('cantidad_total',0) or 0))
-            st.session_state.pop("_ctx", None)
+            _limpiar()
             return True, (f"✅ **SALIDA registrada**\n"
                           f"  Producto: **{nom}** (cod:{cod})\n"
                           f"  **{int(cant)}u** desde **{ubi}**"
-                          + (f" — quedan **{int(nueva)}u** en {ubi}" if nueva>0 else f" — {ubi} **agotado**")
-                          + f"\n  Stock total restante: **{resto}u**")
+                          + (f" — quedan **{int(nueva)}u**" if nueva>0 else " — lote **agotado**")
+                          + f"\n  Stock total: **{int(float(prod.get('cantidad_total',0) or 0))}u**")
 
-
+        # ══════════════════════════════════════════════════════════════════════
         # ─── ENTRADA ─────────────────────────────────────────────────────────
-        elif tipo=="entrada":
-            # Sistema de pasos guiados — sin NLP, preguntas directas
-            # ctx guarda: paso, cod, nom, cant, ubi, dep, fv
-            paso = ctx.get("paso", 0) if ctx.get("intent")=="entrada" else 0
+        # ══════════════════════════════════════════════════════════════════════
+        elif tipo == "entrada":
 
-            # ── PASO 1: identificar producto ─────────────────────────────────
-            if not prod:
-                return None, "❓ No identifiqué el producto. ¿Cuál es el código o nombre?"
-
-            # ── PASO 2: cantidad ─────────────────────────────────────────────
+            # PASO 1 — Cantidad
+            cant = cant_ctx if cant_ctx > 0 else cant_txt
             if cant <= 0:
-                st.session_state["_ctx"] = {"intent":"entrada","paso":2,
-                    "cod":cod,"nom":nom,"txt":txt_c}
+                _guardar(cod=cod, nom=nom, cant=0, paso=1)
                 return None, f"❓ ¿Cuántas unidades de **{nom}** ingresaron?"
 
-            # ── PASO 3: ubicación ─────────────────────────────────────────────
+            # PASO 2 — Ubicación
+            ubi = ubi_ctx or (ubis_txt[0] if ubis_txt else "")
             if not ubi:
                 ocupadas = _ubis_ocupadas()
                 vacias   = calcular_vacias_rapido(ocupadas, max_n=6)
                 sug99    = calcular_sug99(ocupadas)
                 lotes_exist = idx_inv.get(cod, [])
-                lotes_txt = ""
+                lotes_txt_e = ""
                 if lotes_exist:
-                    lotes_txt = ("\n\n📦 **Lotes actuales de " + nom + ":**\n" +
+                    lotes_txt_e = ("\n\n📦 **Lotes actuales de " + nom + ":**\n" +
                         "\n".join(f"  • {l.get('ubicacion','?')} — {int(float(l.get('cantidad',0)))}u"
                             + (f" · Vto:{l.get('fecha','')}" if l.get('fecha') else "")
                             + f" [{l.get('deposito','PRINCIPAL')}]"
                             for l in lotes_exist[:8]))
                 opts = "\n".join(f"  • {v}" for v in vacias[:5]) + f"\n  • {sug99} (zona 99)"
-                st.session_state["_ctx"] = {"intent":"entrada","paso":3,
-                    "cod":cod,"nom":nom,"cant":cant,"txt":txt_c}
+                _guardar(cod=cod, nom=nom, cant=cant, paso=2)
                 return None, (f"❓ ¿En qué ubicación van las **{int(cant)}u de {nom}**?\n"
-                              f"📍 Libres:\n{opts}{lotes_txt}")
+                              f"📍 Libres:\n{opts}{lotes_txt_e}")
 
-            # ── PASO 4: fecha de vencimiento ─────────────────────────────────
-            if not fv:
-                st.session_state["_ctx"] = {"intent":"entrada","paso":4,
-                    "cod":cod,"nom":nom,"cant":cant,"ubi":ubi,"txt":txt_c}
-                return None, (f"❓ ¿Fecha de vencimiento del lote de **{nom}** en {ubi}?\n"
-                              f"  Escribí **MM/AA** o **MM/AAAA** — o **sin vto** si no vence.")
+            # Si la respuesta es SOLO una ubicación (usuario eligió de la lista)
+            if not cant_ctx and ubis_txt and not cant_txt:
+                cant_src = cant  # cant ya fue seteada arriba
 
-            if _nn(fv) in ("sin vto","sin vencimiento","no vence","sv","s/v","n/a","na","sinvto"):
-                fv = ""
+            # PASO 3 — Fecha vencimiento
+            # fv_ctx == "__NOPREGUNTADO__" significa que aún no se preguntó
+            if fv_ctx == "__NOPREGUNTADO__":
+                # Ver si vino en el texto actual
+                fv = fv_txt
+                if not fv:
+                    _guardar(cod=cod, nom=nom, cant=cant, ubi=ubi, paso=3, fv="__NOPREGUNTADO__")
+                    return None, (f"❓ ¿Fecha de vencimiento del lote de **{nom}** en **{ubi}**?\n"
+                                  f"  Escribí **MM/AA** o **MM/AAAA** — o **sin vto** si no vence.")
+            else:
+                fv = fv_ctx if fv_ctx != "__NOPREGUNTADO__" else fv_txt
 
-            # ── PASO 5: depósito ─────────────────────────────────────────────
-            dep_ctx = ctx.get("dep_confirmado", False) if ctx.get("intent")=="entrada" else False
-            if not dep_ctx:
-                st.session_state["_ctx"] = {"intent":"entrada","paso":5,
-                    "cod":cod,"nom":nom,"cant":cant,"ubi":ubi,"fv":fv,
-                    "txt":txt_c,"dep_confirmado":True}
-                return None, (f"❓ ¿En qué **depósito** va este lote?\n"
-                              f"  **1** / PRINCIPAL — **2** / FRIO — **3** / SECO — **4** / SALON — **5** / EXTERIOR")
+            # Normalizar "sin vto"
+            if _nn(str(fv)) in ("sin vto","sinvto","sin vencimiento","no vence","sv","s/v","n/a","na",""):
+                # si el usuario escribió "sin vto" como respuesta
+                if _re.search(r'\bsin\s*vto\b|\bsin\s*venc|\bno\s*vence\b|\bsv\b', _nn(txt)):
+                    fv = ""
+                elif fv_ctx == "__NOPREGUNTADO__" and not fv_txt:
+                    # aún no respondió — preguntar
+                    _guardar(cod=cod, nom=nom, cant=cant, ubi=ubi, paso=3, fv="__NOPREGUNTADO__")
+                    return None, (f"❓ ¿Fecha de vencimiento del lote de **{nom}** en **{ubi}**?\n"
+                                  f"  Escribí **MM/AA** o **MM/AAAA** — o **sin vto** si no vence.")
 
-            # Resolver depósito desde la respuesta
-            txt_dep = txt.strip().lower()
-            dep_map = {"1":"PRINCIPAL","p":"PRINCIPAL","principal":"PRINCIPAL","depo 1":"PRINCIPAL",
-                       "2":"FRIO","frio":"FRIO","f":"FRIO","frigorifico":"FRIO",
-                       "3":"SECO","seco":"SECO","s":"SECO",
-                       "4":"SALON","salon":"SALON",
-                       "5":"EXTERIOR","exterior":"EXTERIOR","ext":"EXTERIOR"}
-            dep = dep_map.get(txt_dep, _extraer_dep(txt))
-            fv  = ctx.get("fv", fv) or fv
+            # PASO 4 — Depósito
+            dep = dep_ctx if dep_ctx else ""
+            if not dep:
+                if dep_explicito:
+                    dep = dep_txt
+                else:
+                    # Guardar todo y preguntar depósito
+                    _guardar(cod=cod, nom=nom, cant=cant, ubi=ubi, fv=fv, dep="", paso=4)
+                    return None, (f"❓ ¿En qué **depósito** va este lote?\n"
+                                  f"  **1** PRINCIPAL · **2** FRIO · **3** SECO · **4** SALON · **5** EXTERIOR")
+
+            # Resolver depósito desde texto si viene del paso 4
+            if dep == "" or (paso == 4 and not dep_ctx):
+                dep_map = {"1":"PRINCIPAL","p":"PRINCIPAL","principal":"PRINCIPAL",
+                           "2":"FRIO","frio":"FRIO","f":"FRIO","frigorifico":"FRIO",
+                           "3":"SECO","seco":"SECO","4":"SALON","salon":"SALON",
+                           "5":"EXTERIOR","exterior":"EXTERIOR","ext":"EXTERIOR","depo 1":"PRINCIPAL","depo 2":"FRIO"}
+                dep = dep_map.get(txt.strip().lower(), dep_txt if dep_explicito else "PRINCIPAL")
 
             # ── REGISTRAR ────────────────────────────────────────────────────
             lotes_ubi = [l for l in idx_inv.get(cod,[])
-                         if str(l.get('ubicacion','')).upper() == ubi
-                         and str(l.get('deposito','PRINCIPAL')).upper() == dep]
-            def _db():
+                         if str(l.get('ubicacion','')).upper() == ubi.upper()
+                         and str(l.get('deposito','PRINCIPAL')).upper() == dep.upper()]
+            def _db_ent():
                 if lotes_ubi:
                     lt = lotes_ubi[0]
-                    nc = float(lt.get('cantidad', 0) or 0) + cant
-                    sb.table("inventario").update({"cantidad": nc,
-                        "fecha": fv or lt.get('fecha','')}).eq("id", lt["id"]).execute()
+                    nc = float(lt.get('cantidad',0) or 0) + cant
+                    sb.table("inventario").update({"cantidad":nc,
+                        "fecha":fv or lt.get('fecha','')}).eq("id",lt["id"]).execute()
                 else:
                     sb.table("inventario").insert({"cod_int":cod,"nombre":nom,"cantidad":cant,
                         "ubicacion":ubi,"fecha":fv,"deposito":dep}).execute()
@@ -2345,41 +2401,47 @@ with tab_asist:
                     "usuario":usuario,"tipo":"ENTRADA","cod_int":cod,"nombre":nom,
                     "cantidad":cant,"ubicacion":ubi}).execute()
                 cargar_historial_cache.clear()
-            import threading as _th; _th.Thread(target=_db, daemon=True).start()
+            import threading as _th; _th.Thread(target=_db_ent,daemon=True).start()
             if lotes_ubi:
-                lotes_ubi[0]['cantidad'] = float(lotes_ubi[0].get('cantidad',0) or 0) + cant
+                for l in lotes_ubi: l['cantidad'] = float(l.get('cantidad',0) or 0)+cant
             else:
                 idx_inv.setdefault(cod,[]).append({"cod_int":cod,"nombre":nom,"cantidad":cant,
                     "ubicacion":ubi,"fecha":fv,"deposito":dep,"id":"tmp_e"})
-            prod['cantidad_total'] = str(float(prod.get('cantidad_total',0) or 0) + cant)
-            st.session_state.pop("_ctx", None)
+            prod['cantidad_total'] = str(float(prod.get('cantidad_total',0) or 0)+cant)
+            _limpiar()
             return True, (f"✅ **ENTRADA registrada**\n"
                           f"  Producto: **{nom}** (cod:{cod})\n"
                           f"  **{int(cant)}u** → **{ubi}** · Depósito: **{dep}**"
                           + (f" · Vto: **{fv}**" if fv else " · Sin vencimiento")
                           + f"\n  Stock total: **{int(float(prod.get('cantidad_total',0) or 0))}u**")
 
-     # ─── MOVER ───────────────────────────────────────────────────────────
+        # ══════════════════════════════════════════════════════════════════════
+        # ─── MOVER ───────────────────────────────────────────────────────────
+        # ══════════════════════════════════════════════════════════════════════
         elif tipo=="mover":
+            cant  = cant_ctx if cant_ctx > 0 else cant_txt
+            ubi   = ubi_ctx  if ubi_ctx  else (ubis_txt[0] if ubis_txt else "")
+            ubi2  = ctx.get("ubi2","") if es_continuacion else (ubis_txt[1] if len(ubis_txt)>1 else "")
+            if not ubi2 and len(ubis_txt)>=1 and ubi_ctx:
+                ubi2 = ubis_txt[0]
+
             lotes_p=idx_inv.get(cod,[])
-            if not lotes_p: return False, f"⛔ Sin stock de **{nom}**."
+            if not lotes_p: _limpiar(); return False, f"⛔ Sin stock de **{nom}**."
             if not ubi:
-                dets="\n".join(f"  • {l.get('ubicacion','?')}: {int(float(l.get('cantidad',0)))}u"
-                               for l in lotes_p[:8])
+                dets="\n".join(f"  • {l.get('ubicacion','?')}: {int(float(l.get('cantidad',0)))}u" for l in lotes_p[:8])
+                _guardar(cod=cod,nom=nom,cant=cant,paso=1)
                 return None, f"❓ ¿Desde qué posición movemos **{nom}**?\n{dets}"
-            lote=next((l for l in lotes_p if str(l.get('ubicacion','')).upper()==ubi),None)
-            if not lote: return False, f"❌ No hay lote de **{nom}** en **{ubi}**."
+            lote=next((l for l in lotes_p if str(l.get('ubicacion','')).upper()==ubi.upper()),None)
+            if not lote: _limpiar(); return False, f"❌ No hay lote de **{nom}** en **{ubi}**."
             if not ubi2:
-                ocupadas=_ubis_ocupadas(); vacias=calcular_vacias_rapido(ocupadas,max_n=5)
-                sug99=calcular_sug99(ocupadas)
+                ocupadas=_ubis_ocupadas(); vacias=calcular_vacias_rapido(ocupadas,max_n=5); sug99=calcular_sug99(ocupadas)
+                _guardar(cod=cod,nom=nom,cant=cant,ubi=ubi,paso=2)
                 return None, (f"❓ ¿A qué posición movemos **{nom}** desde {ubi}?\n"
                               f"📍 Libres: {', '.join(vacias[:4]) or sug99}")
-            disp=float(lote.get('cantidad',0) or 0)
-            cant_mov=cant if cant>0 else disp
-            if cant_mov>disp: return False, f"❌ Solo hay {int(disp)}u en {ubi}."
-            nueva=disp-cant_mov; lid=lote['id']
-            fv_l=lote.get('fecha',''); dep_l=lote.get('deposito',dep)
-            def _db():
+            disp=float(lote.get('cantidad',0) or 0); cant_mov=cant if cant>0 else disp
+            if cant_mov>disp: _limpiar(); return False, f"❌ Solo hay {int(disp)}u en {ubi}."
+            nueva=disp-cant_mov; lid=lote['id']; fv_l=lote.get('fecha',''); dep_l=lote.get('deposito',dep_txt)
+            def _db_mov():
                 if nueva<=0: sb.table("inventario").delete().eq("id",lid).execute()
                 else:        sb.table("inventario").update({"cantidad":nueva}).eq("id",lid).execute()
                 sb.table("inventario").insert({"cod_int":cod,"nombre":nom,"cantidad":cant_mov,
@@ -2388,59 +2450,67 @@ with tab_asist:
                     "usuario":usuario,"tipo":"MOVIMIENTO","cod_int":cod,"nombre":nom,
                     "cantidad":cant_mov,"ubicacion":f"{ubi}->{ubi2}"}).execute()
                 cargar_historial_cache.clear()
-            import threading as _th; _th.Thread(target=_db,daemon=True).start()
+            import threading as _th; _th.Thread(target=_db_mov,daemon=True).start()
             if nueva<=0: idx_inv[cod]=[l for l in idx_inv.get(cod,[]) if l['id']!=lid]
             else:
-                for l in idx_inv.get(cod,[]):
-                    if l['id']==lid: l['cantidad']=nueva
+                for l in idx_inv.get(cod,[]): l['cantidad']=nueva if l['id']==lid else l['cantidad']
             idx_inv.setdefault(cod,[]).append({"cod_int":cod,"nombre":nom,"cantidad":cant_mov,
                 "ubicacion":ubi2,"fecha":fv_l,"deposito":dep_l,"id":"tmp_m"})
-            return True, (f"✅ **MOVIMIENTO registrado**\n"
-                          f"  {nom} (cod:{cod})\n"
+            _limpiar()
+            return True, (f"✅ **MOVIMIENTO registrado**\n  {nom} (cod:{cod})\n"
                           f"  **{int(cant_mov)}u** de **{ubi}** → **{ubi2}**"
                           +(f"\n  Quedan {int(nueva)}u en {ubi}." if nueva>0 else f"\n  **{ubi} quedó vacío.**"))
 
+        # ══════════════════════════════════════════════════════════════════════
         # ─── CORREGIR ────────────────────────────────────────────────────────
+        # ══════════════════════════════════════════════════════════════════════
         elif tipo=="corregir":
-            if cant<=0: return None, f"❓ ¿A cuántas uds corregimos **{nom}**?"
+            cant  = cant_ctx if cant_ctx > 0 else cant_txt
+            ubi   = ubi_ctx  if ubi_ctx  else (ubis_txt[0] if ubis_txt else "")
+            if cant<=0:
+                _guardar(cod=cod,nom=nom,ubi=ubi,paso=1)
+                return None, f"❓ ¿A cuántas uds corregimos **{nom}**?"
             lotes_p=idx_inv.get(cod,[])
-            lote=next((l for l in lotes_p if str(l.get('ubicacion','')).upper()==ubi),None)
+            lote=next((l for l in lotes_p if str(l.get('ubicacion','')).upper()==ubi.upper()),None) if ubi else None
             if not lote and lotes_p:
                 if len(lotes_p)==1: lote=lotes_p[0]; ubi=str(lote.get('ubicacion',''))
                 else:
-                    dets="\n".join(f"  • {l.get('ubicacion','?')}: {int(float(l.get('cantidad',0)))}u"
-                                   for l in lotes_p[:6])
+                    dets="\n".join(f"  • {l.get('ubicacion','?')}: {int(float(l.get('cantidad',0)))}u" for l in lotes_p[:6])
+                    _guardar(cod=cod,nom=nom,cant=cant,paso=2)
                     return None, f"❓ ¿En qué ubicación corregimos **{nom}**?\n{dets}"
             if not lote:
-                if not ubi: return None, f"❓ ¿En qué posición está el stock de **{nom}**?"
-                def _db():
+                if not ubi:
+                    _guardar(cod=cod,nom=nom,cant=cant,paso=2)
+                    return None, f"❓ ¿En qué posición está el stock de **{nom}**?"
+                def _db_cor_new():
                     sb.table("inventario").insert({"cod_int":cod,"nombre":nom,"cantidad":cant,
-                        "ubicacion":ubi,"fecha":fv,"deposito":dep}).execute()
+                        "ubicacion":ubi,"fecha":fv_txt,"deposito":dep_txt}).execute()
                     sb.table("historial").insert({"fecha_hora":datetime.now().strftime("%d/%m/%Y %H:%M"),
                         "usuario":usuario,"tipo":"CORRECCION","cod_int":cod,"nombre":nom,
                         "cantidad":cant,"ubicacion":ubi}).execute()
                     cargar_historial_cache.clear()
-                import threading as _th; _th.Thread(target=_db,daemon=True).start()
+                import threading as _th; _th.Thread(target=_db_cor_new,daemon=True).start()
                 idx_inv.setdefault(cod,[]).append({"cod_int":cod,"nombre":nom,"cantidad":cant,
-                    "ubicacion":ubi,"fecha":fv,"deposito":dep,"id":"tmp_c"})
+                    "ubicacion":ubi,"fecha":fv_txt,"deposito":dep_txt,"id":"tmp_c"})
                 prod['cantidad_total']=str(float(prod.get('cantidad_total',0) or 0)+cant)
-                return True, f"✅ **Corrección:** {nom} en {ubi} → **{int(cant)}u** (lote nuevo creado)."
-            ant=float(lote.get('cantidad',0) or 0); lid=lote['id']; dif=cant-ant
-            def _db():
+                _limpiar()
+                return True, f"✅ **CORRECCIÓN** — {nom} en {ubi}: **{int(cant)}u** (lote nuevo)"
+            ant=float(lote.get('cantidad',0) or 0); dif=cant-ant; lid=lote['id']
+            def _db_cor():
                 sb.table("inventario").update({"cantidad":cant}).eq("id",lid).execute()
                 sb.table("historial").insert({"fecha_hora":datetime.now().strftime("%d/%m/%Y %H:%M"),
                     "usuario":usuario,"tipo":"CORRECCION","cod_int":cod,"nombre":nom,
-                    "cantidad":dif,"ubicacion":ubi}).execute()
+                    "cantidad":cant,"ubicacion":ubi}).execute()
                 cargar_historial_cache.clear()
-            import threading as _th; _th.Thread(target=_db,daemon=True).start()
+            import threading as _th; _th.Thread(target=_db_cor,daemon=True).start()
             lote['cantidad']=cant
             prod['cantidad_total']=str(float(prod.get('cantidad_total',0) or 0)+dif)
             signo=f"+{int(dif)}" if dif>0 else str(int(dif))
+            _limpiar()
             return True, (f"✅ **CORRECCIÓN registrada**\n"
                           f"  {nom} en **{ubi}**: {int(ant)}u → **{int(cant)}u** ({signo})")
 
         return False, "Acción desconocida."
-
     # ──────────────────────────────────── INTENT ────────────────────────────────
 
     def _intent(n):
@@ -2468,11 +2538,9 @@ with tab_asist:
         n   = _nn(txt)
         ctx = st.session_state.get("_ctx", {})
         if ctx:
-            txt_c  = (ctx.get("txt","")+" "+txt).strip()
+            txt_c  = txt  # NO concatenar — _exec ya tiene el historial en ctx
             n      = _nn(txt_c)
             intent = ctx.get("intent", _intent(n))
-            # NO borrar _ctx todavía — _exec lo maneja internamente
-            # Solo se borra si la acción termina (ok=True/False) o si no es acción
         else:
             txt_c = txt
             intent = _intent(n)
@@ -2519,13 +2587,7 @@ with tab_asist:
             if r: return None, r
         if intent in ('salida','entrada','mover','corregir'):
             ok, resp = _exec(intent, txt_c)
-            if ok is None:
-                # Si _exec no guardó su propio _ctx, guardar el básico
-                if "_ctx" not in st.session_state or not st.session_state["_ctx"]:
-                    st.session_state["_ctx"] = {"intent":intent,"txt":txt_c}
-            else:
-                # Acción completada — limpiar contexto
-                st.session_state.pop("_ctx", None)
+            # _exec maneja su propio contexto — no interferir
             return ok, resp
         # Consulta genérica
         if _medida(txt_c):
