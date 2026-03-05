@@ -2544,6 +2544,44 @@ with tab_asist:
         return False, "Acción desconocida."
     # ──────────────────────────────────── INTENT ────────────────────────────────
 
+
+    def _resp_lista_compras(maestra_data):
+        import unicodedata as _ud2
+        from collections import defaultdict
+        def nn2(t): return _ud2.normalize('NFD',str(t).lower()).encode('ascii','ignore').decode()
+        ES_TIN=_re.compile(r'\b(tintura|tinte|colorac|koleston|igora|loreal.col|wella.col|majirel|inoa|casting|excellence|nutrisse|palette|revlon.col|matrix.col|syoss|garnier.col)\b')
+        ES_MAQ=_re.compile(r'\b(maquina|maquinilla|cortadora|recortadora|afeitadora|trimmer|clipper|plancha|secador|vaporizador|difusor|esterilizador|autoclave|centrifuga|mezcladora|laminadora|selladora|depiladora|epiladora|masajeador|artefacto|electrodomestico|aparato|equipo|dispositivo)\b')
+        a_pedir=[]
+        for p in maestra_data:
+            nom=p.get('nombre','') or ''; desc=p.get('descripcion','') or ''
+            texto=nn2(nom+' '+desc); stk=int(float(p.get('cantidad_total',0) or 0))
+            marca=(str(p.get('marca','') or '').strip().upper()) or 'SIN MARCA'
+            es_maq=bool(ES_MAQ.search(texto))
+            es_tin=bool(ES_TIN.search(texto)) and not es_maq
+            if es_maq: umb=2; tipo='maquina'
+            elif es_tin: umb=50; tipo='tintura'
+            else: umb=12; tipo='general'
+            if stk<umb:
+                a_pedir.append({'nombre':nom,'cod':str(p.get('cod_int','')),'stock':stk,'umbral':umb,'tipo':tipo,'falta':max(1,umb-stk),'marca':marca})
+        if not a_pedir: return "✅ No hay productos que reponer."
+        por_marca=defaultdict(list)
+        for p in sorted(a_pedir,key=lambda x:x['nombre']): por_marca[p['marca']].append(p)
+        tin_n=sum(1 for p in a_pedir if p['tipo']=='tintura')
+        maq_n=sum(1 for p in a_pedir if p['tipo']=='maquina')
+        gen_n=len(a_pedir)-tin_n-maq_n
+        iconos={'tintura':'🎨','maquina':'🔌','general':'📦'}
+        ls=[f"🛒 **LISTA DE COMPRAS** — {len(a_pedir)} producto(s) a reponer",
+            f"   📦 Generales (<12u): {gen_n}  |  🎨 Tinturas (<50u): {tin_n}  |  🔌 Máquinas (<2u): {maq_n}\n"]
+        for m in sorted(por_marca.keys()):
+            prods=por_marca[m]
+            ls.append(f"▸ **{m}** ({len(prods)} ítem{'s' if len(prods)>1 else ''}):")
+            for p in prods:
+                st="⛔ SIN STOCK" if p['stock']==0 else f"tiene {p['stock']}u"
+                ls.append(f"   {iconos[p['tipo']]} {p['nombre']} (cod:{p['cod']}) — {st} → pedir ~{p['falta']}u")
+            ls.append("")
+        ls.append("💾 Para exportar a Excel usá la **app de escritorio**.")
+        return "\n".join(ls)
+
     def _intent(n):
         if _re.search(r'\b(hola|buenas|buen.?dia|como.estas|hey|que.tal|que.onda|buenos.dias)\b', n): return 'saludo'
         if _re.search(r'\b(gracias|gracia|genial|perfecto|excelente|barbaro|de.nada|copado|listo)\b', n): return 'gracias'
@@ -2556,6 +2594,7 @@ with tab_asist:
         if _re.search(r'\b(resumen|panorama|balance|estado.del.inventario|como.estamos|inventario.completo)\b', n): return 'resumen'
         if _re.search(r'\b(historial|movimientos|ultimos|ultimo|registro|que.paso|bitacora|actividad)\b', n): return 'hist'
         if _re.search(r'\b(pedido|pedidos|encargo|orden.de.compra|orden.pendiente)\b', n): return 'pedidos'
+        if _re.search(r'\b(lista.de.compras|lista.compra|compras|que.comprar|que.pedir|necesito.pedir|hay.que.pedir|que.falta|falta.comprar|reposicion|lista.proveedor)\b', n): return 'lista_compras'
         if _re.search(r'\b(lista|listame|mostrame|todos.los|todas.las|que.productos|cuales|listar|que.hay|cuantos.hay|tenes)\b', n): return 'lista'
         if _re.search(r'\b(sac[ao]r?|sacame|baj[ao]r?|bajame|retir[ao]r?|salida|despacha[rn]?|consum[eo]r?|egres[ao]r?|quitar|descontar|desconta[rn]?)\b', n): return 'salida'
         if _re.search(r'\b(agreg[ao]r?|ingres[ao]r?|recib[io]r?|llegaron?|llego|carg[ao]r?|entrada|incorpor[ao]r?|sum[ao]r?|pus[eo]|nuevo.stock|meter|mete|poner|pon[ei])\b', n): return 'entrada'
@@ -2605,6 +2644,11 @@ with tab_asist:
                 "  • «Pasá todo de 01-1A a 02-3B»\n"
                 "  • «Corregí el gel en 01-1A a 25 uds»"
             )
+        if intent=='lista_compras':
+            _nlow=_nn(txt_c)
+            if 'exportar' in _nlow or 'excel' in _nlow:
+                return None, '💾 Para exportar a Excel usá la **app de escritorio** (la web no permite guardar archivos locales).'
+            return None, _resp_lista_compras(maestra)
         if intent=='venc':       return None, _resp_venc(n)
         if intent=='ubic_libre': return None, _resp_ubic_libres()
         if intent=='ubic':       return None, _resp_ubic(txt_c, n)
