@@ -2545,13 +2545,17 @@ with tab_asist:
     # ──────────────────────────────────── INTENT ────────────────────────────────
 
 
-    def _resp_lista_compras(maestra_data):
+    def _resp_lista_compras(maestra_data, sb=None):
         import unicodedata as _ud2
         from collections import defaultdict
+        from datetime import datetime, timedelta
         def nn2(t): return _ud2.normalize('NFD',str(t).lower()).encode('ascii','ignore').decode()
         ES_TIN=_re.compile(r'\b(tintura|tinte|colorac|koleston|igora|loreal.col|wella.col|majirel|inoa|casting|excellence|nutrisse|palette|revlon.col|matrix.col|syoss|garnier.col)\b')
         ES_MAQ=_re.compile(r'\b(maquina|maquinilla|cortadora|recortadora|afeitadora|trimmer|clipper|plancha|secador|vaporizador|difusor|esterilizador|autoclave|centrifuga|mezcladora|laminadora|selladora|depiladora|epiladora|masajeador|artefacto|electrodomestico|aparato|equipo|dispositivo)\b')
-        a_pedir=[]
+        iconos={'tintura':'🎨','maquina':'🔌','general':'📦'}
+
+        # ── LISTA 1: bajo umbral ──────────────────────────────────────────
+        a_pedir=[]; cods_pedir=set()
         for p in maestra_data:
             nom=p.get('nombre','') or ''; desc=p.get('descripcion','') or ''
             texto=nn2(nom+' '+desc); stk=int(float(p.get('cantidad_total',0) or 0))
@@ -2562,23 +2566,63 @@ with tab_asist:
             elif es_tin: umb=50; tipo='tintura'
             else: umb=12; tipo='general'
             if stk<umb:
-                a_pedir.append({'nombre':nom,'cod':str(p.get('cod_int','')),'stock':stk,'umbral':umb,'tipo':tipo,'falta':max(1,umb-stk),'marca':marca})
-        if not a_pedir: return "✅ No hay productos que reponer."
-        por_marca=defaultdict(list)
-        for p in sorted(a_pedir,key=lambda x:x['nombre']): por_marca[p['marca']].append(p)
-        tin_n=sum(1 for p in a_pedir if p['tipo']=='tintura')
-        maq_n=sum(1 for p in a_pedir if p['tipo']=='maquina')
-        gen_n=len(a_pedir)-tin_n-maq_n
-        iconos={'tintura':'🎨','maquina':'🔌','general':'📦'}
-        ls=[f"🛒 **LISTA DE COMPRAS** — {len(a_pedir)} producto(s) a reponer",
-            f"   📦 Generales (<12u): {gen_n}  |  🎨 Tinturas (<50u): {tin_n}  |  🔌 Máquinas (<2u): {maq_n}\n"]
-        for m in sorted(por_marca.keys()):
-            prods=por_marca[m]
-            ls.append(f"▸ **{m}** ({len(prods)} ítem{'s' if len(prods)>1 else ''}):")
-            for p in prods:
-                st="⛔ SIN STOCK" if p['stock']==0 else f"tiene {p['stock']}u"
-                ls.append(f"   {iconos[p['tipo']]} {p['nombre']} (cod:{p['cod']}) — {st} → pedir ~{p['falta']}u")
-            ls.append("")
+                cod=str(p.get('cod_int',''))
+                a_pedir.append({'nombre':nom,'cod':cod,'stock':stk,'umbral':umb,'tipo':tipo,'marca':marca})
+                cods_pedir.add(cod)
+
+        # ── LISTA 2: más vendidos últimos 2 meses ────────────────────────
+        mas_vendidos=[]
+        try:
+            fecha_corte=(datetime.now()-timedelta(days=60)).strftime('%d/%m/%Y')
+            hist=sb.table('historial').select('cod_int,nombre,cantidad').eq('tipo','SALIDA').gte('fecha_hora',fecha_corte).execute().data or []
+            ventas=defaultdict(lambda:{'nombre':'','total':0,'marca':'','stock':0,'cod':''})
+            maestra_idx={str(p.get('cod_int','')):p for p in maestra_data}
+            for h in hist:
+                cod=str(h.get('cod_int',''))
+                ventas[cod]['nombre']=h.get('nombre','')
+                ventas[cod]['total']+=int(float(h.get('cantidad',0) or 0))
+                ventas[cod]['cod']=cod
+                mp=maestra_idx.get(cod,{})
+                ventas[cod]['marca']=(str(mp.get('marca','') or '').strip().upper()) or 'SIN MARCA'
+                ventas[cod]['stock']=int(float(mp.get('cantidad_total',0) or 0))
+            ranking=sorted(ventas.values(),key=lambda x:-x['total'])
+            mas_vendidos=[v for v in ranking if v['cod'] not in cods_pedir][:50]
+        except: pass
+
+        ls=[]
+        # — Lista 1 —
+        if a_pedir:
+            por_marca=defaultdict(list)
+            for p in sorted(a_pedir,key=lambda x:x['nombre']): por_marca[p['marca']].append(p)
+            tin_n=sum(1 for p in a_pedir if p['tipo']=='tintura')
+            maq_n=sum(1 for p in a_pedir if p['tipo']=='maquina')
+            gen_n=len(a_pedir)-tin_n-maq_n
+            ls+=[f"🛒 **LISTA DE COMPRAS** — {len(a_pedir)} producto(s) a reponer",
+                 f"   📦 Generales (<12u): {gen_n}  |  🎨 Tinturas (<50u): {tin_n}  |  🔌 Máquinas (<2u): {maq_n}\n"]
+            for m in sorted(por_marca.keys()):
+                prods=por_marca[m]
+                ls.append(f"▸ **{m}** ({len(prods)} ítem{'s' if len(prods)>1 else ''}):")
+                for p in prods:
+                    st="⛔ SIN STOCK" if p['stock']==0 else f"{p['stock']}u en stock"
+                    ls.append(f"   {iconos[p['tipo']]} {p['nombre']} (cod:{p['cod']}) — {st}")
+                ls.append("")
+        else:
+            ls.append("✅ No hay productos que reponer en este momento.\n")
+
+        # — Lista 2 —
+        if mas_vendidos:
+            por_marca_mv=defaultdict(list)
+            for v in mas_vendidos: por_marca_mv[v['marca']].append(v)
+            ls+=["━"*40,
+                 f"🔥 **MÁS VENDIDOS** — últimos 2 meses ({len(mas_vendidos)} productos)",
+                 f"   (Con stock suficiente — para que no te quedes corto)\n"]
+            for m in sorted(por_marca_mv.keys()):
+                prods=por_marca_mv[m]
+                ls.append(f"▸ **{m}** ({len(prods)} ítem{'s' if len(prods)>1 else ''}):")
+                for v in sorted(prods,key=lambda x:-x['total']):
+                    ls.append(f"   🔥 {v['nombre']} (cod:{v['cod']}) — {v['stock']}u en stock · vendió {v['total']}u en 2 meses")
+                ls.append("")
+
         ls.append("💾 Para exportar a Excel usá la **app de escritorio**.")
         return "\n".join(ls)
 
@@ -2648,7 +2692,7 @@ with tab_asist:
             _nlow=_nn(txt_c)
             if 'exportar' in _nlow or 'excel' in _nlow:
                 return None, '💾 Para exportar a Excel usá la **app de escritorio** (la web no permite guardar archivos locales).'
-            return None, _resp_lista_compras(maestra)
+            return None, _resp_lista_compras(maestra, sb)
         if intent=='venc':       return None, _resp_venc(n)
         if intent=='ubic_libre': return None, _resp_ubic_libres()
         if intent=='ubic':       return None, _resp_ubic(txt_c, n)
