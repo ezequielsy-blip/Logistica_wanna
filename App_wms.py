@@ -3451,7 +3451,7 @@ if _show("🤖 ASISTENTE"):
         if _re.search(r'\b(hola|buenas|buen.?dia|como.estas|hey|que.tal|que.onda|buenos.dias)\b', n): return 'saludo'
         if _re.search(r'\b(gracias|gracia|genial|perfecto|excelente|barbaro|de.nada|copado|listo)\b', n): return 'gracias'
         if _re.search(r'\b(ayuda|que.podes|que.sabes|como.funciona|comandos|que.puedo|manual)\b', n): return 'ayuda'
-        if _re.search(r'\b(venc[eio]|vencen|vencidos|vencimiento|por.vencer|expiran|fecha.vto|caducidad|caduca)\b', n): return 'venc'
+        if _re.search(r'\b(venc[eioa]|vencen|vencidos|vencimiento|vencimientos|urgente[s]?|por.vencer|proxim[oa]|pronto|expiran|fecha.vto|caducidad|caduca)\b', n): return 'venc'
         if _re.search(r'\b(ubicacion.libre|posicion.libre|vacia|vacias|libre|disponible|donde.pongo|donde.ubico|sugerencia)\b', n): return 'ubic_libre'
         if _re.search(r'\b(donde.est[ae]|donde.hay|donde.queda|ubicacion|posicion|en.que.lugar|guardado|mapa|en.que.ubi)\b', n): return 'ubic'
         if _re.search(r'\b(bajo.stock|poco.stock|sin.stock|agotado|critico|falta.reponer|hay.poco|escaso|minimo|reponer)\b', n): return 'bajo'
