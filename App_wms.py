@@ -796,6 +796,57 @@ function closeScan(){
                                            format="%.0f", key="cant_op")
         with col_b:
             fecha_op = st.text_input("VENCIMIENTO (MM/AA)", placeholder="ej: 06/26", key="fecha_op")
+            # Autoformato: inserta "/" sola después de tipear los 2 dígitos del mes
+            import streamlit.components.v1 as _stc_fv
+            _stc_fv.html("""<script>
+(function(){
+  var tries=0;
+  function hook(){
+    var doc=window.parent.document;
+    var inputs=doc.querySelectorAll('input[type="text"],input:not([type])');
+    var inp=null;
+    for(var i=0;i<inputs.length;i++){
+      var lbl=doc.querySelector('label[for="'+inputs[i].id+'"]');
+      var ph=inputs[i].placeholder||'';
+      if(ph==='ej: 06/26'||(lbl&&lbl.textContent&&lbl.textContent.indexOf('MM')>=0)){
+        inp=inputs[i];break;
+      }
+    }
+    if(!inp){if(tries++<30) setTimeout(hook,300);return;}
+    if(inp._lzFvHook) return;
+    inp._lzFvHook=true;
+    inp.addEventListener('input',function(e){
+      var v=inp.value.replace(/[^\d]/g,'');  // solo dígitos
+      if(v.length>=2){
+        var mm=v.substring(0,2);
+        var aa=v.substring(2,4);
+        inp.value=aa.length>0 ? mm+'/'+aa : mm;
+      } else {
+        inp.value=v;
+      }
+      // Notificar a React del cambio
+      var ns=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value');
+      if(ns&&ns.set) ns.set.call(inp,inp.value);
+      inp.dispatchEvent(new Event('input',{bubbles:true}));
+      inp.dispatchEvent(new Event('change',{bubbles:true}));
+    });
+    // Evitar que borre la barra al pulsar backspace sobre ella
+    inp.addEventListener('keydown',function(e){
+      if(e.key==='Backspace'){
+        var v=inp.value;
+        if(v.length===3&&v[2]==='/'){
+          e.preventDefault();
+          inp.value=v.substring(0,2);
+          var ns=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value');
+          if(ns&&ns.set) ns.set.call(inp,inp.value);
+          inp.dispatchEvent(new Event('input',{bubbles:true}));
+        }
+      }
+    });
+  }
+  setTimeout(hook,400);
+})();
+</script>""", height=0)
 
         ubi_prod    = list({str(l.get('ubicacion','')).upper() for l in lotes_prod})
         vacias      = calcular_vacias_rapido(ubis_ocupadas)
@@ -1720,67 +1771,163 @@ if _show("🤖 ASISTENTE"):
 
     st.markdown("""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');
+
+    /* ── Contenedor general del asistente ─────────────────── */
+    .block-container { padding-top: 0.5rem !important; }
+
+    /* ── Burbuja USUARIO ──────────────────────────────────── */
     .msg-user {
-        background: linear-gradient(135deg,#1D4ED8,#3B82F6);
+        background: linear-gradient(135deg,#1D4ED8 0%,#2563EB 60%,#06B6D4 100%);
         color:#fff;
-        border-radius:18px 18px 4px 18px;
-        padding:12px 16px;
-        margin:4px 0 4px 40px;
-        font-size:14px;
-        line-height:1.6;
-        box-shadow:0 4px 12px rgba(59,130,246,0.25);
-        animation:slideUp .18s ease;
+        border-radius:20px 20px 5px 20px;
+        padding:13px 18px;
+        margin:6px 0 2px 32px;
+        font-size:14.5px;
+        font-family:'DM Sans',sans-serif;
+        line-height:1.65;
+        box-shadow:0 4px 18px rgba(37,99,235,0.35);
+        animation:popIn .15s cubic-bezier(.34,1.56,.64,1);
+        word-break:break-word;
     }
+
+    /* ── Burbuja BOT ──────────────────────────────────────── */
     .msg-bot {
-        background:#1E293B;
-        color:#F1F5F9;
-        border-radius:4px 18px 18px 18px;
-        border:1px solid #334155;
-        padding:12px 16px;
-        margin:4px 40px 4px 0;
-        font-size:14px;
-        line-height:1.6;
+        background:linear-gradient(135deg,#1E293B 0%,#162032 100%);
+        color:#E2E8F0;
+        border-radius:5px 20px 20px 20px;
+        border:1px solid rgba(99,130,180,0.2);
+        padding:13px 18px;
+        margin:2px 32px 6px 0;
+        font-size:14.5px;
+        font-family:'DM Sans',sans-serif;
+        line-height:1.7;
         white-space:pre-wrap;
-        animation:slideUp .18s ease;
+        animation:popIn .15s cubic-bezier(.34,1.56,.64,1);
+        word-break:break-word;
+        box-shadow:0 2px 12px rgba(0,0,0,0.25);
     }
+    .msg-bot b, .msg-bot strong { color:#7DD3FC; }
+    .msg-bot code {
+        background:#0F172A; color:#34D399;
+        padding:1px 6px; border-radius:5px;
+        font-size:13px; font-family:monospace;
+    }
+
+    /* ── Confirmación OK ──────────────────────────────────── */
     .msg-ok {
-        background:rgba(16,185,129,.12);
-        border:1px solid rgba(16,185,129,.35);
-        border-radius:12px;
+        background:linear-gradient(90deg,rgba(16,185,129,.15),rgba(16,185,129,.05));
+        border-left:3px solid #10B981;
+        border-radius:0 12px 12px 0;
         padding:10px 14px;
-        margin:2px 40px 6px 0;
+        margin:0 32px 10px 4px;
         font-size:13px;
-        color:#10B981;
+        color:#34D399;
         font-weight:600;
+        font-family:'DM Sans',sans-serif;
     }
+
+    /* ── Error ────────────────────────────────────────────── */
     .msg-err {
-        background:rgba(239,68,68,.12);
-        border:1px solid rgba(239,68,68,.35);
-        border-radius:12px;
+        background:linear-gradient(90deg,rgba(239,68,68,.15),rgba(239,68,68,.05));
+        border-left:3px solid #EF4444;
+        border-radius:0 12px 12px 0;
         padding:10px 14px;
-        margin:2px 40px 6px 0;
+        margin:0 32px 10px 4px;
         font-size:13px;
-        color:#EF4444;
+        color:#FCA5A5;
         font-weight:600;
+        font-family:'DM Sans',sans-serif;
     }
-    .chat-lbl { font-size:10px; color:#475569; margin:8px 4px 2px; letter-spacing:0.5px; text-transform:uppercase; font-weight:600; }
-    @keyframes slideUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+
+    /* ── Label ────────────────────────────────────────────── */
+    .chat-lbl {
+        font-size:10px;
+        color:#475569;
+        margin:10px 4px 1px;
+        letter-spacing:0.8px;
+        text-transform:uppercase;
+        font-weight:700;
+        font-family:'DM Sans',sans-serif;
+    }
+
+    /* ── Header del asistente ─────────────────────────────── */
+    .od-header {
+        background:linear-gradient(135deg,#0F172A 0%,#1E293B 50%,#0F1C2E 100%);
+        border:1px solid rgba(99,130,180,0.18);
+        border-radius:20px;
+        padding:16px 20px;
+        margin-bottom:16px;
+        display:flex;
+        align-items:center;
+        gap:16px;
+        box-shadow:0 4px 24px rgba(0,0,0,0.4);
+    }
+    .od-avatar {
+        width:52px;height:52px;min-width:52px;
+        background:linear-gradient(135deg,#1D4ED8,#06B6D4);
+        border-radius:16px;
+        display:flex;align-items:center;justify-content:center;
+        font-size:26px;
+        box-shadow:0 0 20px rgba(6,182,212,0.4);
+        animation:glow 3s ease-in-out infinite;
+    }
+    @keyframes glow {
+        0%,100%{box-shadow:0 0 14px rgba(6,182,212,.35)}
+        50%{box-shadow:0 0 28px rgba(6,182,212,.65)}
+    }
+    .od-title { font-size:16px;font-weight:800;color:#F1F5F9;font-family:'DM Sans',sans-serif;letter-spacing:.5px }
+    .od-sub   { font-size:11.5px;color:#10B981;font-weight:600;font-family:'DM Sans',sans-serif;margin-top:2px }
+    .od-caps  { display:flex;gap:8px;margin-top:6px;flex-wrap:wrap }
+    .od-cap   {
+        background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.25);
+        color:#10B981;font-size:10px;font-weight:700;
+        padding:3px 8px;border-radius:20px;
+        font-family:'DM Sans',sans-serif;letter-spacing:.4px
+    }
+
+    /* ── Pantalla inicial vacía ───────────────────────────── */
+    .od-empty {
+        text-align:center;padding:32px 16px 20px;
+    }
+    .od-hint {
+        display:inline-block;
+        background:rgba(51,65,85,.6);
+        border:1px solid #334155;
+        border-radius:10px;
+        padding:7px 14px;
+        font-size:12px;color:#94A3B8;
+        font-family:'DM Sans',sans-serif;
+        margin:4px;cursor:default;
+    }
+    .od-hint:hover { background:rgba(59,130,246,.15);border-color:#3B82F6;color:#93C5FD }
+
+    @keyframes popIn {
+        from{opacity:0;transform:scale(.95) translateY(4px)}
+        to{opacity:1;transform:scale(1) translateY(0)}
+    }
     </style>""", unsafe_allow_html=True)
 
-    h1, h2 = st.columns([4,1])
-    with h1:
+    # Header compacto con avatar animado
+    hcol1, hcol2 = st.columns([5, 1])
+    with hcol1:
         st.markdown("""
-        <div style="display:flex;align-items:center;gap:12px;padding:4px 0 8px">
-            <div style="font-size:36px">📦</div>
-            <div>
-                <div style="font-size:17px;font-weight:900;color:#F1F5F9;letter-spacing:1px">
-                    OPERARIO DIGITAL — LOGIEZE</div>
-                <div style="font-size:12px;color:#10B981;font-weight:600">
-                    ✅ Sin límites · Sin costo · Sin internet · 100% propio</div>
+        <div class="od-header">
+          <div class="od-avatar">📦</div>
+          <div>
+            <div class="od-title">OPERARIO DIGITAL</div>
+            <div class="od-sub">✅ Sin límites · Sin costo · 100% propio</div>
+            <div class="od-caps">
+              <span class="od-cap">🎤 VOZ</span>
+              <span class="od-cap">📷 SCANNER</span>
+              <span class="od-cap">⌨️ TEXTO</span>
+              <span class="od-cap">⚡ ACCIONES</span>
             </div>
+          </div>
         </div>""", unsafe_allow_html=True)
-    with h2:
-        if st.button("🗑️ Limpiar", use_container_width=True, key="clear_bot"):
+    with hcol2:
+        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+        if st.button("🗑️", use_container_width=True, key="clear_bot", help="Limpiar chat"):
             st.session_state.bot_hist = []
             st.rerun()
 
@@ -2172,6 +2319,9 @@ if _show("🤖 ASISTENTE"):
         # PEDIDOS
         if _re.search(r'\b(pedido[s]?|orden(es)?|nube|pendiente[s]?)\b', n):
             return 'pedidos'
+        # CÓDIGO DE BARRAS SOLO (EAN-13, UPC, QR largo) → consulta stock directa
+        if _re.fullmatch(r'\d{7,13}', n.strip()):
+            return 'consulta_stock'
         return 'buscar'
 
     def _exec_salida(txt):
@@ -3386,17 +3536,21 @@ if _show("🤖 ASISTENTE"):
 
     if not st.session_state.bot_hist:
         st.markdown("""
-        <div style="text-align:center;padding:40px 16px 20px">
-            <div style="width:80px;height:80px;background:linear-gradient(135deg,#1D4ED8,#06B6D4);
-                        border-radius:24px;margin:0 auto 16px;display:flex;align-items:center;
-                        justify-content:center;font-size:40px;
-                        box-shadow:0 8px 32px rgba(59,130,246,.4)">📦</div>
-            <div style="font-size:20px;font-weight:800;color:#F1F5F9;font-family:'Syne',sans-serif;
-                        letter-spacing:1px">OPERARIO DIGITAL</div>
-            <div style="font-size:13px;color:#10B981;font-weight:600;margin-top:6px">
-                ✅ Listo · Sin límites · Sin costos</div>
-            <div style="font-size:12px;color:#475569;margin-top:12px;line-height:1.9">
-                Escribí · Hablá · Escaneá
+        <div class="od-empty">
+            <div style="font-size:13px;color:#64748B;font-family:'DM Sans',sans-serif;
+                        margin-bottom:14px;font-weight:600;letter-spacing:.5px">
+                PROBÁ PREGUNTARME</div>
+            <div>
+              <span class="od-hint">stock de shampoo</span>
+              <span class="od-hint">sacar 10 de gel</span>
+              <span class="od-hint">vencimientos urgentes</span>
+            </div>
+            <div style="margin-top:6px">
+              <span class="od-hint">mover 01-2A a 03-1B</span>
+              <span class="od-hint">resumen de inventario</span>
+            </div>
+            <div style="margin-top:6px">
+              <span class="od-hint">llegaron 50 de crema 01-3A</span>
             </div>
         </div>""", unsafe_allow_html=True)
 
@@ -3567,8 +3721,11 @@ function openCamera(){
           if(codes.length>0){
             var code=codes[0].rawValue;
             closeScan();
-            setSt("ok","✅ "+code+" — enviando...");
-            setTimeout(function(){enviarTexto(code);setTimeout(function(){setSt("","🎤 Grabar · 📷 Escanear código")},2000)},300);
+            setSt("ok","📦 Buscando "+code+"...");
+            setTimeout(function(){
+              enviarTexto(code);
+              setTimeout(function(){setSt("","🎤 Grabar · 📷 Escanear código")},1800);
+            },200);
           }
         }).catch(function(){});
       },350);
