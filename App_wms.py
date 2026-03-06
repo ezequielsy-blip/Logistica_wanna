@@ -695,9 +695,29 @@ video{width:90%;max-width:340px;border-radius:18px;border:3px solid #10B981}
 var s=null,a=false,iv=null;
 function setMsg(c,t){var el=document.getElementById('msg');el.className='msg '+(c||'');el.textContent=t}
 function writeAndSubmit(val){
-  // Puente directo via query_param — Streamlit hace rerun sin presionar Enter
-  var base=window.parent.location.href.split('?')[0].split('#')[0];
-  window.parent.location.replace(base+'?lz_busq='+encodeURIComponent(val));
+  // Buscar el input de búsqueda por placeholder
+  var doc=window.parent.document;
+  var inputs=doc.querySelectorAll('input[type="text"],input:not([type])');
+  var inp=null;
+  for(var i=0;i<inputs.length;i++){
+    var ph=(inputs[i].placeholder||'').toLowerCase();
+    if(ph.indexOf('barras')>=0||ph.indexOf('digo')>=0||ph.indexOf('ombre')>=0||ph.indexOf('buscar')>=0){inp=inputs[i];break}
+  }
+  if(!inp) inp=inputs[0]; // fallback primer input visible
+  if(!inp){setMsg('er','No se encontró el campo');return}
+  // Setter nativo de React
+  var nativeSetter=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value');
+  if(nativeSetter&&nativeSetter.set){nativeSetter.set.call(inp,val)}else{inp.value=val}
+  // Disparar eventos que React escucha
+  inp.dispatchEvent(new Event('input',{bubbles:true,cancelable:true}));
+  inp.dispatchEvent(new Event('change',{bubbles:true,cancelable:true}));
+  inp.focus();
+  // Simular Enter para que Streamlit procese el texto_input
+  setTimeout(function(){
+    inp.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
+    inp.dispatchEvent(new KeyboardEvent('keypress',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
+    inp.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
+  },80);
 }
 function doScan(){
   if(a){closeScan();return}
@@ -734,13 +754,6 @@ function closeScan(){
   document.getElementById('ov').className='';
 }
 </script></body></html>""", height=80)
-
-    # Scanner de cámara: viene por query_param sin necesidad de Enter
-    _lz_busq = st.query_params.get("lz_busq", "")
-    if _lz_busq:
-        try: del st.query_params["lz_busq"]
-        except: pass
-        st.session_state["busq"] = _lz_busq
 
     busqueda = st.text_input("Buscar", placeholder="Nombre, código o barras...",
                               label_visibility="collapsed", key="busq")
@@ -3489,22 +3502,21 @@ function getTa(){
 }
 function enviarTexto(texto){
   var ta=getTa();
-  if(!ta){setSt("er","No se encontró el campo de texto");return false}
-  try{Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set.call(ta,texto)}catch(e){ta.value=texto}
-  ta.dispatchEvent(new Event("input",{bubbles:true}));
-  ta.dispatchEvent(new Event("change",{bubbles:true}));
+  if(!ta){setSt("er","No se encontró el campo");return false}
+  // Setter nativo de React para textarea
+  var nativeSetter=Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,'value');
+  if(nativeSetter&&nativeSetter.set){nativeSetter.set.call(ta,texto)}else{ta.value=texto}
+  ta.dispatchEvent(new Event('input',{bubbles:true,cancelable:true}));
+  ta.dispatchEvent(new Event('change',{bubbles:true,cancelable:true}));
+  ta.focus();
+  // Click en botón Enviar (texto o ícono)
   setTimeout(function(){
-    var btns=window.parent.document.querySelectorAll("button");
+    var btns=window.parent.document.querySelectorAll('button');
     for(var i=0;i<btns.length;i++){
-      var t=(btns[i].innerText||btns[i].textContent||"").trim();
-      if(t.indexOf("Enviar")>=0){btns[i].click();break}
+      var t=(btns[i].innerText||btns[i].textContent||'').trim();
+      if(t.indexOf('Enviar')>=0||t==='➤ Enviar'){btns[i].click();return}
     }
-    setTimeout(function(){
-      var ta2=getTa();
-      if(ta2){try{Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set.call(ta2,"")}catch(e){ta2.value=""}
-      ta2.dispatchEvent(new Event("input",{bubbles:true}))}
-    },600);
-  },250);
+  },150);
   return true;
 }
 function hookEnter(){
