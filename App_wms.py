@@ -821,7 +821,7 @@ function closeScan(){
     if(inp._lzFvHook) return;
     inp._lzFvHook=true;
     inp.addEventListener('input',function(e){
-      var v=inp.value.replace(/[^\d]/g,'');  // solo dígitos
+      var v=inp.value.replace(/[^0-9]/g,'');  // solo dígitos
       if(v.length>=2){
         var mm=v.substring(0,2);
         var aa=v.substring(2,4);
@@ -2293,41 +2293,41 @@ if _show("🤖 ASISTENTE"):
         if _re.search(r'\b(historial|movimientos|movimiento|ultimos|ultimo|'
                        r'registro|que\s+paso|que\s+hicieron|que\s+hubo|'
                        r'bitacora|actividad|novedades|que\s+se\s+(hizo|movio))\b', n):
-            return 'historial'
+            return 'hist'
         # VENCIMIENTOS
-        if _re.search(r'\b(venc[eo]|vencen|vencidos|vencimiento|vencimientos|'
+        if _re.search(r'\b(venc[eo]|vencen|vencidos|vencimiento|vencimientos|urgente[s]?|pronto[sa]?|'
                        r'por\s+vencer|proximos\s+a\s+vencer|'
                        r'caducidad|caduca|caducan|expiran|expira|se\s+vencen)\b', n):
-            return 'vencimientos'
+            return 'venc'
         # BAJO STOCK
         if _re.search(r'\b(bajo\s+stock|poco\s+stock|poca\s+cantidad|'
                        r'se\s+acab[ao]|se\s+acabaron|quedan?\s+poco[sa]?|'
                        r'critico|sin\s+stock|agotado[sa]?|escaso[sa]?|minimo|'
                        r'(que|lo)\s+(nos\s+|me\s+)?falt[ao]|falta\s+reponer|'
                        r'necesitamos\s+reponer|hay\s+poco[sa]?|nos\s+quedamos\s+sin)\b', n):
-            return 'bajo_stock'
+            return 'bajo'
         # RESUMEN
         if _re.search(r'\b(resumen|todo\s+el\s+(inventario|stock)|panorama|balance|'
                        r'estado\s+del\s+inventario|como\s+estamos|inventario\s+completo)\b', n):
             return 'resumen'
         # TOP
         if _re.search(r'\b(top|ranking|mas\s+stock|mayor\s+stock|mas\s+cantidad|los\s+que\s+mas)\b', n):
-            return 'top_stock'
+            return 'top'
         # UBICACIONES
         if _re.search(r'\b(donde\s+est[ae]|donde\s+hay|donde\s+queda|donde\s+quedan|'
                        r'ubicacion|ubicaciones|en\s+que\s+lugar|en\s+que\s+estante|guardado|donde)\b', n):
-            return 'ubicaciones'
+            return 'ubic'
         # CONSULTA STOCK
         if _re.search(r'\b(cuanto[sa]?\s+(hay|queda[sn]?|tene[ms]?|tiene[ns]?)|'
                        r'cuanto\s+stock|stock\s+de|hay\s+de|quedan?\s+de|tenemos\s+de|'
                        r'hay\s+stock|existe|existencia|disponible|cuanto\s+(tenemos|tiene|hay))\b', n):
-            return 'consulta_stock'
+            return 'consulta'
         # PEDIDOS
         if _re.search(r'\b(pedido[s]?|orden(es)?|nube|pendiente[s]?)\b', n):
             return 'pedidos'
         # CÓDIGO DE BARRAS SOLO (EAN-13, UPC, QR largo) → consulta stock directa
         if _re.fullmatch(r'\d{7,13}', n.strip()):
-            return 'consulta_stock'
+            return 'consulta'
         return 'buscar'
 
     def _exec_salida(txt):
@@ -3522,6 +3522,7 @@ if _show("🤖 ASISTENTE"):
         if intent=='resumen':    return None, _resp_resumen()
         if intent=='hist':       return None, _resp_historial(txt_c, n)
         if intent=='pedidos':    return None, _resp_pedidos()
+        if intent=='consulta':  pass  # falls through to buscar_prod below
         if intent=='lista':
             r=_lista_cat(txt_c)
             if r: return None, r
@@ -3662,21 +3663,31 @@ function getTa(){
 }
 function enviarTexto(texto){
   var ta=getTa();
-  if(!ta){setSt("er","No se encontró el campo");return false}
-  // Setter nativo de React para textarea
-  var nativeSetter=Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,'value');
-  if(nativeSetter&&nativeSetter.set){nativeSetter.set.call(ta,texto)}else{ta.value=texto}
-  ta.dispatchEvent(new Event('input',{bubbles:true,cancelable:true}));
-  ta.dispatchEvent(new Event('change',{bubbles:true,cancelable:true}));
+  if(!ta){setSt("er","No se encontró el campo de texto");return false}
+  // Write value using React's internal setter
+  var nativeSet=Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set;
+  try{nativeSet.call(ta,texto)}catch(e){ta.value=texto}
+  // Fire input+change so React/Streamlit sees the new value
+  ta.dispatchEvent(new Event("input",{bubbles:true,composed:true}));
+  ta.dispatchEvent(new Event("change",{bubbles:true,composed:true}));
   ta.focus();
-  // Click en botón Enviar (texto o ícono)
+  // Press Enter — Streamlit textarea with on_change fires rerun on Enter
   setTimeout(function(){
-    var btns=window.parent.document.querySelectorAll('button');
-    for(var i=0;i<btns.length;i++){
-      var t=(btns[i].innerText||btns[i].textContent||'').trim();
-      if(t.indexOf('Enviar')>=0||t==='➤ Enviar'){btns[i].click();return}
-    }
-  },150);
+    ["keydown","keypress","keyup"].forEach(function(ev){
+      ta.dispatchEvent(new KeyboardEvent(ev,{
+        key:"Enter",code:"Enter",keyCode:13,which:13,
+        bubbles:true,cancelable:true,composed:true
+      }));
+    });
+    // Backup: click the ➤ Enviar button
+    setTimeout(function(){
+      var btns=window.parent.document.querySelectorAll("button");
+      for(var i=0;i<btns.length;i++){
+        var t=(btns[i].innerText||btns[i].textContent||"").trim();
+        if(t.indexOf("Enviar")>=0||t==="➤ Enviar"){btns[i].click();return}
+      }
+    },200);
+  },100);
   return true;
 }
 function hookEnter(){
