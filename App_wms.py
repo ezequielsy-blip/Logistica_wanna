@@ -297,6 +297,71 @@ div[data-testid="stSpinner"] { color: var(--primary) !important; }
 /* ── DIVIDER ── */
 hr { border-color: var(--border) !important; margin: 16px 0 !important; }
 
+/* ── ANDROID INPUTS ── */
+div[data-baseweb="input"] > div {
+    background: var(--surface) !important;
+    border: none !important;
+    border-bottom: 2px solid var(--border) !important;
+    border-radius: 10px 10px 0 0 !important;
+}
+div[data-baseweb="input"] > div:focus-within {
+    border-bottom-color: var(--primary) !important;
+    box-shadow: none !important;
+}
+div[data-baseweb="input"] input {
+    padding: 10px 14px 8px !important;
+    font-size: 16px !important;
+    caret-color: var(--primary) !important;
+}
+div[data-baseweb="select"] > div {
+    background: var(--surface) !important;
+    border: 1.5px solid var(--border) !important;
+    border-radius: 12px !important;
+    min-height: 48px !important;
+}
+div[data-baseweb="select"] > div:focus-within {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px rgba(59,130,246,.15) !important;
+}
+ul[role="listbox"] {
+    background: var(--surface2) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 14px !important;
+    padding: 6px !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,.4) !important;
+}
+li[role="option"] {
+    border-radius: 10px !important;
+    padding: 10px 14px !important;
+    font-size: 14px !important;
+    color: var(--text) !important;
+}
+li[role="option"]:hover, li[aria-selected="true"] {
+    background: rgba(59,130,246,.15) !important;
+    color: var(--primary) !important;
+}
+div[data-testid="stRadio"] > div {
+    background: var(--surface) !important;
+    border-radius: 14px !important;
+    padding: 4px !important;
+    border: 1px solid var(--border) !important;
+    gap: 4px !important;
+}
+div[data-testid="stRadio"] label {
+    border-radius: 10px !important;
+    padding: 8px 16px !important;
+    text-align: center !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
+}
+label[data-testid="stWidgetLabel"] p {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    color: var(--primary) !important;
+    letter-spacing: 1.2px !important;
+    text-transform: uppercase !important;
+}
+
 /* ── MAIN HEADER ── */
 .main-header {
     background: linear-gradient(135deg, rgba(29,78,216,0.4), rgba(6,182,212,0.1));
@@ -654,11 +719,40 @@ with tab_mov:
 
         lote_sel = None
         if not es_ingreso and lotes_prod:
-            opciones_lotes = [f"[{int(float(l.get('cantidad',0)))}] {l.get('ubicacion','')} — {l.get('fecha','')} — {l.get('deposito','')}"
+            opciones_lotes = [f"[{int(float(l.get('cantidad',0)))}u] {l.get('ubicacion','')} — {l.get('deposito','')} | Vto:{l.get('fecha','')}"
                               for l in lotes_prod]
             lote_idx = st.selectbox("LOTE A DESCONTAR:", range(len(opciones_lotes)),
                                     format_func=lambda i: opciones_lotes[i], key="lote_op")
             lote_sel = lotes_prod[lote_idx]
+
+            # ── CONFIRMACIÓN POR CÓDIGO DE BARRAS ────────────────────────
+            barras_prod = str(prod_sel.get('barras','') or prod_sel.get('cod_barras','') or '')
+            if barras_prod:
+                st.markdown(f"""
+                <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);
+                            border-radius:14px;padding:12px 14px;margin:8px 0">
+                  <div style="font-size:11px;font-weight:700;color:#10B981;letter-spacing:1px;
+                              text-transform:uppercase;margin-bottom:4px">
+                    📷 CONFIRMAR CON ESCÁNER</div>
+                  <div style="font-size:12px;color:#94A3B8">
+                    Escaneá el código <b style="color:#F1F5F9">{barras_prod}</b> para
+                    confirmar el producto antes de registrar.</div>
+                </div>""", unsafe_allow_html=True)
+                cod_confirm = st.text_input("",
+                    placeholder=f"Esperando código {barras_prod}...",
+                    label_visibility="collapsed", key="barras_confirm")
+                if cod_confirm.strip():
+                    if cod_confirm.strip() == barras_prod:
+                        st.success("✅ Código confirmado — producto correcto")
+                        st.session_state["_barras_ok"] = True
+                    else:
+                        st.error(f"❌ Código no coincide (esperado: {barras_prod})")
+                        st.session_state["_barras_ok"] = False
+            else:
+                st.session_state["_barras_ok"] = True
+
+        _barras_ok = st.session_state.get("_barras_ok", True if es_ingreso else None)
+        if es_ingreso: _barras_ok = True
 
         if st.button("✅ REGISTRAR OPERACIÓN", use_container_width=True, key="btn_reg"):
             if cantidad_op <= 0:
@@ -693,6 +787,7 @@ with tab_mov:
                                        cod_sel, prod_sel['nombre'], cantidad_op, ubi_final, usuario)
                     recalcular_maestra(cod_sel, inventario)
                     st.success("✅ Operación registrada correctamente.")
+                    st.session_state.pop("_barras_ok", None)
                     refrescar()
                 except Exception as e:
                     st.error(f"Error: {e}")
@@ -2885,12 +2980,17 @@ with tab_asist:
 
     if not st.session_state.bot_hist:
         st.markdown("""
-        <div style="text-align:center;padding:30px 10px 10px">
-            <div style="font-size:52px">📦</div>
-            <div style="font-size:16px;font-weight:700;color:#94A3B8;margin-top:10px">
-                Operario Digital listo para trabajar.</div>
-            <div style="font-size:13px;color:#64748B;margin-top:8px;line-height:2.2">
-                Hablame en lenguaje natural · Ejecuto movimientos reales · Sin límites
+        <div style="text-align:center;padding:40px 16px 20px">
+            <div style="width:80px;height:80px;background:linear-gradient(135deg,#1D4ED8,#06B6D4);
+                        border-radius:24px;margin:0 auto 16px;display:flex;align-items:center;
+                        justify-content:center;font-size:40px;
+                        box-shadow:0 8px 32px rgba(59,130,246,.4)">📦</div>
+            <div style="font-size:20px;font-weight:800;color:#F1F5F9;font-family:'Syne',sans-serif;
+                        letter-spacing:1px">OPERARIO DIGITAL</div>
+            <div style="font-size:13px;color:#10B981;font-weight:600;margin-top:6px">
+                ✅ Listo · Sin límites · Sin costos</div>
+            <div style="font-size:12px;color:#475569;margin-top:12px;line-height:1.9">
+                Escribí · Hablá · Escaneá
             </div>
         </div>""", unsafe_allow_html=True)
         sugerencias = [
@@ -2950,58 +3050,89 @@ with tab_asist:
 
     import streamlit.components.v1 as _stc
 
-    _stc.html("""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-body{background:transparent;padding:0 2px}
-#bar{display:flex;align-items:center;gap:12px;background:#1E293B;
-     border:1px solid #334155;border-radius:12px;padding:10px 16px}
-#micbtn{background:linear-gradient(135deg,#3B82F6,#06B6D4);color:#fff;border:none;
-        border-radius:50%;width:48px;height:48px;font-size:24px;cursor:pointer;flex-shrink:0;
-        transition:all .2s;display:flex;align-items:center;justify-content:center;
-        box-shadow:0 2px 8px rgba(59,130,246,.4)}
-#micbtn:hover{transform:scale(1.08)}
-#micbtn.rec{background:linear-gradient(135deg,#EF4444,#F59E0B);
-            animation:pu 1s infinite;box-shadow:0 2px 12px rgba(239,68,68,.5)}
-@keyframes pu{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{box-shadow:0 0 0 12px rgba(239,68,68,0)}}
-#mst{font-size:13px;color:#94A3B8;font-weight:600;flex:1;line-height:1.4}
-#mst.ok{color:#10B981}#mst.er{color:#EF4444}
-#mpv{display:none;font-size:12px;color:#93C5FD;margin-top:3px;line-height:1.3;word-break:break-word}
-#sbtn{width:100%;margin-top:8px;padding:13px 20px;border:none;border-radius:12px;
-      background:linear-gradient(135deg,#10B981,#059669);color:#fff;
-      font-size:15px;font-weight:800;cursor:pointer;letter-spacing:.3px;
-      box-shadow:0 3px 12px rgba(16,185,129,.5);transition:all .15s;display:none}
-#sbtn:hover{transform:translateY(-1px);box-shadow:0 5px 18px rgba(16,185,129,.6)}
-#sbtn:active{transform:translateY(0);opacity:.85}
+    _stc.html("""<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:transparent;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+.bar{display:flex;gap:8px;align-items:center;padding:4px 2px}
+.btn{border:none;border-radius:50%;width:46px;height:46px;font-size:22px;
+     cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+     transition:all .15s;-webkit-tap-highlight-color:transparent}
+.btn-mic{background:linear-gradient(135deg,#3B82F6,#06B6D4);
+         box-shadow:0 3px 10px rgba(59,130,246,.4)}
+.btn-mic.rec{background:linear-gradient(135deg,#EF4444,#F59E0B);
+             animation:pulse 1s infinite;box-shadow:0 3px 12px rgba(239,68,68,.5)}
+.btn-scan{background:linear-gradient(135deg,#10B981,#059669);
+          box-shadow:0 3px 10px rgba(16,185,129,.4)}
+.btn-scan.active{background:linear-gradient(135deg,#F59E0B,#EF4444)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}
+                 50%{box-shadow:0 0 0 10px rgba(239,68,68,0)}}
+.status{flex:1;font-size:12px;color:#94A3B8;font-weight:500;line-height:1.4;
+        min-height:28px;display:flex;align-items:center}
+.status.ok{color:#10B981}.status.er{color:#EF4444}.status.scan{color:#F59E0B}
+.preview{font-size:11px;color:#93C5FD;margin-top:2px;word-break:break-all;display:none}
+.send-btn{width:100%;margin-top:6px;padding:12px;border:none;border-radius:14px;
+          background:linear-gradient(135deg,#10B981,#059669);color:#fff;
+          font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.3px;
+          box-shadow:0 3px 12px rgba(16,185,129,.5);display:none;
+          -webkit-tap-highlight-color:transparent}
+/* Scanner overlay */
+#scanOverlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+             background:rgba(0,0,0,.92);z-index:9999;flex-direction:column;
+             align-items:center;justify-content:center;gap:12px}
+#scanOverlay.show{display:flex}
+#scanVideo{width:100%;max-width:320px;border-radius:16px;border:3px solid #10B981}
+#scanLine{width:100%;max-width:320px;height:3px;background:linear-gradient(90deg,transparent,#10B981,transparent);
+          animation:scanAnim 1.5s linear infinite;border-radius:2px}
+@keyframes scanAnim{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}
+#scanStatus{color:#F1F5F9;font-size:14px;font-weight:600;text-align:center}
+#scanClose{background:#EF4444;color:#fff;border:none;border-radius:12px;
+           padding:10px 28px;font-size:14px;font-weight:700;cursor:pointer;
+           -webkit-tap-highlight-color:transparent}
 </style></head><body>
-<div id="bar">
-  <button id="micbtn" onclick="togMic()">\U0001f3a4</button>
+<div class="bar">
+  <button class="btn btn-mic" id="micbtn" onclick="togMic()">🎤</button>
+  <button class="btn btn-scan" id="scanbtn" onclick="togScan()">📷</button>
   <div style="flex:1">
-    <div id="mst">Toca el microfono — se envia solo al terminar</div>
-    <div id="mpv"></div>
+    <div class="status" id="mst">Toca 🎤 para hablar · 📷 para escanear</div>
+    <div class="preview" id="mpv"></div>
   </div>
 </div>
-<button id="sbtn" onclick="enviarVoz()">\U0001f7e2\u00a0 ENVIAR MENSAJE DE VOZ</button>
+<button class="send-btn" id="sbtn" onclick="enviarVoz()">🟢&nbsp;ENVIAR</button>
+
+<!-- Scanner overlay -->
+<div id="scanOverlay">
+  <video id="scanVideo" autoplay playsinline muted></video>
+  <div id="scanLine"></div>
+  <div id="scanStatus">Apuntá el código de barras a la cámara</div>
+  <button id="scanClose" onclick="closeScan()">✕ Cerrar</button>
+</div>
+
 <script>
-var R=null,gr=false,tx="";
+var R=null,gr=false,tx="",scanStream=null,scanActive=false,scanInterval=null;
 function M(id){return document.getElementById(id)}
-function setMic(c,i){M("micbtn").className=c;M("micbtn").innerHTML=i}
-function setSt(c,t){M("mst").className=c;M("mst").textContent=t}
+function setMic(c,i){M("micbtn").className="btn btn-mic "+(c||"");M("micbtn").innerHTML=i||"🎤"}
+function setSt(c,t){M("mst").className="status "+(c||"");M("mst").textContent=t}
 function setPv(t){M("mpv").textContent=t;M("mpv").style.display=t?"block":"none"}
 function showSend(v){M("sbtn").style.display=v?"block":"none"}
+
 function getTa(){
   var all=window.parent.document.querySelectorAll("textarea");
   for(var i=0;i<all.length;i++){
     var p=all[i].placeholder||"";
-    if(p.indexOf("Escribi")>=0||p.indexOf("Enter")>=0) return all[i];
+    if(p.indexOf("Escrib")>=0||p.indexOf("Enter")>=0) return all[i];
   }
   for(var i=0;i<all.length;i++){if(!all[i].readOnly) return all[i]}
   return null;
 }
+
 function enviarTexto(texto){
   var ta=getTa();
-  if(!ta){setSt("er","No se encontro el cuadro de texto");return false}
+  if(!ta){setSt("er","No se encontró el cuadro de texto");return false}
   try{
-    Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set.call(ta,texto);
+    Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value")
+      .set.call(ta,texto);
   }catch(e){ta.value=texto}
   ta.dispatchEvent(new Event("input",{bubbles:true}));
   ta.dispatchEvent(new Event("change",{bubbles:true}));
@@ -3011,9 +3142,10 @@ function enviarTexto(texto){
       var t=(btns[i].innerText||btns[i].textContent||"").trim();
       if(t.indexOf("Enviar")>=0){btns[i].click();return}
     }
-  },200);
+  },250);
   return true;
 }
+
 function hookEnter(){
   var ta=getTa();
   if(ta&&!ta._lzHook){
@@ -3031,52 +3163,127 @@ function hookEnter(){
     },true);
   }
 }
+
+// ── MIC ──────────────────────────────────────────────────────────
 function togMic(){
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){setSt("er","Necesitas Chrome o Edge para el microfono");return}
+  if(!SR){setSt("er","Necesitás Chrome o Edge para el micrófono");return}
   if(gr){R.stop();return}
   tx="";showSend(false);setPv("");
   R=new SR();R.lang="es-AR";R.continuous=false;R.interimResults=true;R.maxAlternatives=1;
-  R.onstart=function(){gr=true;setMic("rec","\u23f9");setSt("ok","\U0001f534 Escuchando... toca para parar")};
+  R.onstart=function(){gr=true;setMic("rec","⏹");setSt("ok","🔴 Escuchando...")}
   R.onresult=function(e){
     var t="";for(var i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript;
-    tx=t;setPv("\U0001f4dd "+tx);showSend(!!tx);
+    tx=t;setPv("📝 "+tx);showSend(!!tx);
   };
   R.onerror=function(e){
-    var m={"not-allowed":"Permiso denegado — habilita el microfono en el navegador",
-           "no-speech":"No se escucho nada","network":"Error de red","audio-capture":"Sin microfono"};
-    setSt("er","\u274c "+(m[e.error]||e.error));gr=false;setMic("","\U0001f3a4");showSend(false);
+    var m={"not-allowed":"Permiso denegado — habilitá el micrófono",
+           "no-speech":"No se escuchó nada","network":"Error de red"};
+    setSt("er","❌ "+(m[e.error]||e.error));gr=false;setMic("","🎤");showSend(false);
   };
   R.onend=function(){
-    gr=false;setMic("","\U0001f3a4");
+    gr=false;setMic("","🎤");
     if(tx){
-      setSt("ok","\u2705 Grabado — enviando...");showSend(true);
+      setSt("ok","✅ Grabado — enviando...");showSend(true);
       setTimeout(function(){
         var ok=enviarTexto(tx);
-        if(ok){tx="";setPv("");showSend(false);setSt("","Toca el microfono")}
+        if(ok){tx="";setPv("");showSend(false);setSt("","Toca 🎤 para hablar · 📷 para escanear")}
       },300);
-    }else{setSt("","Toca el microfono");showSend(false)}
+    }else{setSt("","Toca 🎤 para hablar · 📷 para escanear");showSend(false)}
   };
   R.start();
 }
 function enviarVoz(){
-  if(!tx){setSt("er","Graba un mensaje primero");return}
+  if(!tx){setSt("er","Grabá un mensaje primero");return}
   setSt("ok","Enviando...");
-  if(enviarTexto(tx)){tx="";setPv("");showSend(false);setSt("","Toca el microfono")}
+  if(enviarTexto(tx)){tx="";setPv("");showSend(false);setSt("","Toca 🎤 para hablar · 📷 para escanear")}
 }
+
+// ── SCANNER ──────────────────────────────────────────────────────
+function togScan(){
+  if(scanActive){closeScan();return}
+  // Try BarcodeDetector first (Chrome Android)
+  if(!window.BarcodeDetector&&typeof ZXing==='undefined'){
+    // Fallback: use input type=text with focus (just show camera input)
+    var inp=document.createElement("input");
+    inp.type="text";inp.id="barcode_fallback";
+    inp.style.cssText="position:fixed;top:-100px;left:0;width:1px;height:1px;opacity:0";
+    inp.setAttribute("inputmode","numeric");
+    document.body.appendChild(inp);
+    inp.focus();
+    inp.addEventListener("change",function(){
+      var code=inp.value.trim();
+      if(code){
+        document.body.removeChild(inp);
+        setSt("ok","✅ Código: "+code);
+        setTimeout(function(){enviarTexto(code)},300);
+      }
+    });
+    setSt("scan","📷 Usá el lector físico o escribí el código");
+    return;
+  }
+  openCamera();
+}
+
+function openCamera(){
+  scanActive=true;
+  M("scanbtn").className="btn btn-scan active";
+  M("scanOverlay").className="show";
+  navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
+    .then(function(stream){
+      scanStream=stream;
+      M("scanVideo").srcObject=stream;
+      startDecoding();
+    })
+    .catch(function(e){
+      closeScan();
+      setSt("er","❌ Sin acceso a cámara: "+e.message);
+    });
+}
+
+function startDecoding(){
+  if(!window.BarcodeDetector){M("scanStatus").textContent="BarcodeDetector no disponible";return}
+  var det=new BarcodeDetector({formats:["ean_13","ean_8","code_128","code_39","upc_a","upc_e","qr_code"]});
+  scanInterval=setInterval(function(){
+    if(!scanActive) return;
+    det.detect(M("scanVideo")).then(function(codes){
+      if(codes.length>0){
+        var code=codes[0].rawValue;
+        closeScan();
+        setSt("ok","✅ Escaneado: "+code);
+        setTimeout(function(){enviarTexto(code)},400);
+      }
+    }).catch(function(){});
+  },400);
+}
+
+function closeScan(){
+  scanActive=false;
+  clearInterval(scanInterval);
+  if(scanStream){scanStream.getTracks().forEach(function(t){t.stop()});scanStream=null}
+  M("scanVideo").srcObject=null;
+  M("scanbtn").className="btn btn-scan";
+  M("scanOverlay").className="";
+  setSt("","Toca 🎤 para hablar · 📷 para escanear");
+}
+
 var _ht=0;
 function tryH(){hookEnter();if(!getTa()&&_ht<25){_ht++;setTimeout(tryH,400)}}
 tryH();
-</script></body></html>""", height=130)
+</script></body></html>""", height=145)
 
     # CSS textarea
     st.markdown("""<style>
-    .stTextArea textarea{background:#1E293B !important;color:#F1F5F9 !important;
-        border:1px solid #334155 !important;border-radius:12px !important;
-        font-size:15px !important;resize:none !important;padding:12px 16px !important}
-    .stTextArea textarea:focus{border-color:#3B82F6 !important;
-        box-shadow:0 0 0 2px rgba(59,130,246,.3) !important}
-    .stTextArea textarea::placeholder{color:#475569 !important}
+    .stTextArea textarea{
+        background:#1E293B !important;color:#F1F5F9 !important;
+        border:1.5px solid #334155 !important;border-radius:18px !important;
+        font-size:16px !important;resize:none !important;
+        padding:14px 18px !important;line-height:1.5 !important;
+        font-family:'DM Sans',sans-serif !important}
+    .stTextArea textarea:focus{
+        border-color:#3B82F6 !important;
+        box-shadow:0 0 0 3px rgba(59,130,246,.2) !important}
+    .stTextArea textarea::placeholder{color:#475569 !important;font-size:14px !important}
     </style>""", unsafe_allow_html=True)
 
     ic1, ic2 = st.columns([5, 1])
