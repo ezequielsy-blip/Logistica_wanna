@@ -647,7 +647,7 @@ def _show(name): return _cur == name
 # TAB MOVIMIENTOS
 # ═══════════════════════════════════════════════════════════════════════════════
 if _show("📦 MOVIMIENTOS"):
-    # Auto-clear buscador después de seleccionar
+    # Limpiar buscador solo DESPUÉS de registrar una operación (no al seleccionar)
     if st.session_state.pop("_clear_busq", False):
         st.session_state["busq"] = ""
 
@@ -695,35 +695,9 @@ video{width:90%;max-width:340px;border-radius:18px;border:3px solid #10B981}
 var s=null,a=false,iv=null;
 function setMsg(c,t){var el=document.getElementById('msg');el.className='msg '+(c||'');el.textContent=t}
 function writeAndSubmit(val){
-  // Find the "busqueda" text input (placeholder: "Nombre, código o barras...")
-  var all=window.parent.document.querySelectorAll('input[type="text"],input:not([type])');
-  var found=null;
-  for(var i=0;i<all.length;i++){
-    var p=all[i].placeholder||'';
-    if(p.indexOf('barras')>=0||p.indexOf('digo')>=0||p.indexOf('ombre')>=0){found=all[i];break}
-  }
-  if(!found){setMsg('er','No encontré el campo de búsqueda');return}
-  // Write value
-  try{Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value').set.call(found,val)}
-  catch(e){found.value=val}
-  found.dispatchEvent(new Event('input',{bubbles:true}));
-  found.dispatchEvent(new Event('change',{bubbles:true}));
-  found.focus();
-  // Send Enter — Streamlit picks this up on text_input
-  ['keydown','keypress','keyup'].forEach(function(ev){
-    found.dispatchEvent(new KeyboardEvent(ev,{
-      key:'Enter',code:'Enter',keyCode:13,which:13,
-      bubbles:true,cancelable:true,composed:true
-    }));
-  });
-  // Also try clicking the first button that appears after (fallback)
-  setTimeout(function(){
-    var btns=window.parent.document.querySelectorAll('button');
-    for(var i=0;i<btns.length;i++){
-      var t=(btns[i].textContent||'').trim();
-      if(t.indexOf('Seleccionar')>=0||t.indexOf('Ver')>=0){btns[i].click();return}
-    }
-  },500);
+  // Puente directo via query_param — Streamlit hace rerun sin presionar Enter
+  var base=window.parent.location.href.split('?')[0].split('#')[0];
+  window.parent.location.replace(base+'?lz_busq='+encodeURIComponent(val));
 }
 function doScan(){
   if(a){closeScan();return}
@@ -744,8 +718,8 @@ function doScan(){
           if(codes.length>0){
             var code=codes[0].rawValue;
             closeScan();
-            setMsg('ok','✅ '+code+' — buscando...');
-            writeAndSubmit(code);
+            setMsg('ok','✅ '+code);
+            setTimeout(function(){writeAndSubmit(code)},120);
           }
         }).catch(function(){});
       },350);
@@ -760,6 +734,13 @@ function closeScan(){
   document.getElementById('ov').className='';
 }
 </script></body></html>""", height=80)
+
+    # Scanner de cámara: viene por query_param sin necesidad de Enter
+    _lz_busq = st.query_params.get("lz_busq", "")
+    if _lz_busq:
+        try: del st.query_params["lz_busq"]
+        except: pass
+        st.session_state["busq"] = _lz_busq
 
     busqueda = st.text_input("Buscar", placeholder="Nombre, código o barras...",
                               label_visibility="collapsed", key="busq")
@@ -782,9 +763,7 @@ function closeScan(){
                                label_visibility="collapsed", key="sel_prod")
         prod_sel = productos_filtrados[sel_idx]
         cod_sel  = str(prod_sel['cod_int'])
-        if st.button("🔎 Seleccionar", use_container_width=True, key="btn_ver_prod"):
-            st.session_state["_clear_busq"] = True
-            st.rerun()
+        # Sin botón "Seleccionar" — el producto queda seleccionado directo al buscarlo
 
         lotes_prod = idx_inv.get(cod_sel, [])
         total_q    = sum(float(l.get('cantidad',0)) for l in lotes_prod)
@@ -1013,6 +992,7 @@ function closeScan(){{
                     recalcular_maestra(cod_sel, inventario)
                     st.success("✅ Operación registrada correctamente.")
                     st.session_state.pop("_barras_ok", None)
+                    st.session_state["_clear_busq"] = True
                     refrescar()
                 except Exception as e:
                     st.error(f"Error: {e}")
@@ -1054,6 +1034,7 @@ function closeScan(){{
                                            cant_mover, f"{lote_mover.get('ubicacion','')}→{ubi_nueva}", usuario)
                         recalcular_maestra(cod_sel, inventario)
                         st.success("✅ Movimiento realizado.")
+                        st.session_state["_clear_busq"] = True
                         refrescar()
                     except Exception as e:
                         st.error(f"Error: {e}")
