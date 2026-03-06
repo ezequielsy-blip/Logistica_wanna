@@ -647,8 +647,119 @@ def _show(name): return _cur == name
 # TAB MOVIMIENTOS
 # ═══════════════════════════════════════════════════════════════════════════════
 if _show("📦 MOVIMIENTOS"):
-    st.markdown('<p class="sec-label">🔍 BUSCAR PRODUCTO</p>', unsafe_allow_html=True)
-    busqueda = st.text_input("Buscar", placeholder="Nombre, código interno o barras...",
+    import streamlit.components.v1 as _stc_mov
+    st.markdown('''<div style="font-size:11px;font-weight:700;color:#3B82F6;
+        letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px">
+        🔍 BUSCAR PRODUCTO</div>''', unsafe_allow_html=True)
+
+    # Scanner que escribe y envía solo al input de búsqueda
+    _stc_mov.html("""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:transparent;font-family:-apple-system,sans-serif}
+.scanbar{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.scanbtn{background:linear-gradient(135deg,#10B981,#059669);color:#fff;border:none;
+         border-radius:12px;padding:10px 18px;font-size:13px;font-weight:700;
+         cursor:pointer;display:flex;align-items:center;gap:6px;
+         box-shadow:0 3px 10px rgba(16,185,129,.4);white-space:nowrap;
+         -webkit-tap-highlight-color:transparent}
+.scanbtn.active{background:linear-gradient(135deg,#EF4444,#F59E0B)}
+.scanst{font-size:12px;color:#94A3B8;font-weight:500}
+.scanst.ok{color:#10B981}.scanst.er{color:#EF4444}
+#scanOv{display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+        background:rgba(0,0,0,.94);z-index:9999;flex-direction:column;
+        align-items:center;justify-content:center;gap:14px}
+#scanOv.show{display:flex}
+#scanVid{width:90%;max-width:340px;border-radius:18px;border:3px solid #10B981}
+#scanLn{width:90%;max-width:340px;height:3px;
+        background:linear-gradient(90deg,transparent,#10B981,transparent);
+        animation:sa 1.5s linear infinite;border-radius:2px}
+@keyframes sa{0%{opacity:.2}50%{opacity:1}100%{opacity:.2}}
+#scanTxt{color:#F1F5F9;font-size:15px;font-weight:700;text-align:center;padding:0 20px}
+#closebtn{background:#EF4444;color:#fff;border:none;border-radius:14px;
+          padding:12px 32px;font-size:15px;font-weight:700;cursor:pointer}
+</style></head><body>
+<div class="scanbar">
+  <button class="scanbtn" id="sb" onclick="doScan()">📷 Escanear código</button>
+  <span class="scanst" id="ss">Listo</span>
+</div>
+<div id="scanOv">
+  <video id="scanVid" autoplay playsinline muted></video>
+  <div id="scanLn"></div>
+  <div id="scanTxt">Apuntá el código a la cámara</div>
+  <button id="closebtn" onclick="closeScan()">✕ Cerrar</button>
+</div>
+<script>
+var stream=null,active=false,iv=null;
+function getInput(){
+  var all=window.parent.document.querySelectorAll('input[type="text"],input:not([type])');
+  for(var i=0;i<all.length;i++){
+    var p=all[i].placeholder||'';
+    if(p.indexOf('digo')>=0||p.indexOf('barras')>=0||p.indexOf('Nombre')>=0) return all[i];
+  }
+  return all[0]||null;
+}
+function sendToInput(val){
+  var inp=getInput();
+  if(!inp) return;
+  try{
+    Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value')
+      .set.call(inp,val);
+  }catch(e){inp.value=val}
+  inp.dispatchEvent(new Event('input',{bubbles:true}));
+  inp.dispatchEvent(new Event('change',{bubbles:true}));
+  // Press Enter to search
+  setTimeout(function(){
+    inp.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:13,bubbles:true}));
+    inp.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',keyCode:13,bubbles:true}));
+  },150);
+}
+function setSt(c,t){var s=document.getElementById('ss');s.className='scanst '+(c||'');s.textContent=t}
+function doScan(){
+  if(active){closeScan();return}
+  if(!window.BarcodeDetector){
+    setSt('er','BarcodeDetector no disponible en este navegador');return;
+  }
+  active=true;
+  document.getElementById('sb').className='scanbtn active';
+  document.getElementById('sb').textContent='⏹ Detener';
+  document.getElementById('scanOv').className='show';
+  setSt('ok','Iniciando cámara...');
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}}})
+    .then(function(s){
+      stream=s;
+      document.getElementById('scanVid').srcObject=s;
+      var det=new BarcodeDetector({formats:['ean_13','ean_8','code_128','code_39','upc_a','upc_e','itf','qr_code']});
+      setSt('ok','🟢 Escaneando...');
+      iv=setInterval(function(){
+        if(!active) return;
+        det.detect(document.getElementById('scanVid')).then(function(codes){
+          if(codes.length>0){
+            var code=codes[0].rawValue;
+            closeScan();
+            setSt('ok','✅ '+code);
+            sendToInput(code);
+          }
+        }).catch(function(){});
+      },400);
+    })
+    .catch(function(e){closeScan();setSt('er','❌ '+e.message)});
+}
+function closeScan(){
+  active=false;clearInterval(iv);
+  if(stream){stream.getTracks().forEach(function(t){t.stop()});stream=null}
+  document.getElementById('scanVid').srcObject=null;
+  document.getElementById('sb').className='scanbtn';
+  document.getElementById('sb').innerHTML='📷 Escanear código';
+  document.getElementById('scanOv').className='';
+}
+</script></body></html>""", height=60)
+
+    # Auto-clear buscador después de seleccionar
+    if st.session_state.pop("_clear_busq", False):
+        st.session_state["busq"] = ""
+
+    busqueda = st.text_input("Buscar", placeholder="Nombre, código o barras...",
                               label_visibility="collapsed", key="busq")
 
     productos_filtrados = []
@@ -729,6 +840,84 @@ if _show("📦 MOVIMIENTOS"):
                     Escaneá el código <b style="color:#F1F5F9">{barras_prod}</b> para
                     confirmar el producto antes de registrar.</div>
                 </div>""", unsafe_allow_html=True)
+                import streamlit.components.v1 as _stc_desp
+                _stc_desp.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:transparent;font-family:-apple-system,sans-serif}}
+.sb{{background:linear-gradient(135deg,#10B981,#059669);color:#fff;border:none;
+     border-radius:12px;padding:10px 18px;font-size:13px;font-weight:700;width:100%;
+     cursor:pointer;-webkit-tap-highlight-color:transparent;margin-bottom:6px}}
+.sb.active{{background:linear-gradient(135deg,#EF4444,#F59E0B)}}
+.st{{font-size:12px;font-weight:600;text-align:center}}
+.st.ok{{color:#10B981}}.st.er{{color:#EF4444}}
+#ov{{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.94);
+     z-index:9999;flex-direction:column;align-items:center;justify-content:center;gap:14px}}
+#ov.show{{display:flex}}
+video{{width:90%;max-width:320px;border-radius:16px;border:3px solid #10B981}}
+#cl{{background:#EF4444;color:#fff;border:none;border-radius:12px;padding:10px 28px;
+     font-size:14px;font-weight:700;cursor:pointer}}
+</style></head><body>
+<button class="sb" id="sb" onclick="scan()">📷 Escanear para confirmar</button>
+<div class="st" id="st">Esperando código: <b>{barras_prod}</b></div>
+<div id="ov">
+  <video id="v" autoplay playsinline muted></video>
+  <div style="color:#F1F5F9;font-size:14px;font-weight:700">Buscando código...</div>
+  <button id="cl" onclick="close2()">✕ Cerrar</button>
+</div>
+<script>
+var s=null,a=false,iv=null,exp="{barras_prod}";
+function getInp(){{
+  var all=window.parent.document.querySelectorAll('input');
+  for(var i=0;i<all.length;i++){{
+    var p=all[i].placeholder||'';
+    if(p.indexOf('Esperando')>=0) return all[i];
+  }}
+  return null;
+}}
+function setVal(v){{
+  var inp=getInp(); if(!inp) return;
+  try{{Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value').set.call(inp,v)}}catch(e){{inp.value=v}}
+  inp.dispatchEvent(new Event('input',{{bubbles:true}}));
+  inp.dispatchEvent(new Event('change',{{bubbles:true}}));
+  // Press Enter
+  setTimeout(function(){{
+    inp.dispatchEvent(new KeyboardEvent('keydown',{{key:'Enter',keyCode:13,bubbles:true}}));
+  }},100);
+}}
+function scan(){{
+  if(a){{close2();return}}
+  if(!window.BarcodeDetector){{document.getElementById('st').className='st er';document.getElementById('st').textContent='BarcodeDetector no soportado';return}}
+  a=true;document.getElementById('sb').className='sb active';document.getElementById('sb').textContent='⏹ Detener';
+  document.getElementById('ov').className='show';
+  navigator.mediaDevices.getUserMedia({{video:{{facingMode:'environment'}}}})
+    .then(function(st){{
+      s=st;document.getElementById('v').srcObject=st;
+      var det=new BarcodeDetector({{formats:['ean_13','ean_8','code_128','code_39','upc_a','upc_e']}});
+      iv=setInterval(function(){{
+        if(!a) return;
+        det.detect(document.getElementById('v')).then(function(c){{
+          if(c.length>0){{
+            var code=c[0].rawValue; close2();
+            var ok=code===exp;
+            var el=document.getElementById('st');
+            el.className='st '+(ok?'ok':'er');
+            el.textContent=ok?'✅ Código correcto':'❌ No coincide: '+code+' (esperado: '+exp+')';
+            setVal(code);
+          }}
+        }}).catch(function(){{}});
+      }},400);
+    }}).catch(function(e){{close2();document.getElementById('st').className='st er';document.getElementById('st').textContent='❌ '+e.message}});
+}}
+function close2(){{
+  a=false;clearInterval(iv);
+  if(s){{s.getTracks().forEach(function(t){{t.stop()}});s=null}}
+  document.getElementById('v').srcObject=null;
+  document.getElementById('sb').className='sb';document.getElementById('sb').textContent='📷 Escanear para confirmar';
+  document.getElementById('ov').className='';
+}}
+</script></body></html>""", height=80)
+
                 cod_confirm = st.text_input("",
                     placeholder=f"Esperando código {barras_prod}...",
                     label_visibility="collapsed", key="barras_confirm")
@@ -745,7 +934,153 @@ if _show("📦 MOVIMIENTOS"):
         _barras_ok = st.session_state.get("_barras_ok", True if es_ingreso else None)
         if es_ingreso: _barras_ok = True
 
-        if st.button("✅ REGISTRAR OPERACIÓN", use_container_width=True, key="btn_reg"):
+        # ── SCANNER DE CONFIRMACIÓN (siempre visible en SALIDA, independiente del campo barras)
+        _do_register = False
+        if not es_ingreso and lote_sel:
+            _bc = str(prod_sel.get('barras','') or prod_sel.get('cod_barras','') or '').strip()
+
+            # Card del scanner
+            import streamlit.components.v1 as _stc_sal
+            _exp_js = _bc if _bc else "__SIN_CODIGO__"
+            _stc_sal.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,sans-serif}}
+body{{background:transparent}}
+.wrap{{background:#1E293B;border:1.5px solid #334155;border-radius:16px;
+       padding:14px 16px;margin:4px 0}}
+.title{{font-size:10px;font-weight:800;color:#3B82F6;letter-spacing:1.5px;
+        text-transform:uppercase;margin-bottom:10px}}
+.scanbtn{{width:100%;background:linear-gradient(135deg,#3B82F6,#06B6D4);color:#fff;
+          border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:700;
+          cursor:pointer;-webkit-tap-highlight-color:transparent;
+          box-shadow:0 4px 14px rgba(59,130,246,.4);margin-bottom:8px}}
+.scanbtn:active{{opacity:.85;transform:scale(.98)}}
+.scanbtn.active{{background:linear-gradient(135deg,#EF4444,#F59E0B)}}
+.info{{font-size:12px;color:#94A3B8;text-align:center}}
+.status{{font-size:13px;font-weight:700;text-align:center;padding:8px;
+         border-radius:10px;margin-top:6px;display:none}}
+.status.ok{{background:rgba(16,185,129,.15);color:#10B981;display:block;
+            border:1px solid rgba(16,185,129,.3)}}
+.status.er{{background:rgba(239,68,68,.15);color:#EF4444;display:block;
+            border:1px solid rgba(239,68,68,.3)}}
+#ov{{display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+     background:rgba(0,0,0,.96);z-index:9999;flex-direction:column;
+     align-items:center;justify-content:center;gap:16px}}
+#ov.show{{display:flex}}
+video{{width:90%;max-width:340px;border-radius:18px;border:3px solid #3B82F6}}
+.ln{{width:90%;max-width:340px;height:3px;
+     background:linear-gradient(90deg,transparent,#3B82F6,transparent);
+     animation:sc 1.4s ease-in-out infinite;border-radius:2px}}
+@keyframes sc{{0%,100%{{opacity:.2}}50%{{opacity:1}}}}
+.ov-txt{{color:#F1F5F9;font-size:14px;font-weight:700;text-align:center;padding:0 20px}}
+.closebtn{{background:#EF4444;color:#fff;border:none;border-radius:14px;
+           padding:12px 36px;font-size:14px;font-weight:700;cursor:pointer}}
+</style></head><body>
+<div class="wrap">
+  <div class="title">📷 CONFIRMAR CON ESCÁNER</div>
+  {"<div class='info' style='margin-bottom:8px'>Código esperado: <b style='color:#F1F5F9'>" + _bc + "</b></div>" if _bc else "<div class='info' style='margin-bottom:8px;color:#F59E0B'>⚠️ Este producto no tiene código de barras cargado</div>"}
+  <button class="scanbtn" id="sb" onclick="doScan()">📷 Escanear producto</button>
+  <div class="status" id="st"></div>
+</div>
+<div id="ov">
+  <video id="v" autoplay playsinline muted></video>
+  <div class="ln"></div>
+  <div class="ov-txt">Apuntá el código de barras a la cámara</div>
+  <button class="closebtn" onclick="closeScan()">✕ Cerrar</button>
+</div>
+<script>
+var s=null,a=false,iv=null,exp="{_exp_js}";
+function getInp(){{
+  var all=window.parent.document.querySelectorAll('input');
+  for(var i=0;i<all.length;i++){{
+    var p=all[i].placeholder||'';
+    if(p.indexOf('Esperando')>=0||p.indexOf('código')>=0) return all[i];
+  }}
+  // fallback: last visible input
+  var vis=[]; for(var i=0;i<all.length;i++) if(!all[i].readOnly&&all[i].type!='hidden') vis.push(all[i]);
+  return vis.length?vis[vis.length-1]:null;
+}}
+function setResult(code){{
+  var inp=getInp();
+  if(inp){{
+    try{{Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value').set.call(inp,code)}}catch(e){{inp.value=code}}
+    inp.dispatchEvent(new Event('input',{{bubbles:true}}));
+    inp.dispatchEvent(new Event('change',{{bubbles:true}}));
+    setTimeout(function(){{inp.dispatchEvent(new KeyboardEvent('keydown',{{key:'Enter',keyCode:13,bubbles:true}}))}},150);
+  }}
+  // Update status UI
+  var ok = (exp==='__SIN_CODIGO__') ? true : (code===exp);
+  var el=document.getElementById('st');
+  el.className='status '+(ok?'ok':'er');
+  el.textContent=ok?'✅ Correcto: '+code:'❌ No coincide: '+code+(exp!=='__SIN_CODIGO__'?' (esperado: '+exp+')':'');
+}}
+function doScan(){{
+  if(a){{closeScan();return}}
+  if(!window.BarcodeDetector){{
+    document.getElementById('st').className='status er';
+    document.getElementById('st').textContent='❌ Usá el lector físico o escribí el código abajo';
+    return;
+  }}
+  a=true;
+  document.getElementById('sb').className='scanbtn active';
+  document.getElementById('sb').textContent='⏹ Detener';
+  document.getElementById('ov').className='show';
+  navigator.mediaDevices.getUserMedia({{video:{{facingMode:'environment',width:{{ideal:1280}}}}}})
+    .then(function(st){{
+      s=st; document.getElementById('v').srcObject=st;
+      var det=new BarcodeDetector({{formats:['ean_13','ean_8','code_128','code_39','upc_a','upc_e','itf']}});
+      iv=setInterval(function(){{
+        if(!a) return;
+        det.detect(document.getElementById('v')).then(function(c){{
+          if(c.length>0){{closeScan();setResult(c[0].rawValue);}}
+        }}).catch(function(){{}});
+      }},350);
+    }}).catch(function(e){{closeScan();document.getElementById('st').className='status er';document.getElementById('st').textContent='❌ Sin acceso a cámara: '+e.message}});
+}}
+function closeScan(){{
+  a=false;clearInterval(iv);
+  if(s){{s.getTracks().forEach(function(t){{t.stop()}});s=null}}
+  document.getElementById('v').srcObject=null;
+  document.getElementById('sb').className='scanbtn';
+  document.getElementById('sb').textContent='📷 Escanear producto';
+  document.getElementById('ov').className='';
+}}
+</script></body></html>""", height=150)
+
+            # Campo de texto para lector físico o entrada manual de código
+            cod_confirm = st.text_input("",
+                placeholder="O escribí / escaneá el código acá...",
+                label_visibility="collapsed", key="barras_confirm")
+
+            if cod_confirm.strip():
+                if not _bc:
+                    # Sin código en BD → cualquier scan confirma
+                    st.session_state["_barras_ok"] = True
+                elif cod_confirm.strip() == _bc:
+                    st.session_state["_barras_ok"] = True
+                else:
+                    st.session_state["_barras_ok"] = False
+                _barras_ok = st.session_state.get("_barras_ok")
+
+            # Botones — SIEMPRE visible el manual, escáner habilitado solo si confirmó
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                _scan_disabled = not (_barras_ok is True)
+                _label_scan = "✅ DESCONTAR" if _barras_ok is True else "🔒 Escaneá primero"
+                if st.button(_label_scan, use_container_width=True,
+                             key="btn_reg", disabled=_scan_disabled,
+                             type="primary"):
+                    _do_register = True
+            with col_b2:
+                if st.button("🖐 DESCONTAR MANUAL", use_container_width=True,
+                             key="btn_reg_manual"):
+                    _do_register = True
+        else:
+            if st.button("✅ REGISTRAR OPERACIÓN", use_container_width=True,
+                         key="btn_reg", type="primary"):
+                _do_register = True
+
+        if _do_register:
             if cantidad_op <= 0:
                 st.error("Cantidad debe ser mayor a 0.")
             elif es_ingreso and not fecha_op.strip():
@@ -3012,21 +3347,7 @@ if _show("🤖 ASISTENTE"):
                     cls = "msg-ok" if msg.get("ok") else "msg-err"
                     st.markdown(f'<div class="{cls}">⚡ {msg["accion_log"]}</div>', unsafe_allow_html=True)
 
-    # ── BOTONES RÁPIDOS ───────────────────────────────────────────────────────
-    if st.session_state.bot_hist:
-        st.markdown("<br>", unsafe_allow_html=True)
-        qc = st.columns(5)
-        for i, (lbl, preg) in enumerate([
-            ("📉 Bajo stock",  "Productos con menos de 10 unidades"),
-            ("📦 Resumen",     "Resumen del inventario"),
-            ("📋 Historial",   "Últimos 15 movimientos"),
-            ("📍 Ubicaciones", "Mostrame todas las ubicaciones"),
-            ("⏰ Por vencer",  "Lotes por vencer"),
-        ]):
-            with qc[i]:
-                if st.button(lbl, use_container_width=True, key=f"qr_{i}"):
-                    st.session_state._bot_quick = preg
-                    st.rerun()
+    # botones rápidos eliminados
 
     _quick = st.session_state.pop("_bot_quick", None)
 
@@ -3131,11 +3452,20 @@ function enviarTexto(texto){
   ta.dispatchEvent(new Event("input",{bubbles:true}));
   ta.dispatchEvent(new Event("change",{bubbles:true}));
   setTimeout(function(){
+    // Click Enviar
     var btns=window.parent.document.querySelectorAll("button");
     for(var i=0;i<btns.length;i++){
       var t=(btns[i].innerText||btns[i].textContent||"").trim();
-      if(t.indexOf("Enviar")>=0){btns[i].click();return}
+      if(t.indexOf("Enviar")>=0){btns[i].click();break}
     }
+    // Limpiar textarea después
+    setTimeout(function(){
+      var ta2=getTa();
+      if(ta2){
+        try{Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set.call(ta2,"");}catch(e){ta2.value=""}
+        ta2.dispatchEvent(new Event("input",{bubbles:true}));
+      }
+    },600);
   },250);
   return true;
 }
@@ -3244,8 +3574,12 @@ function startDecoding(){
       if(codes.length>0){
         var code=codes[0].rawValue;
         closeScan();
-        setSt("ok","✅ Escaneado: "+code);
-        setTimeout(function(){enviarTexto(code)},400);
+        setSt("ok","✅ "+code+" — enviando...");
+        setTimeout(function(){
+          enviarTexto(code);
+          // Limpiar status después de enviar
+          setTimeout(function(){setSt("","Toca 🎤 para hablar · 📷 para escanear")},2000);
+        },300);
       }
     }).catch(function(){});
   },400);
