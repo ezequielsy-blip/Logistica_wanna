@@ -1292,52 +1292,193 @@ if _show("🚚 DESPACHO"):
                 </div>
                 """, unsafe_allow_html=True)
 
-            lote_ops = [f"[{int(float(l.get('cantidad',0)))}] {l.get('ubicacion','')} — {l.get('fecha','')} — {l.get('deposito','')}"
+            lote_ops = [f"[{int(float(l.get('cantidad',0)))}u] {l.get('ubicacion','')} — {l.get('deposito','')} — {l.get('fecha','')}"
                         for l in lotes_d]
             idx_ld = st.selectbox("Lote a descontar:", range(len(lote_ops)),
                                   format_func=lambda i: lote_ops[i], key="lote_desp")
             lote_d = lotes_d[idx_ld]
 
-            if rol in ("admin", "operario") and st.button("✅ DESCONTAR DEL LOTE", use_container_width=True, key="btn_desc"):
-                cant_p = float(item_sel['cant'])
-                cant_l = float(lote_d.get('cantidad', 0))
-                try:
-                    if cant_l <= cant_p:
-                        sb.table("inventario").delete().eq("id", lote_d['id']).execute()
-                        pendiente = cant_p - cant_l
-                        if pendiente > 0:
-                            st.session_state.pedido[idx_desp]['cant'] = int(pendiente)
-                            registrar_historial("SALIDA", cod_d, item_sel['nombre'], cant_l, lote_d.get('ubicacion',''), usuario)
-                            recalcular_maestra(cod_d, inventario)
-                            st.warning(f"Lote agotado. Quedan {int(pendiente)} uds pendientes.")
-                            refrescar(); st.rerun()
-                        else:
-                            st.session_state.pedido.pop(idx_desp)
-                    else:
-                        nq = cant_l - cant_p
-                        sb.table("inventario").update({"cantidad": nq}).eq("id", lote_d['id']).execute()
-                        st.session_state.pedido.pop(idx_desp)
+            # ── SCANNER DE CONFIRMACIÓN ─────────────────────────────────────────
+            if rol in ("admin", "operario"):
+                import streamlit.components.v1 as _stc_pick
+                _cod_d_barras = str(
+                    next((p.get('barras','') or p.get('cod_barras','')
+                          for p in maestra if str(p.get('cod_int','')) == cod_d), '') or ''
+                ).strip()
+                _exp_pick = _cod_d_barras if _cod_d_barras else "__SIN_CODIGO__"
 
-                    registrar_historial("SALIDA", cod_d, item_sel['nombre'], cant_p, lote_d.get('ubicacion',''), usuario)
-                    recalcular_maestra(cod_d, inventario)
-                    _ped_id = item_sel.get('ped_id')
-                    if _ped_id:
-                        try:
-                            import json as _j2
-                            _items_rest = [{"cod_int":it['cod'],"cantidad":it['cant'],"nombre":it['nombre']}
-                                           for it in st.session_state.pedido]
-                            if _items_rest:
-                                sb.table("pedidos").update({
-                                    "items": _j2.dumps(_items_rest), "estado": "en_proceso"
-                                }).eq("id", _ped_id).execute()
+                # Capturar resultado del scanner via query_param
+                _qpick = st.query_params.get("lz_pick", "")
+                if _qpick:
+                    try: del st.query_params["lz_pick"]
+                    except: pass
+                    if _qpick == "__MANUAL__":
+                        # Descontar directo sin verificar
+                        st.session_state["_pick_ok"] = "__MANUAL__"
+                    elif not _cod_d_barras or _qpick.strip() == _cod_d_barras:
+                        st.session_state["_pick_ok"] = "OK"
+                    else:
+                        st.session_state["_pick_ok"] = "FAIL:" + _qpick.strip()
+
+                _pick_state = st.session_state.get("_pick_ok", None)
+
+                # Limpiar estado si cambió el ítem seleccionado
+                if st.session_state.get("_pick_item") != idx_desp:
+                    st.session_state["_pick_ok"] = None
+                    st.session_state["_pick_item"] = idx_desp
+                    _pick_state = None
+
+                _stc_pick.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,sans-serif}}
+body{{background:transparent}}
+.row{{display:flex;gap:8px;margin-top:8px}}
+.btn{{flex:1;border:none;border-radius:14px;padding:14px 10px;font-size:14px;
+      font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent;
+      display:flex;align-items:center;justify-content:center;gap:6px}}
+.btn-scan{{background:linear-gradient(135deg,#3B82F6,#06B6D4);color:#fff;
+           box-shadow:0 4px 14px rgba(59,130,246,.4)}}
+.btn-manual{{background:#263347;color:#94A3B8;border:1.5px solid #334155}}
+.btn-scan.active{{background:linear-gradient(135deg,#EF4444,#F59E0B)}}
+.st{{font-size:12px;font-weight:700;text-align:center;padding:7px 10px;
+     border-radius:10px;margin-top:6px;display:none}}
+.st.ok{{background:rgba(16,185,129,.15);color:#10B981;display:block;border:1px solid rgba(16,185,129,.3)}}
+.st.er{{background:rgba(239,68,68,.15);color:#EF4444;display:block;border:1px solid rgba(239,68,68,.3)}}
+#ov{{display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+     background:rgba(0,0,0,.96);z-index:9999;flex-direction:column;
+     align-items:center;justify-content:center;gap:16px}}
+#ov.show{{display:flex}}
+video{{width:90%;max-width:340px;border-radius:18px;border:3px solid #3B82F6}}
+.ln{{width:90%;max-width:340px;height:3px;
+     background:linear-gradient(90deg,transparent,#3B82F6,transparent);
+     animation:sc 1.4s ease-in-out infinite}}
+@keyframes sc{{0%,100%{{opacity:.2}}50%{{opacity:1}}}}
+.cl{{background:#EF4444;color:#fff;border:none;border-radius:14px;
+     padding:12px 36px;font-size:15px;font-weight:700;cursor:pointer}}
+.ov-info{{color:#94A3B8;font-size:12px;text-align:center;padding:0 20px}}
+</style></head><body>
+{"<div style='font-size:11px;color:#F59E0B;font-weight:600;text-align:center;padding:4px 0'>⚠️ Sin código cargado — cualquier escaneo confirma</div>" if not _cod_d_barras else f"<div style='font-size:11px;color:#94A3B8;text-align:center;padding:4px 0'>Código esperado: <b style=\'color:#F1F5F9\'>{_cod_d_barras}</b></div>"}
+<div class="row">
+  <button class="btn btn-scan" id="sb" onclick="doScan()">📷 Escanear</button>
+  <button class="btn btn-manual" onclick="sendManual()">🖐 Manual</button>
+</div>
+<div class="st" id="st"></div>
+<div id="ov">
+  <video id="vid" autoplay playsinline muted></video>
+  <div class="ln"></div>
+  <div class="ov-info">Apuntá el código — se ejecuta automáticamente al leer</div>
+  <button class="cl" onclick="closeScan()">✕ Cerrar</button>
+</div>
+<script>
+var s=null,a=false,iv=null,exp="{_exp_pick}";
+function setQP(val){{
+  var url=new URL(window.parent.location.href);
+  url.searchParams.set('lz_pick',val);
+  window.parent.history.replaceState(null,'',url.toString());
+  // Trigger Streamlit rerun by clicking a hidden button or changing an input
+  var btns=window.parent.document.querySelectorAll('button');
+  for(var i=0;i<btns.length;i++){{
+    var t=(btns[i].textContent||'').trim();
+    if(t.indexOf('DESCONTAR')>=0||t.indexOf('descontar')>=0){{btns[i].click();return}}
+  }}
+}}
+function sendManual(){{
+  document.getElementById('st').className='st ok';
+  document.getElementById('st').textContent='🖐 Manual — ejecutando...';
+  setQP('__MANUAL__');
+}}
+function doScan(){{
+  if(a){{closeScan();return}}
+  if(!window.BarcodeDetector){{
+    document.getElementById('st').className='st er';
+    document.getElementById('st').textContent='❌ BarcodeDetector no soportado — usá el botón Manual';
+    return;
+  }}
+  a=true;
+  document.getElementById('sb').className='btn btn-scan active';
+  document.getElementById('sb').innerHTML='⏹ Detener';
+  document.getElementById('ov').className='show';
+  navigator.mediaDevices.getUserMedia({{video:{{facingMode:'environment',width:{{ideal:1920}}}}}})
+    .then(function(st2){{
+      s=st2;document.getElementById('vid').srcObject=st2;
+      var det=new BarcodeDetector({{formats:['ean_13','ean_8','code_128','code_39','upc_a','upc_e','itf']}});
+      iv=setInterval(function(){{
+        if(!a) return;
+        det.detect(document.getElementById('vid')).then(function(c){{
+          if(c.length>0){{
+            var code=c[0].rawValue;
+            closeScan();
+            var ok=(exp==='__SIN_CODIGO__')||(code===exp);
+            var el=document.getElementById('st');
+            if(ok){{
+              el.className='st ok';
+              el.textContent='✅ '+code+' — ejecutando descuento...';
+              setTimeout(function(){{setQP(code)}},400);
+            }}else{{
+              el.className='st er';
+              el.textContent='❌ No coincide: '+code+' (esperado: {_cod_d_barras if _cod_d_barras else "cualquiera"})';
+            }}
+          }}
+        }}).catch(function(){{}});
+      }},350);
+    }}).catch(function(e){{closeScan();document.getElementById('st').className='st er';document.getElementById('st').textContent='❌ '+e.message}});
+}}
+function closeScan(){{
+  a=false;clearInterval(iv);
+  if(s){{s.getTracks().forEach(function(t){{t.stop()}});s=null}}
+  document.getElementById('vid').srcObject=null;
+  document.getElementById('sb').className='btn btn-scan';
+  document.getElementById('sb').innerHTML='📷 Escanear';
+  document.getElementById('ov').className='';
+}}
+</script></body></html>""", height=120)
+
+                # Ejecutar si pick_state es OK o MANUAL
+                _do_pick = (_pick_state in ("OK", "__MANUAL__"))
+
+                if _do_pick:
+                    st.session_state.pop("_pick_ok", None)
+                    cant_p = float(item_sel['cant'])
+                    cant_l = float(lote_d.get('cantidad', 0))
+                    try:
+                        if cant_l <= cant_p:
+                            sb.table("inventario").delete().eq("id", lote_d['id']).execute()
+                            pendiente = cant_p - cant_l
+                            if pendiente > 0:
+                                st.session_state.pedido[idx_desp]['cant'] = int(pendiente)
+                                registrar_historial("SALIDA", cod_d, item_sel['nombre'], cant_l, lote_d.get('ubicacion',''), usuario)
+                                recalcular_maestra(cod_d, inventario)
+                                st.warning(f"Lote agotado. Quedan {int(pendiente)} uds pendientes.")
+                                refrescar(); st.rerun()
                             else:
-                                sb.table("pedidos").update({"estado":"completado"}).eq("id", _ped_id).execute()
-                            cargar_pedidos_nube.clear()
-                        except: pass
-                    st.success(f"✅ {item_sel['nombre']} — {int(cant_p)} uds descontadas.")
-                    refrescar(); st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                                st.session_state.pedido.pop(idx_desp)
+                        else:
+                            nq = cant_l - cant_p
+                            sb.table("inventario").update({"cantidad": nq}).eq("id", lote_d['id']).execute()
+                            st.session_state.pedido.pop(idx_desp)
+
+                        registrar_historial("SALIDA", cod_d, item_sel['nombre'], cant_p, lote_d.get('ubicacion',''), usuario)
+                        recalcular_maestra(cod_d, inventario)
+                        _ped_id = item_sel.get('ped_id')
+                        if _ped_id:
+                            try:
+                                import json as _j2
+                                _items_rest = [{"cod_int":it['cod'],"cantidad":it['cant'],"nombre":it.get('nombre','')} for it in st.session_state.pedido]
+                                if _items_rest:
+                                    sb.table("pedidos").update({"items": _j2.dumps(_items_rest), "estado": "en_proceso"}).eq("id", _ped_id).execute()
+                                else:
+                                    sb.table("pedidos").update({"estado":"completado"}).eq("id", _ped_id).execute()
+                                cargar_pedidos_nube.clear()
+                            except: pass
+                        st.success(f"✅ {item_sel['nombre']} — {int(cant_p)} uds descontadas.")
+                        refrescar(); st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
+                elif _pick_state and _pick_state.startswith("FAIL:"):
+                    st.error(f"❌ Código incorrecto: {_pick_state[5:]} — usá el botón Manual si querés descontar igual")
+
         else:
             st.warning(f"⚠️ Sin stock disponible para {item_sel['nombre']}.")
 
@@ -3228,16 +3369,7 @@ if _show("🤖 ASISTENTE"):
                 Escribí · Hablá · Escaneá
             </div>
         </div>""", unsafe_allow_html=True)
-        sugerencias = [
-            "¿Cuánto hay del código 147?",
-            "Resumen del inventario",
-            "Productos con bajo stock",
-            "Lotes por vencer",
-        ]
-        for i, s in enumerate(sugerencias):
-            if st.button(s, use_container_width=True, key=f"sug_{i}"):
-                st.session_state._bot_quick = s
-                st.rerun()
+
     else:
         for msg in st.session_state.bot_hist:
             if msg["rol"] == "user":
@@ -3273,60 +3405,55 @@ if _show("🤖 ASISTENTE"):
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:transparent;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-.bar{display:flex;gap:8px;align-items:center;padding:4px 2px}
-.btn{border:none;border-radius:50%;width:46px;height:46px;font-size:22px;
+.bar{display:flex;gap:6px;align-items:center}
+.btn{border:none;border-radius:50%;width:48px;height:48px;font-size:22px;
      cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-     transition:all .15s;-webkit-tap-highlight-color:transparent}
+     -webkit-tap-highlight-color:transparent;transition:all .15s}
 .btn-mic{background:linear-gradient(135deg,#3B82F6,#06B6D4);
          box-shadow:0 3px 10px rgba(59,130,246,.4)}
 .btn-mic.rec{background:linear-gradient(135deg,#EF4444,#F59E0B);
-             animation:pulse 1s infinite;box-shadow:0 3px 12px rgba(239,68,68,.5)}
+             animation:pulse 1s infinite}
 .btn-scan{background:linear-gradient(135deg,#10B981,#059669);
           box-shadow:0 3px 10px rgba(16,185,129,.4)}
 .btn-scan.active{background:linear-gradient(135deg,#F59E0B,#EF4444)}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}
                  50%{box-shadow:0 0 0 10px rgba(239,68,68,0)}}
-.status{flex:1;font-size:12px;color:#94A3B8;font-weight:500;line-height:1.4;
-        min-height:28px;display:flex;align-items:center}
+.status{flex:1;font-size:11px;color:#94A3B8;font-weight:500;line-height:1.4;
+        min-height:20px;display:flex;align-items:center}
 .status.ok{color:#10B981}.status.er{color:#EF4444}.status.scan{color:#F59E0B}
 .preview{font-size:11px;color:#93C5FD;margin-top:2px;word-break:break-all;display:none}
-.send-btn{width:100%;margin-top:6px;padding:12px;border:none;border-radius:14px;
+.send-btn{width:100%;margin-top:6px;padding:11px;border:none;border-radius:14px;
           background:linear-gradient(135deg,#10B981,#059669);color:#fff;
-          font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.3px;
-          box-shadow:0 3px 12px rgba(16,185,129,.5);display:none;
+          font-size:14px;font-weight:700;cursor:pointer;display:none;
           -webkit-tap-highlight-color:transparent}
-/* Scanner overlay */
 #scanOverlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;
-             background:rgba(0,0,0,.92);z-index:9999;flex-direction:column;
-             align-items:center;justify-content:center;gap:12px}
+             background:rgba(0,0,0,.94);z-index:9999;flex-direction:column;
+             align-items:center;justify-content:center;gap:14px}
 #scanOverlay.show{display:flex}
-#scanVideo{width:100%;max-width:320px;border-radius:16px;border:3px solid #10B981}
-#scanLine{width:100%;max-width:320px;height:3px;background:linear-gradient(90deg,transparent,#10B981,transparent);
-          animation:scanAnim 1.5s linear infinite;border-radius:2px}
-@keyframes scanAnim{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}
-#scanStatus{color:#F1F5F9;font-size:14px;font-weight:600;text-align:center}
+#scanVideo{width:90%;max-width:320px;border-radius:16px;border:3px solid #10B981}
+#scanLine{width:90%;max-width:320px;height:3px;
+          background:linear-gradient(90deg,transparent,#10B981,transparent);
+          animation:sc 1.4s ease-in-out infinite}
+@keyframes sc{0%,100%{opacity:.2}50%{opacity:1}}
+#scanStatus{color:#F1F5F9;font-size:14px;font-weight:700;text-align:center;padding:0 20px}
 #scanClose{background:#EF4444;color:#fff;border:none;border-radius:12px;
-           padding:10px 28px;font-size:14px;font-weight:700;cursor:pointer;
-           -webkit-tap-highlight-color:transparent}
+           padding:10px 28px;font-size:14px;font-weight:700;cursor:pointer}
 </style></head><body>
 <div class="bar">
   <button class="btn btn-mic" id="micbtn" onclick="togMic()">🎤</button>
   <button class="btn btn-scan" id="scanbtn" onclick="togScan()">📷</button>
   <div style="flex:1">
-    <div class="status" id="mst">Toca 🎤 para hablar · 📷 para escanear</div>
+    <div class="status" id="mst">🎤 Grabar · 📷 Escanear código</div>
     <div class="preview" id="mpv"></div>
   </div>
 </div>
-<button class="send-btn" id="sbtn" onclick="enviarVoz()">🟢&nbsp;ENVIAR</button>
-
-<!-- Scanner overlay -->
+<button class="send-btn" id="sbtn" onclick="enviarVoz()">🟢 ENVIAR</button>
 <div id="scanOverlay">
   <video id="scanVideo" autoplay playsinline muted></video>
   <div id="scanLine"></div>
-  <div id="scanStatus">Apuntá el código de barras a la cámara</div>
+  <div id="scanStatus">Apuntá el código a la cámara</div>
   <button id="scanClose" onclick="closeScan()">✕ Cerrar</button>
 </div>
-
 <script>
 var R=null,gr=false,tx="",scanStream=null,scanActive=false,scanInterval=null;
 function M(id){return document.getElementById(id)}
@@ -3334,7 +3461,6 @@ function setMic(c,i){M("micbtn").className="btn btn-mic "+(c||"");M("micbtn").in
 function setSt(c,t){M("mst").className="status "+(c||"");M("mst").textContent=t}
 function setPv(t){M("mpv").textContent=t;M("mpv").style.display=t?"block":"none"}
 function showSend(v){M("sbtn").style.display=v?"block":"none"}
-
 function getTa(){
   var all=window.parent.document.querySelectorAll("textarea");
   for(var i=0;i<all.length;i++){
@@ -3344,35 +3470,26 @@ function getTa(){
   for(var i=0;i<all.length;i++){if(!all[i].readOnly) return all[i]}
   return null;
 }
-
 function enviarTexto(texto){
   var ta=getTa();
-  if(!ta){setSt("er","No se encontró el cuadro de texto");return false}
-  try{
-    Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value")
-      .set.call(ta,texto);
-  }catch(e){ta.value=texto}
+  if(!ta){setSt("er","No se encontró el campo de texto");return false}
+  try{Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set.call(ta,texto)}catch(e){ta.value=texto}
   ta.dispatchEvent(new Event("input",{bubbles:true}));
   ta.dispatchEvent(new Event("change",{bubbles:true}));
   setTimeout(function(){
-    // Click Enviar
     var btns=window.parent.document.querySelectorAll("button");
     for(var i=0;i<btns.length;i++){
       var t=(btns[i].innerText||btns[i].textContent||"").trim();
       if(t.indexOf("Enviar")>=0){btns[i].click();break}
     }
-    // Limpiar textarea después
     setTimeout(function(){
       var ta2=getTa();
-      if(ta2){
-        try{Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set.call(ta2,"");}catch(e){ta2.value=""}
-        ta2.dispatchEvent(new Event("input",{bubbles:true}));
-      }
+      if(ta2){try{Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set.call(ta2,"")}catch(e){ta2.value=""}
+      ta2.dispatchEvent(new Event("input",{bubbles:true}))}
     },600);
   },250);
   return true;
 }
-
 function hookEnter(){
   var ta=getTa();
   if(ta&&!ta._lzHook){
@@ -3390,8 +3507,6 @@ function hookEnter(){
     },true);
   }
 }
-
-// ── MIC ──────────────────────────────────────────────────────────
 function togMic(){
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){setSt("er","Necesitás Chrome o Edge para el micrófono");return}
@@ -3399,109 +3514,45 @@ function togMic(){
   tx="";showSend(false);setPv("");
   R=new SR();R.lang="es-AR";R.continuous=false;R.interimResults=true;R.maxAlternatives=1;
   R.onstart=function(){gr=true;setMic("rec","⏹");setSt("ok","🔴 Escuchando...")}
-  R.onresult=function(e){
-    var t="";for(var i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript;
-    tx=t;setPv("📝 "+tx);showSend(!!tx);
-  };
-  R.onerror=function(e){
-    var m={"not-allowed":"Permiso denegado — habilitá el micrófono",
-           "no-speech":"No se escuchó nada","network":"Error de red"};
-    setSt("er","❌ "+(m[e.error]||e.error));gr=false;setMic("","🎤");showSend(false);
-  };
-  R.onend=function(){
-    gr=false;setMic("","🎤");
-    if(tx){
-      setSt("ok","✅ Grabado — enviando...");showSend(true);
-      setTimeout(function(){
-        var ok=enviarTexto(tx);
-        if(ok){tx="";setPv("");showSend(false);setSt("","Toca 🎤 para hablar · 📷 para escanear")}
-      },300);
-    }else{setSt("","Toca 🎤 para hablar · 📷 para escanear");showSend(false)}
-  };
+  R.onresult=function(e){var t="";for(var i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript;tx=t;setPv("📝 "+tx);showSend(!!tx)}
+  R.onerror=function(e){var m={"not-allowed":"Permiso denegado","no-speech":"No se escuchó","network":"Error de red"};setSt("er","❌ "+(m[e.error]||e.error));gr=false;setMic("","🎤");showSend(false)}
+  R.onend=function(){gr=false;setMic("","🎤");if(tx){setSt("ok","✅ Grabado — enviando...");showSend(true);setTimeout(function(){var ok=enviarTexto(tx);if(ok){tx="";setPv("");showSend(false);setSt("","🎤 Grabar · 📷 Escanear código")}},300)}else{setSt("","🎤 Grabar · 📷 Escanear código");showSend(false)}}
   R.start();
 }
-function enviarVoz(){
-  if(!tx){setSt("er","Grabá un mensaje primero");return}
-  setSt("ok","Enviando...");
-  if(enviarTexto(tx)){tx="";setPv("");showSend(false);setSt("","Toca 🎤 para hablar · 📷 para escanear")}
-}
-
-// ── SCANNER ──────────────────────────────────────────────────────
+function enviarVoz(){if(!tx){setSt("er","Grabá primero");return}setSt("ok","Enviando...");if(enviarTexto(tx)){tx="";setPv("");showSend(false);setSt("","🎤 Grabar · 📷 Escanear código")}}
 function togScan(){
   if(scanActive){closeScan();return}
-  // Try BarcodeDetector first (Chrome Android)
-  if(!window.BarcodeDetector&&typeof ZXing==='undefined'){
-    // Fallback: use input type=text with focus (just show camera input)
-    var inp=document.createElement("input");
-    inp.type="text";inp.id="barcode_fallback";
-    inp.style.cssText="position:fixed;top:-100px;left:0;width:1px;height:1px;opacity:0";
-    inp.setAttribute("inputmode","numeric");
-    document.body.appendChild(inp);
-    inp.focus();
-    inp.addEventListener("change",function(){
-      var code=inp.value.trim();
-      if(code){
-        document.body.removeChild(inp);
-        setSt("ok","✅ Código: "+code);
-        setTimeout(function(){enviarTexto(code)},300);
-      }
-    });
-    setSt("scan","📷 Usá el lector físico o escribí el código");
-    return;
-  }
+  if(!window.BarcodeDetector){setSt("er","BarcodeDetector no soportado — usá Chrome Android");return}
   openCamera();
 }
-
 function openCamera(){
-  scanActive=true;
-  M("scanbtn").className="btn btn-scan active";
-  M("scanOverlay").className="show";
-  navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
+  scanActive=true;M("scanbtn").className="btn btn-scan active";M("scanOverlay").className="show";
+  navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1920}}})
     .then(function(stream){
-      scanStream=stream;
-      M("scanVideo").srcObject=stream;
-      startDecoding();
+      scanStream=stream;M("scanVideo").srcObject=stream;
+      var det=new BarcodeDetector({formats:["ean_13","ean_8","code_128","code_39","upc_a","upc_e","itf","qr_code"]});
+      setSt("scan","📷 Escaneando...");
+      scanInterval=setInterval(function(){
+        if(!scanActive) return;
+        det.detect(M("scanVideo")).then(function(codes){
+          if(codes.length>0){
+            var code=codes[0].rawValue;
+            closeScan();
+            setSt("ok","✅ "+code+" — enviando...");
+            setTimeout(function(){enviarTexto(code);setTimeout(function(){setSt("","🎤 Grabar · 📷 Escanear código")},2000)},300);
+          }
+        }).catch(function(){});
+      },350);
     })
-    .catch(function(e){
-      closeScan();
-      setSt("er","❌ Sin acceso a cámara: "+e.message);
-    });
+    .catch(function(e){closeScan();setSt("er","❌ "+e.message)});
 }
-
-function startDecoding(){
-  if(!window.BarcodeDetector){M("scanStatus").textContent="BarcodeDetector no disponible";return}
-  var det=new BarcodeDetector({formats:["ean_13","ean_8","code_128","code_39","upc_a","upc_e","qr_code"]});
-  scanInterval=setInterval(function(){
-    if(!scanActive) return;
-    det.detect(M("scanVideo")).then(function(codes){
-      if(codes.length>0){
-        var code=codes[0].rawValue;
-        closeScan();
-        setSt("ok","✅ "+code+" — enviando...");
-        setTimeout(function(){
-          enviarTexto(code);
-          // Limpiar status después de enviar
-          setTimeout(function(){setSt("","Toca 🎤 para hablar · 📷 para escanear")},2000);
-        },300);
-      }
-    }).catch(function(){});
-  },400);
-}
-
 function closeScan(){
-  scanActive=false;
-  clearInterval(scanInterval);
+  scanActive=false;clearInterval(scanInterval);
   if(scanStream){scanStream.getTracks().forEach(function(t){t.stop()});scanStream=null}
-  M("scanVideo").srcObject=null;
-  M("scanbtn").className="btn btn-scan";
-  M("scanOverlay").className="";
-  setSt("","Toca 🎤 para hablar · 📷 para escanear");
+  M("scanVideo").srcObject=null;M("scanbtn").className="btn btn-scan";M("scanOverlay").className="";
 }
-
-var _ht=0;
-function tryH(){hookEnter();if(!getTa()&&_ht<25){_ht++;setTimeout(tryH,400)}}
-tryH();
-</script></body></html>""", height=145)
+var _ht=0;function tryH(){hookEnter();if(!getTa()&&_ht<25){_ht++;setTimeout(tryH,400)}}tryH();
+</script></body></html>""", height=115)
 
     # CSS textarea
     st.markdown("""<style>
