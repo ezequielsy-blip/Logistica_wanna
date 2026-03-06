@@ -567,20 +567,22 @@ usuario = st.session_state.usuario
 rol     = st.session_state.rol
 ROL_ICON = {"admin":"👑","operario":"🔧","visita":"👁️","vendedor":"🛒"}.get(rol,"👤")
 
-col_h1, col_h2 = st.columns([3,1])
+# ── App topbar estilo Android ──────────────────────────────────────────────
+st.markdown(f"""
+<div class="app-topbar">
+  <div>
+    <div class="app-topbar-title">📦 LOGIEZE</div>
+    <div class="app-topbar-sub">{ROL_ICON} {usuario.upper()} · {rol.upper()}</div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <div class="app-badge">v3.0</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+col_h1, col_h2 = st.columns(2)
 with col_h1:
-    st.markdown(f"""
-    <div class="main-header">
-        <div style="font-size:32px;">📦</div>
-        <div>
-            <h1>LOGIEZE</h1>
-            <span>v3.0 WEB  ·  {ROL_ICON} {usuario.upper()}  ·  {rol.upper()}</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-with col_h2:
     if st.button("⟳ Actualizar", use_container_width=True):
         refrescar()
+with col_h2:
     if st.button("🔄 Cambiar usuario", use_container_width=True):
         st.session_state.usuario = None
         st.session_state.rol     = None
@@ -599,28 +601,52 @@ for lote in inventario:
     idx_inv[cod].append(lote)
     ubis_ocupadas.add(str(lote.get('ubicacion','')).upper())
 
-nm = len(maestra); ni = len(inventario)
+# metrics removed
 
-c1, c2, c3 = st.columns(3)
-with c1:
-    st.markdown(f'<div class="metric-card"><div class="value">{nm}</div><div class="label">PRODUCTOS</div></div>', unsafe_allow_html=True)
-with c2:
-    st.markdown(f'<div class="metric-card"><div class="value">{ni}</div><div class="label">LOTES</div></div>', unsafe_allow_html=True)
-with c3:
-    total_stock = sum(float(l.get('cantidad',0)) for l in inventario)
-    st.markdown(f'<div class="metric-card"><div class="value">{int(total_stock):,}</div><div class="label">STOCK TOTAL</div></div>', unsafe_allow_html=True)
+# ── Navegación desplegable estilo app ──────────────────────────────────────
+_NAV_OPTIONS = ["📦 MOVIMIENTOS", "🚚 DESPACHO", "📋 HISTORIAL", "📊 PLANILLA", "🔐 ADMIN", "🤖 ASISTENTE"]
+if "nav_tab" not in st.session_state:
+    st.session_state.nav_tab = "📦 MOVIMIENTOS"
 
-st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("""
+<style>
+div[data-testid="stSelectbox"] > div > div {
+    background: #1E293B !important;
+    border: 1.5px solid #3B82F6 !important;
+    border-radius: 14px !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    min-height: 52px !important;
+    padding: 4px 16px !important;
+}
+</style>""", unsafe_allow_html=True)
 
-tab_mov, tab_desp, tab_hist, tab_plan, tab_admin, tab_asist = st.tabs([
-    "📦 MOVIMIENTOS", "🚚 DESPACHO", "📋 HISTORIAL", "📊 PLANILLA", "🔐 ADMIN", "🤖 ASISTENTE"
-])
+_nav_sel = st.selectbox("", _NAV_OPTIONS,
+    index=_NAV_OPTIONS.index(st.session_state.nav_tab),
+    label_visibility="collapsed", key="nav_select")
+st.session_state.nav_tab = _nav_sel
+
+# Emular tabs con session_state
+class _FakeTab:
+    def __init__(self, name): self.name = name
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
+
+_cur = st.session_state.nav_tab
+tab_mov   = _FakeTab("📦 MOVIMIENTOS")
+tab_desp  = _FakeTab("🚚 DESPACHO")
+tab_hist  = _FakeTab("📋 HISTORIAL")
+tab_plan  = _FakeTab("📊 PLANILLA")
+tab_admin = _FakeTab("🔐 ADMIN")
+tab_asist = _FakeTab("🤖 ASISTENTE")
+
+def _show(name): return _cur == name
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB MOVIMIENTOS
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_mov:
+if _show("📦 MOVIMIENTOS"):
     st.markdown('<p class="sec-label">🔍 BUSCAR PRODUCTO</p>', unsafe_allow_html=True)
     busqueda = st.text_input("Buscar", placeholder="Nombre, código interno o barras...",
                               label_visibility="collapsed", key="busq")
@@ -636,56 +662,21 @@ with tab_mov:
     if not productos_filtrados and busqueda:
         st.info("No se encontraron productos.")
     elif productos_filtrados:
-        df_res = pd.DataFrame([{
-            "Nombre": p['nombre'],
-            "Código": p['cod_int'],
-            "Stock":  int(float(p.get("cantidad_total") or 0)),
-        } for p in productos_filtrados])
-        st.dataframe(df_res, use_container_width=True, hide_index=True,
-                     column_config={"Stock": st.column_config.NumberColumn(format="%d")})
-
-        nombres_lista = [f"{p['nombre']}  [{p['cod_int']}]" for p in productos_filtrados]
-        sel_idx = st.selectbox("Seleccionar producto:", range(len(nombres_lista)),
-                               format_func=lambda i: nombres_lista[i], key="sel_prod")
+        st.markdown(f'<div style="font-size:12px;color:#94A3B8;margin-bottom:8px">{len(productos_filtrados)} resultado(s)</div>', unsafe_allow_html=True)
+        nombres_lista = [f"{p['nombre']}  ·  {int(float(p.get('cantidad_total') or 0))}u  [{p['cod_int']}]" for p in productos_filtrados]
+        sel_idx = st.selectbox("", range(len(nombres_lista)),
+                               format_func=lambda i: nombres_lista[i],
+                               label_visibility="collapsed", key="sel_prod")
         prod_sel = productos_filtrados[sel_idx]
         cod_sel  = str(prod_sel['cod_int'])
+        if st.button("🔎 Seleccionar", use_container_width=True, key="btn_ver_prod"):
+            st.session_state["_clear_busq"] = True
+            st.rerun()
 
         lotes_prod = idx_inv.get(cod_sel, [])
         total_q    = sum(float(l.get('cantidad',0)) for l in lotes_prod)
-        st.markdown(f'<div style="margin:10px 0"><span class="stock-badge">STOCK TOTAL: {int(total_q)}</span></div>', unsafe_allow_html=True)
-
-        if lotes_prod:
-            st.markdown('<p class="sec-label">📦 LOTES EN DEPÓSITO</p>', unsafe_allow_html=True)
-            for i, l in enumerate(lotes_prod):
-                dias  = dias_para_vencer(l.get('fecha',''))
-                clase = ""
-                alerta = ""
-                if dias is not None:
-                    if dias < 0:
-                        clase = " vencido"
-                        alerta = f"🔴 VENCIDO hace {abs(dias)} días"
-                    elif dias <= DIAS_ALERTA:
-                        clase = " por-vencer"
-                        alerta = f"🟠 Vence en {dias} días"
-                    else:
-                        alerta = f"✅ Vence en {dias} días"
-                cant_l = int(float(l.get('cantidad',0)))
-                st.markdown(f"""
-                <div class="lote-card{clase}">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                        <span style="font-size:22px;font-weight:900;color:#06B6D4">{cant_l}</span>
-                        <span style="font-size:12px;color:#94A3B8">{alerta}</span>
-                    </div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:13px;">
-                        <span>📍 <b>{l.get('ubicacion','')}</b></span>
-                        <span>🏭 {l.get('deposito','')}</span>
-                        <span>📅 {l.get('fecha','')}</span>
-                        <span style="color:#64748B;font-size:11px">ID: {l.get('id','')}</span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("Sin lotes registrados para este producto.")
+        stk_color = "#10B981" if total_q > 10 else ("#F59E0B" if total_q > 0 else "#EF4444")
+        st.markdown(f'''<div style="background:#1E293B;border-radius:14px;padding:14px 16px;margin:12px 0;border-left:4px solid {stk_color}"><div style="font-size:11px;font-weight:700;color:{stk_color};text-transform:uppercase">STOCK TOTAL</div><div style="font-size:32px;font-weight:900;color:#F1F5F9">{int(total_q)}u</div><div style="font-size:11px;color:#94A3B8">{prod_sel['nombre']}</div></div>''', unsafe_allow_html=True)
 
         st.markdown("---")
         st.markdown('<p class="sec-label">📝 REGISTRAR OPERACIÓN</p>', unsafe_allow_html=True)
@@ -837,7 +828,8 @@ with tab_mov:
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB DESPACHO
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_desp:
+
+if _show("🚚 DESPACHO"):
     import json as _json
 
     st.markdown('<p class="sec-label">🚚 PICKING CONTROLADO</p>', unsafe_allow_html=True)
@@ -1137,7 +1129,9 @@ with tab_desp:
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB HISTORIAL
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_hist:
+
+
+if _show("📋 HISTORIAL"):
     st.markdown('<p class="sec-label">📋 HISTORIAL DE MOVIMIENTOS</p>', unsafe_allow_html=True)
     hist_data = cargar_historial_cache()
 
@@ -1168,7 +1162,7 @@ with tab_hist:
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB PLANILLA
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_plan:
+if _show("📊 PLANILLA"):
     st.markdown('<p class="sec-label">📊 PLANILLA DE DATOS</p>', unsafe_allow_html=True)
     tabla_sel = st.radio("Tabla:", ["maestra","inventario"], horizontal=True, key="tabla_plan")
     filtro_p  = st.text_input("Filtrar:", placeholder="Buscar en la tabla...",
@@ -1194,7 +1188,7 @@ with tab_plan:
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB ADMIN
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_admin:
+if _show("🔐 ADMIN"):
     if rol != "admin":
         st.warning("🔒 Solo disponible para administradores.")
     else:
@@ -1310,7 +1304,7 @@ with tab_admin:
 # ═══════════════════════════════════════════════════════════════════════════════
 # TAB ASISTENTE — OPERARIO DIGITAL (100% propio, sin dependencias externas)
 # ═══════════════════════════════════════════════════════════════════════════════
-with tab_asist:
+if _show("🤖 ASISTENTE"):
 
     st.markdown("""
     <style>
