@@ -862,16 +862,19 @@ for lote in inventario:
 
 # metrics removed
 
-# ── Navegación desplegable estilo app ──────────────────────────────────────
+# ── Navegación solo Bottom Nav — sin desplegable ──────────────────────────
 _NAV_OPTIONS = ["📦 MOVIMIENTOS", "🚚 DESPACHO", "📋 HISTORIAL", "📊 PLANILLA", "🔐 ADMIN", "🤖 ASISTENTE"]
 if "nav_tab" not in st.session_state:
     st.session_state.nav_tab = "📦 MOVIMIENTOS"
 
-# ── Selector compacto (visible en escritorio/tablet) ──────────────────────────
-_nav_sel = st.selectbox("", _NAV_OPTIONS,
-    index=_NAV_OPTIONS.index(st.session_state.nav_tab),
-    label_visibility="collapsed", key="nav_select")
-st.session_state.nav_tab = _nav_sel
+# Botones invisibles de Streamlit — el bottom nav los activa via JS click
+st.markdown("<div style='display:none'>", unsafe_allow_html=True)
+for _no in _NAV_OPTIONS:
+    _safe = _no.replace(" ","_").replace("/","_")
+    if st.button(_no, key=f"_nav_{_safe}"):
+        st.session_state.nav_tab = _no
+        st.rerun()
+st.markdown("</div>", unsafe_allow_html=True)
 
 # ── Bottom Navigation Bar Material Design ─────────────────────────────────────
 _NAV_MAIN = [
@@ -924,24 +927,19 @@ body{background:transparent}
 function setNav(k){
   try{
     var doc=window.parent.document;
-    // Abrir el dropdown de Streamlit
-    var sb=doc.querySelector('[data-testid="stSelectbox"]');
-    if(!sb) return;
-    var inp=sb.querySelector('input');
-    if(inp){inp.focus();inp.click();}
-    // Esperar que se abra y hacer click en la opción
-    setTimeout(function(){
-      var opts=doc.querySelectorAll('li[role="option"]');
-      for(var i=0;i<opts.length;i++){
-        if(opts[i].textContent.trim().indexOf(k.substring(0,4))>=0){
-          opts[i].click(); return;
-        }
+    // Buscar el botón invisible de Streamlit con ese texto
+    var btns=doc.querySelectorAll('button');
+    for(var i=0;i<btns.length;i++){
+      if(btns[i].textContent.trim()===k){
+        btns[i].click(); return;
       }
-      // Fallback: buscar por texto completo
-      for(var i=0;i<opts.length;i++){
-        if(opts[i].textContent.trim()===k){opts[i].click();return;}
+    }
+    // Fallback: buscar por los primeros 4 caracteres (emoji + espacio)
+    for(var i=0;i<btns.length;i++){
+      if(k.length>=2 && btns[i].textContent.trim().indexOf(k.substring(0,3))===0){
+        btns[i].click(); return;
       }
-    },120);
+    }
   }catch(e){console.log(e)}
 }
 </script>""", height=74, scrolling=False)
@@ -4250,7 +4248,7 @@ var _ht=0;function tryH(){hookEnter();if(!getTa()&&_ht<25){_ht++;setTimeout(tryH
         )
     with ic2:
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        send = st.button("➤ Enviar", use_container_width=True, type="primary", key="bot_send")
+    send = st.button("➤ Enviar", use_container_width=True, type="primary", key="bot_send_btn")
 
     _final = _quick or (_voz_qp.strip() if _voz_qp else None) or (txt_in.strip() if send and txt_in else None)
 
