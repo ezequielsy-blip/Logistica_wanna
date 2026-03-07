@@ -4062,24 +4062,15 @@ if _show("🤖 ASISTENTE"):
 
     import streamlit.components.v1 as _stc
 
-    # Textarea y botón ocultos — la barra HTML los controla via JS
-    st.markdown("""<style>
-    div[data-testid="stTextArea"]{
-      position:fixed!important;top:-9999px!important;left:-9999px!important;
-      width:1px!important;height:1px!important;overflow:hidden!important}
-    </style>""", unsafe_allow_html=True)
-    txt_in = st.text_area("msg", label_visibility="collapsed",
-        placeholder="Escribí acá", key="bot_input",
-        height=68, value=_input_val)
-    send = st.button("Enviar", key="bot_send_btn",
-        type="primary", use_container_width=False)
-    st.markdown("""<style>
-    div[data-testid="stButton"]:has(button[data-testid="baseButton-primary"]) {
-      position:fixed!important;top:-9999px!important;left:-9999px!important;
-      width:1px!important;height:1px!important;overflow:hidden!important}
-    </style>""", unsafe_allow_html=True)
+    # Leer texto enviado desde la barra HTML (query param)
+    _txt_qp = st.query_params.get("lz_txt", "")
+    if _txt_qp:
+        try: del st.query_params["lz_txt"]
+        except: pass
+    txt_in = _txt_qp.strip()
+    send   = bool(txt_in)
 
-    # ── BARRA WhatsApp: mic + scan + input + enviar ────────────────────────
+        # ── BARRA WhatsApp: mic + scan + input + enviar ────────────────────────
     _stc.html("""<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
@@ -4183,29 +4174,10 @@ function clkSend(){
 function doSend(){
   var v=document.getElementById('inp').value.trim();if(!v)return;
   document.getElementById('inp').value='';
-  document.getElementById('inp').style.height='auto';
-  uS();
-  // Inyectar en el textarea de Streamlit y hacer submit
-  var doc=window.parent.document;
-  var areas=doc.querySelectorAll('textarea');
-  var ta=null;
-  for(var i=0;i<areas.length;i++){
-    if(!areas[i].readOnly&&areas[i].offsetParent!==null){ta=areas[i];break;}
-  }
-  if(!ta&&areas.length>0) ta=areas[0];
-  if(ta){
-    var nv=Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,'value').set;
-    nv.call(ta,v);
-    ta.dispatchEvent(new window.parent.Event('input',{bubbles:true}));
-    ta.dispatchEvent(new window.parent.Event('change',{bubbles:true}));
-    // Buscar y clickear el botón Enviar
-    setTimeout(function(){
-      var btns=doc.querySelectorAll('button');
-      for(var i=0;i<btns.length;i++){
-        if((btns[i].innerText||'').trim()==='Enviar'){btns[i].click();return;}
-      }
-    },150);
-  }
+  document.getElementById('inp').style.height='auto';uS();
+  var url=new URL(window.parent.location.href);
+  url.searchParams.set('lz_txt',v);
+  window.parent.location.href=url.toString();
 }
 document.getElementById('inp').addEventListener('keydown',function(e){
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doSend();}
@@ -4271,7 +4243,7 @@ function cScan(){
 </script></body></html>""", height=82)
 
 
-    _final = _quick or (_voz_qp.strip() if _voz_qp else None) or (txt_in.strip() if send and txt_in else None)
+    _final = _quick or (_voz_qp.strip() if _voz_qp else None) or (txt_in if send else None)
 
     if _final:
         st.session_state["_limpiar"] = True
