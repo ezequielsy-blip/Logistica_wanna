@@ -4049,36 +4049,40 @@ if _show("🤖 ASISTENTE"):
     _quick = st.session_state.pop("_bot_quick", None)
 
     # ── INPUT CHAT ────────────────────────────────────────────────────────────
-    # Capturar voz via query param
-    _voz_qp = st.query_params.get("lz_voz", "")
-    if _voz_qp:
-        try: del st.query_params["lz_voz"]
-        except: pass
-
-    # Capturar texto via query param (desde barra HTML)
     _txt_qp = st.query_params.get("lz_txt", "")
     if _txt_qp:
         try: del st.query_params["lz_txt"]
         except: pass
 
-    # Barra de escaneo (solo mic + scan, sin input de texto)
     import streamlit.components.v1 as _stc
     _stc.html("""<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:transparent}
-.bar{display:flex;gap:8px;align-items:center;padding:4px 2px}
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,'Inter',sans-serif}
+html,body{background:transparent;height:auto}
+.wrap{padding:4px 0 0}
+.bar{display:flex;align-items:flex-end;gap:8px;
+  background:#111827;border:2px solid #263145;border-radius:28px;
+  padding:6px 6px 6px 14px}
+.ta{flex:1;border:none;outline:none;background:transparent;
+  color:#ECEFF1;font-size:17px;resize:none;
+  min-height:40px;max-height:110px;line-height:1.5;padding:8px 0;
+  caret-color:#2979FF;font-family:-apple-system,'Inter',sans-serif}
+.ta::placeholder{color:#546E7A}
 .cb{border:none;border-radius:50%;width:44px;height:44px;flex-shrink:0;
   display:flex;align-items:center;justify-content:center;
-  cursor:pointer;transition:transform .15s;
-  -webkit-tap-highlight-color:transparent;outline:none;
-  background:#1E293B;border:1.5px solid #334155}
+  cursor:pointer;-webkit-tap-highlight-color:transparent;outline:none;
+  transition:transform .15s}
 .cb:active{transform:scale(.85)}
-.mic.rec{background:#2D1B1B;border-color:#7F1D1D;animation:rp 1.2s infinite}
+.mic{background:#1E293B;border:1.5px solid #334155}
+.mic.rec{background:#2D1B1B;border:1.5px solid #7F1D1D;animation:rp 1.2s infinite}
 @keyframes rp{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
-.scan.act{background:#1A2820;border-color:#1B4332}
-.prev{font-size:13px;color:#64B5F6;padding:2px 8px;display:none;flex:1;word-break:break-all}
+.scan{background:#1E293B;border:1.5px solid #334155}
+.scan.act{background:#1A2820;border:1.5px solid #1B4332}
+.snd{background:linear-gradient(135deg,#1E3A5F,#1E293B);border:1.5px solid #2D4A6B}
+.snd.on{background:linear-gradient(135deg,#2979FF,#00B0FF);border-color:#2979FF;
+  box-shadow:0 3px 12px rgba(41,121,255,.5)}
+.prev{font-size:13px;color:#64B5F6;padding:3px 4px 0;display:none}
 .prev.on{display:block}
 #ov{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.96);
   z-index:9999;flex-direction:column;align-items:center;justify-content:center;gap:16px}
@@ -4091,6 +4095,7 @@ body{background:transparent}
 #clo{background:#EF4444;color:#fff;border:none;border-radius:12px;
   padding:11px 30px;font-size:15px;font-weight:700;cursor:pointer}
 </style></head><body>
+<div class="wrap">
 <div class="bar">
   <button class="cb mic" id="mbtn" onclick="tMic()">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round">
@@ -4109,7 +4114,15 @@ body{background:transparent}
       <line x1="20.5" y1="17" x2="20.5" y2="21"/>
     </svg>
   </button>
-  <div class="prev" id="pv"></div>
+  <textarea class="ta" id="inp" placeholder="Escribí o grabá..." rows="1"
+    oninput="aR(this);uS()"></textarea>
+  <button class="cb snd" id="sndbtn" onclick="doSend()" disabled>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="#475569">
+      <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>
+    </svg>
+  </button>
+</div>
+<div class="prev" id="pv"></div>
 </div>
 <div id="ov">
   <video id="vid" autoplay playsinline muted></video>
@@ -4120,31 +4133,73 @@ body{background:transparent}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script>
 var R=null,gr=false,sStr=null,sAct=false,sInt=null;
-function sP(t){var p=document.getElementById('pv');p.textContent=t;p.className='prev on'}
-function hP(){document.getElementById('pv').className='prev'}
-function send(v){
-  var url=new URL(window.parent.location.href);
-  url.searchParams.set('lz_txt',v);
-  window.parent.location.href=url.toString();
+
+function aR(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,110)+'px'}
+
+function uS(){
+  var v=document.getElementById('inp').value.trim();
+  var btn=document.getElementById('sndbtn');
+  var ic=btn.querySelector('svg path');
+  if(v){btn.disabled=false;btn.className='cb snd on';if(ic)ic.setAttribute('fill','white');}
+  else{btn.disabled=true;btn.className='cb snd';if(ic)ic.setAttribute('fill','#475569');}
 }
+
+function doSend(){
+  var v=document.getElementById('inp').value.trim();
+  if(!v)return;
+  document.getElementById('inp').value='';
+  document.getElementById('inp').style.height='auto';
+  uS();
+  enviar(v);
+}
+
+document.getElementById('inp').addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doSend();}
+});
+
+function enviar(v){
+  // Navegar con query param — funciona en Railway
+  try{
+    var loc=window.parent.location;
+    var url=new URL(loc.href);
+    url.searchParams.set('lz_txt',encodeURIComponent(v));
+    loc.href=url.toString();
+  }catch(e){
+    // Si parent bloqueado, intentar top
+    try{
+      var url2=new URL(window.top.location.href);
+      url2.searchParams.set('lz_txt',encodeURIComponent(v));
+      window.top.location.href=url2.toString();
+    }catch(e2){console.log('send err',e2)}
+  }
+}
+
+// ── MIC ──
 function tMic(){gr?stpMic():stMic()}
 function stMic(){
-  if(!window.SpeechRecognition&&!window.webkitSpeechRecognition){sP('Sin soporte');return}
+  if(!window.SpeechRecognition&&!window.webkitSpeechRecognition){
+    sP('Sin soporte de voz en este navegador');return;
+  }
   R=new(window.SpeechRecognition||window.webkitSpeechRecognition)();
   R.lang='es-AR';R.continuous=false;R.interimResults=true;
   R.onstart=function(){gr=true;document.getElementById('mbtn').className='cb mic rec';sP('🔴 Grabando...')}
   R.onresult=function(e){
     var f='',it='';
     for(var i=e.resultIndex;i<e.results.length;i++){
-      if(e.results[i].isFinal)f+=e.results[i][0].transcript;else it+=e.results[i][0].transcript;
+      if(e.results[i].isFinal)f+=e.results[i][0].transcript;
+      else it+=e.results[i][0].transcript;
     }
-    if(f){stpMic();send(f);}else if(it){sP('🎙️ '+it);}
+    if(it)sP('🎙️ '+it);
+    if(f){stpMic();sP('✅ '+f);setTimeout(function(){enviar(f);},300);}
   }
   R.onerror=function(e){sP('Error: '+e.error);stpMic()}
-  R.onend=function(){stpMic()}
+  R.onend=function(){if(gr)stpMic()}
   R.start();
 }
-function stpMic(){gr=false;document.getElementById('mbtn').className='cb mic';if(R){try{R.stop()}catch(e){}}}
+function stpMic(){gr=false;document.getElementById('mbtn').className='cb mic';if(R){try{R.abort();}catch(e){}R=null;}}
+function sP(t){var p=document.getElementById('pv');p.textContent=t;p.className='prev on'}
+
+// ── SCAN ──
 function tScan(){sAct?cScan():oScan()}
 function oScan(){
   navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})
@@ -4159,7 +4214,7 @@ function oScan(){
         cv.width=vid.videoWidth;cv.height=vid.videoHeight;ctx.drawImage(vid,0,0);
         var img=ctx.getImageData(0,0,cv.width,cv.height);
         var code=jsQR(img.data,img.width,img.height);
-        if(code&&code.data){cScan();send(code.data);}
+        if(code&&code.data){cScan();enviar(code.data);}
       }
     },200);
   }).catch(function(e){sP('Cámara: '+e.message)})
@@ -4171,11 +4226,15 @@ function cScan(){
   document.getElementById('sbtn').className='cb scan';
   document.getElementById('ov').className='';
 }
-</script></body></html>""", height=58)
+</script></body></html>""", height=76)
 
-    # Input nativo de Streamlit — siempre funciona
-    _chat_in = st.chat_input("Escribí tu mensaje...")
-    txt_in = _txt_qp.strip() or (_chat_in or "")
+    _txt_qp = _txt_qp.strip() if _txt_qp else ""
+    # Limpiar el encodeURIComponent si vino así
+    if _txt_qp:
+        import urllib.parse
+        try: _txt_qp = urllib.parse.unquote(_txt_qp)
+        except: pass
+    txt_in = _txt_qp
     send   = bool(txt_in)
 
     _final = _quick or (_voz_qp.strip() if _voz_qp else None) or (txt_in if send else None)
