@@ -926,20 +926,27 @@ body{background:transparent}
 <script>
 function setNav(k){
   try{
+    // Setear query param — Streamlit lo lee en el próximo rerun
+    var url=new URL(window.parent.location.href);
+    url.searchParams.set('lz_nav', k);
+    window.parent.history.pushState({}, '', url.toString());
+    // Forzar rerun via click en cualquier elemento interactivo
     var doc=window.parent.document;
-    // Buscar el botón invisible de Streamlit con ese texto
-    var btns=doc.querySelectorAll('button');
-    for(var i=0;i<btns.length;i++){
-      if(btns[i].textContent.trim()===k){
-        btns[i].click(); return;
+    var trigger=doc.querySelector('[data-testid="stApp"]');
+    if(trigger){
+      // Simular cambio para que Streamlit detecte
+      var ev=new window.parent.Event('click',{bubbles:true});
+      // Buscar botón ⟳ Actualizar como trigger de rerun
+      var btns=doc.querySelectorAll('button');
+      for(var i=0;i<btns.length;i++){
+        var t=btns[i].textContent||'';
+        if(t.indexOf('Actualizar')>=0||t.indexOf('⟳')>=0){
+          // No hacer click, solo forzar recarga
+          break;
+        }
       }
     }
-    // Fallback: buscar por los primeros 4 caracteres (emoji + espacio)
-    for(var i=0;i<btns.length;i++){
-      if(k.length>=2 && btns[i].textContent.trim().indexOf(k.substring(0,3))===0){
-        btns[i].click(); return;
-      }
-    }
+    window.parent.location.href=url.toString();
   }catch(e){console.log(e)}
 }
 </script>""", height=74, scrolling=False)
