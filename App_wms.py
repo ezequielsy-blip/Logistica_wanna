@@ -2395,17 +2395,11 @@ if _show("🤖 ASISTENTE"):
     with hcol1:
         st.markdown(f"""
         <div class="od-header">
-          <img src="{_LOGO_SRC}" style="width:52px;height:52px;border-radius:14px;
-               object-fit:cover;box-shadow:0 4px 16px rgba(59,130,246,.4);flex-shrink:0">
+          <img src="{_LOGO_SRC}" style="width:48px;height:48px;border-radius:12px;
+               object-fit:cover;flex-shrink:0">
           <div>
             <div class="od-title">OPERARIO DIGITAL</div>
             <div class="od-sub">✅ Sin límites · Sin costo · 100% propio</div>
-            <div class="od-caps">
-              <span class="od-cap">🎤 VOZ</span>
-              <span class="od-cap">📷 SCANNER</span>
-              <span class="od-cap">⌨️ TEXTO</span>
-              <span class="od-cap">⚡ ACCIONES</span>
-            </div>
           </div>
         </div>""", unsafe_allow_html=True)
     with hcol2:
@@ -4068,23 +4062,14 @@ if _show("🤖 ASISTENTE"):
 
     import streamlit.components.v1 as _stc
 
-    # Ocultar textarea y botón Enviar nativos
-    st.markdown("""<style>
-    div[data-testid="stTextArea"]{
-      height:0!important;min-height:0!important;overflow:hidden!important;
-      margin:0!important;padding:0!important;opacity:0!important}
-    div[data-testid="stTextArea"] *{display:none!important}
-    div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"]):last-of-type{
-      height:0!important;overflow:hidden!important;margin:0!important;
-      padding:0!important;opacity:0!important}
-    div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"]):last-of-type *{
-      display:none!important}
-    </style>""", unsafe_allow_html=True)
-
-    txt_in = st.text_area("msg", label_visibility="collapsed",
-        placeholder="Escribí acá", key="bot_input",
-        height=68, value=_input_val)
-    send = st.button("Enviar", key="bot_send_btn")
+    # Leer mensaje enviado desde la barra HTML via query param
+    _txt_qp = st.query_params.get("lz_txt", "")
+    if _txt_qp:
+        try: del st.query_params["lz_txt"]
+        except: pass
+    # Variables compatibles con _final
+    txt_in = _txt_qp.strip() if _txt_qp else ""
+    send   = bool(txt_in)
 
     # ── BARRA WhatsApp: mic + scan + input + enviar ────────────────────────
     _stc.html("""<!DOCTYPE html><html><head>
@@ -4179,16 +4164,20 @@ function sTa(v){
 }
 function clkSend(){
   var doc=window.parent.document;
-  var containers=doc.querySelectorAll('[data-testid="stButton"]');
-  for(var i=0;i<containers.length;i++){
-    var btn=containers[i].querySelector('button');
-    if(btn&&(btn.textContent||'').trim()==='Enviar'){btn.click();return;}
+  // Buscar por texto exacto en todos los botones, incluso ocultos
+  var all=doc.querySelectorAll('button');
+  for(var i=0;i<all.length;i++){
+    if((all[i].textContent||'').trim()==='Enviar'){
+      all[i].click();return;
+    }
   }
 }
 function doSend(){
   var v=document.getElementById('inp').value.trim();if(!v)return;
-  if(sTa(v)){setTimeout(clkSend,80);}
-  document.getElementById('inp').value='';document.getElementById('inp').style.height='auto';uS();
+  // Enviar via query param — igual que la voz
+  var url=new URL(window.parent.location.href);
+  url.searchParams.set('lz_txt',v);
+  window.parent.location.href=url.toString();
 }
 document.getElementById('inp').addEventListener('keydown',function(e){
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doSend();}
@@ -4205,7 +4194,12 @@ function stMic(){
       if(e.results[i].isFinal)f+=e.results[i][0].transcript;else it+=e.results[i][0].transcript;
     }
     var tx=f||it;sP('🎙️ '+tx);
-    if(f){sTa(f);setTimeout(function(){clkSend();hP();},200);}
+    if(f){
+      var url=new URL(window.parent.location.href);
+      url.searchParams.set('lz_txt',f);
+      hP();
+      window.parent.location.href=url.toString();
+    }
   }
   R.onerror=function(e){sP('⚠️ '+e.error);stpMic()}
   R.onend=function(){stpMic()}
@@ -4229,7 +4223,12 @@ function oScan(){
         ctx.drawImage(vid,0,0);
         var img=ctx.getImageData(0,0,cv.width,cv.height);
         var code=jsQR(img.data,img.width,img.height);
-        if(code&&code.data){cScan();sTa(code.data);setTimeout(clkSend,150);}
+        if(code&&code.data){
+          cScan();
+          var url=new URL(window.parent.location.href);
+          url.searchParams.set('lz_txt',code.data);
+          window.parent.location.href=url.toString();
+        }
       }
     },200);
   }).catch(function(e){sP('⚠️ Cámara: '+e.message)})
@@ -4244,7 +4243,7 @@ function cScan(){
 </script></body></html>""", height=82)
 
 
-    _final = _quick or (_voz_qp.strip() if _voz_qp else None) or (txt_in.strip() if send and txt_in else None)
+    _final = _quick or (_voz_qp.strip() if _voz_qp else None) or (txt_in.strip() if send else None)
 
     if _final:
         st.session_state["_limpiar"] = True
