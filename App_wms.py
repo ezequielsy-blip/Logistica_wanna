@@ -817,11 +817,26 @@ function closeScan(){
 
     productos_filtrados = []
     if busqueda:
-        t = busqueda.upper().strip()
-        productos_filtrados = [p for p in maestra
-                               if t in str(p.get('nombre','')).upper()
-                               or t in str(p.get('cod_int','')).upper()
-                               or t in str(p.get('barras','')).upper()]
+        t = busqueda.strip()
+        # Búsqueda exacta por código interno: .147 → cod_int == "147"
+        if t.startswith('.'):
+            cod_exacto = t[1:].strip()
+            productos_filtrados = [p for p in maestra
+                                   if str(p.get('cod_int','')).strip() == cod_exacto]
+        # Código de barras puro (7-14 dígitos)
+        elif t.isdigit() and 7 <= len(t) <= 14:
+            productos_filtrados = [p for p in maestra
+                                   if str(p.get('barras','')).strip() == t
+                                   or str(p.get('cod_barras','')).strip() == t]
+            if not productos_filtrados:
+                productos_filtrados = [p for p in maestra
+                                       if t in str(p.get('barras','')).upper()]
+        else:
+            T = t.upper()
+            productos_filtrados = [p for p in maestra
+                                   if T in str(p.get('nombre','')).upper()
+                                   or T in str(p.get('cod_int','')).upper()
+                                   or T in str(p.get('barras','')).upper()]
 
     if not productos_filtrados and busqueda:
         st.info("No se encontraron productos.")
@@ -839,6 +854,27 @@ function closeScan(){
         total_q    = sum(float(l.get('cantidad',0)) for l in lotes_prod)
         stk_color = "#10B981" if total_q > 10 else ("#F59E0B" if total_q > 0 else "#EF4444")
         st.markdown(f'''<div style="background:#1E293B;border-radius:14px;padding:14px 16px;margin:12px 0;border-left:4px solid {stk_color}"><div style="font-size:11px;font-weight:700;color:{stk_color};text-transform:uppercase">STOCK TOTAL</div><div style="font-size:32px;font-weight:900;color:#F1F5F9">{int(total_q)}u</div><div style="font-size:11px;color:#94A3B8">{prod_sel['nombre']}</div></div>''', unsafe_allow_html=True)
+
+        # ── Lotes detallados ──────────────────────────────────────────────
+        if lotes_prod:
+            st.markdown('<div style="font-size:11px;font-weight:700;color:#3B82F6;letter-spacing:1.5px;margin:8px 0 4px">📦 LOTES EN STOCK</div>', unsafe_allow_html=True)
+            for _lt in sorted(lotes_prod, key=lambda x: float(x.get('cantidad',0) or 0), reverse=True):
+                _lq  = int(float(_lt.get('cantidad', 0) or 0))
+                _lu  = str(_lt.get('ubicacion','—')).upper()
+                _ld  = str(_lt.get('deposito','—'))
+                _lf  = str(_lt.get('fecha','') or '').strip()
+                _lf_disp = _lf if _lf else '—'
+                _lc  = "#10B981" if _lq > 5 else ("#F59E0B" if _lq > 0 else "#EF4444")
+                st.markdown(f'''<div style="background:#0F172A;border-radius:10px;padding:10px 14px;margin:4px 0;
+                    display:flex;justify-content:space-between;align-items:center;border:1px solid #1E293B">
+                  <div style="display:flex;gap:14px;align-items:center">
+                    <div style="font-size:22px;font-weight:900;color:{_lc};min-width:36px">{_lq}u</div>
+                    <div>
+                      <div style="font-size:13px;font-weight:700;color:#F1F5F9">📍 {_lu}</div>
+                      <div style="font-size:11px;color:#64748B">{_ld} · 📅 {_lf_disp}</div>
+                    </div>
+                  </div>
+                </div>''', unsafe_allow_html=True)
 
         st.markdown("---")
         st.markdown('<p class="sec-label">📝 REGISTRAR OPERACIÓN</p>', unsafe_allow_html=True)
@@ -862,6 +898,26 @@ function closeScan(){
     var doc=window.parent.document;
     var inputs=doc.querySelectorAll('input[type="text"],input:not([type])');
     var inp=null;
+    // Hook ubicacion inputs — auto-insert "-" after 2 digits
+    for(var i=0;i<inputs.length;i++){
+      var ph2=inputs[i].placeholder||'';
+      if((ph2.indexOf('05-3B')>=0||ph2.indexOf('12-2C')>=0) && !inputs[i]._lzUbiHook){
+        inputs[i]._lzUbiHook=true;
+        (function(el){
+          el.addEventListener('input',function(){
+            var v=el.value.replace(/[^0-9a-zA-Z-]/g,'').toUpperCase();
+            // After 2 digits, auto-insert "-" if not already there
+            if(v.length===2 && /^[0-9]{2}$/.test(v)){
+              el.value=v+'-';
+              el.dispatchEvent(new Event('input',{bubbles:true}));
+            } else if(v.length>2 && v[2]!=='-' && /^[0-9]{2}/.test(v)){
+              el.value=v.substring(0,2)+'-'+v.substring(2);
+              el.dispatchEvent(new Event('input',{bubbles:true}));
+            }
+          });
+        })(inputs[i]);
+      }
+    }
     for(var i=0;i<inputs.length;i++){
       var lbl=doc.querySelector('label[for="'+inputs[i].id+'"]');
       var ph=inputs[i].placeholder||'';
@@ -2711,6 +2767,14 @@ if _show("🤖 ASISTENTE"):
         n = _nn(query)
         tiene_med = bool(_re.search(r'\d+\s*(?:ml|cc|l|lt|g|gr|kg|kilo|mg|oz)', n))
         if not tiene_med:
+            # Código de barras (7-14 dígitos) → buscar en campo barras
+            mb = _re.search(r'\b(\d{7,14})\b', n)
+            if mb:
+                bc = mb.group(1)
+                p = next((x for x in maestra if str(x.get('barras','') or '').strip()==bc
+                          or str(x.get('cod_barras','') or '').strip()==bc), None)
+                if p: return p
+            # Código interno (3-6 dígitos)
             m = _re.search(r'\b(\d{3,6})\b', n)
             if m:
                 p = next((x for x in maestra if str(x.get('cod_int',''))==m.group(1)), None)
@@ -3517,6 +3581,8 @@ if _show("🤖 ASISTENTE"):
         if _re.search(r'\b(agreg[ao]r?|ingres[ao]r?|recib[io]r?|llegaron?|llego|carg[ao]r?|entrada|incorpor[ao]r?|sum[ao]r?|pus[eo]|nuevo.stock|meter|mete|poner|pon[ei])\b', n): return 'entrada'
         if _re.search(r'\b(mov[eo]|movi|mand[ao]|traslad[ao]|pas[ao]\s+(a|al)|llev[ao]\s+(a|al)|cambi[ao].+ubic|reubicar)\b', n): return 'mover'
         if _re.search(r'\b(correg[io]|ajust[ao]|fij[ao]|actualiz[ao]|en.realidad.hay|inventario.fisico|recuento|conteo)\b', n): return 'corregir'
+        # Código de barras puro (7-14 dígitos) → búsqueda directa
+        if _re.fullmatch(r'\d{7,14}', n.strip()): return 'consulta'
         return 'consulta'
 
     # ──────────────────────────────── PROCESADOR PRINCIPAL ─────────────────────
