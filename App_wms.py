@@ -4159,19 +4159,18 @@ document.getElementById('inp').addEventListener('keydown',function(e){
 });
 
 function enviar(v){
-  // Navegar con query param — funciona en Railway
+  // window.parent accede a la página Streamlit desde el iframe
   try{
-    var loc=window.parent.location;
-    var url=new URL(loc.href);
-    url.searchParams.set('lz_txt',encodeURIComponent(v));
-    loc.href=url.toString();
+    var url=new URL(window.parent.location.href);
+    url.searchParams.set('lz_txt',v);
+    window.parent.location.assign(url.toString());
   }catch(e){
-    // Si parent bloqueado, intentar top
+    // fallback: window.top
     try{
-      var url2=new URL(window.top.location.href);
-      url2.searchParams.set('lz_txt',encodeURIComponent(v));
-      window.top.location.href=url2.toString();
-    }catch(e2){console.log('send err',e2)}
+      var url=new URL(window.top.location.href);
+      url.searchParams.set('lz_txt',v);
+      window.top.location.assign(url.toString());
+    }catch(e2){}
   }
 }
 
@@ -4229,14 +4228,12 @@ function cScan(){
 }
 </script></body></html>""", height=76)
 
-    _txt_qp = _txt_qp.strip() if _txt_qp else ""
-    # Limpiar el encodeURIComponent si vino así
-    if _txt_qp:
-        import urllib.parse
-        try: _txt_qp = urllib.parse.unquote(_txt_qp)
-        except: pass
-    txt_in = _txt_qp
+    txt_in = _txt_qp.strip() if _txt_qp else ""
     send   = bool(txt_in)
+
+    # DEBUG TEMPORAL — confirmar que llega el mensaje
+    if txt_in:
+        st.toast(f"📨 Recibido: {txt_in[:40]}", icon="✅")
 
     _final = _quick or (_voz_qp.strip() if _voz_qp else None) or (txt_in if send else None)
 
