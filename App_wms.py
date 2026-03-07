@@ -4048,65 +4048,40 @@ if _show("🤖 ASISTENTE"):
 
     _quick = st.session_state.pop("_bot_quick", None)
 
-    # ── INPUT + MICRÓFONO ─────────────────────────────────────────────────────
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Limpiar campo: si vino de un envío, el próximo render arranca vacío
-    _input_val = "" if st.session_state.pop("_limpiar", False) else st.session_state.get("bot_input", "")
-
-    # Capturar voz enviada por el componente via query param
+    # ── INPUT CHAT ────────────────────────────────────────────────────────────
+    # Capturar voz via query param
     _voz_qp = st.query_params.get("lz_voz", "")
     if _voz_qp:
         try: del st.query_params["lz_voz"]
         except: pass
 
-    import streamlit.components.v1 as _stc
-
-    # Leer texto enviado desde la barra HTML (query param)
+    # Capturar texto via query param (desde barra HTML)
     _txt_qp = st.query_params.get("lz_txt", "")
     if _txt_qp:
         try: del st.query_params["lz_txt"]
         except: pass
-    txt_in = _txt_qp.strip()
-    send   = bool(txt_in)
 
-        # ── BARRA WhatsApp: mic + scan + input + enviar ────────────────────────
+    # Barra de escaneo (solo mic + scan, sin input de texto)
+    import streamlit.components.v1 as _stc
     _stc.html("""<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,'Inter',sans-serif}
-body{background:transparent;padding:4px 2px 0}
-.bar{display:flex;align-items:flex-end;gap:8px;
-  background:#111827;border:2px solid #263145;border-radius:28px;
-  padding:6px 6px 6px 14px;
-  box-shadow:0 4px 20px rgba(0,0,0,.6)}
-.ta{flex:1;border:none;outline:none;background:transparent;
-  color:#ECEFF1;font-size:17px;font-weight:500;
-  resize:none;min-height:40px;max-height:110px;
-  line-height:1.5;padding:8px 0;caret-color:#2979FF}
-.ta::placeholder{color:#546E7A;font-size:16px}
-.cb{border:none;border-radius:50%;width:46px;height:46px;flex-shrink:0;
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:transparent}
+.bar{display:flex;gap:8px;align-items:center;padding:4px 2px}
+.cb{border:none;border-radius:50%;width:44px;height:44px;flex-shrink:0;
   display:flex;align-items:center;justify-content:center;
   cursor:pointer;transition:transform .15s;
-  -webkit-tap-highlight-color:transparent;outline:none}
+  -webkit-tap-highlight-color:transparent;outline:none;
+  background:#1E293B;border:1.5px solid #334155}
 .cb:active{transform:scale(.85)}
-.mic{background:#1E293B;border:1.5px solid #334155;
-  box-shadow:0 2px 8px rgba(0,0,0,.3)}
-.mic.rec{background:#2D1B1B;border-color:#7F1D1D;
-  animation:rp 1.2s infinite}
-@keyframes rp{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3)}
-              50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
-.scan{background:#1A2234;border:1.5px solid #2D3F5A;
-  box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.mic.rec{background:#2D1B1B;border-color:#7F1D1D;animation:rp 1.2s infinite}
+@keyframes rp{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
 .scan.act{background:#1A2820;border-color:#1B4332}
-.snd{background:linear-gradient(135deg,#2979FF,#00E5FF);
-  box-shadow:0 3px 14px rgba(41,121,255,.5)}
-.snd:disabled{background:#1A2234;box-shadow:none;opacity:.35;cursor:default}
-.prev{font-size:13px;color:#64B5F6;padding:3px 14px 0;display:none;word-break:break-all}
+.prev{font-size:13px;color:#64B5F6;padding:2px 8px;display:none;flex:1;word-break:break-all}
 .prev.on{display:block}
-#ov{display:none;position:fixed;top:0;left:0;right:0;bottom:0;
-  background:rgba(0,0,0,.96);z-index:9999;
-  flex-direction:column;align-items:center;justify-content:center;gap:16px}
+#ov{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.96);
+  z-index:9999;flex-direction:column;align-items:center;justify-content:center;gap:16px}
 #ov.on{display:flex}
 #vid{width:90%;max-width:320px;border-radius:18px;border:3px solid #00C853}
 #sln{width:90%;max-width:320px;height:3px;
@@ -4117,28 +4092,25 @@ body{background:transparent;padding:4px 2px 0}
   padding:11px 30px;font-size:15px;font-weight:700;cursor:pointer}
 </style></head><body>
 <div class="bar">
-  <button class="cb mic" id="mbtn" onclick="tMic()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg></button>
+  <button class="cb mic" id="mbtn" onclick="tMic()">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round">
+      <rect x="9" y="2" width="6" height="12" rx="3"/>
+      <path d="M5 10a7 7 0 0014 0"/>
+      <line x1="12" y1="19" x2="12" y2="22"/>
+      <line x1="8" y1="22" x2="16" y2="22"/>
+    </svg>
+  </button>
   <button class="cb scan" id="sbtn" onclick="tScan()">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round">
       <rect x="2" y="2" width="5" height="5" rx="1"/><rect x="17" y="2" width="5" height="5" rx="1"/>
       <rect x="2" y="17" width="5" height="5" rx="1"/>
-      <line x1="9" y1="3.5" x2="9" y2="3.5"/><line x1="11" y1="3.5" x2="15" y2="3.5"/>
-      <line x1="3.5" y1="9" x2="3.5" y2="9"/><line x1="3.5" y1="11" x2="3.5" y2="15"/>
-      <line x1="9" y1="20.5" x2="9" y2="20.5"/><line x1="11" y1="20.5" x2="15" y2="20.5"/>
-      <line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="12" x2="21" y2="12"/>
-      <line x1="9" y1="15" x2="12" y2="15"/><line x1="15" y1="15" x2="21" y2="15"/>
-      <line x1="18" y1="9" x2="21" y2="9"/><line x1="20.5" y1="17" x2="20.5" y2="21"/>
+      <line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="9" x2="15" y2="9"/>
+      <line x1="9" y1="15" x2="12" y2="15"/><line x1="18" y1="9" x2="21" y2="9"/>
+      <line x1="20.5" y1="17" x2="20.5" y2="21"/>
     </svg>
   </button>
-  <textarea class="ta" id="inp" placeholder="Escribí o grabá..." rows="1"
-    oninput="aR(this);uS()"></textarea>
-  <button class="cb snd" id="sndbtn" onclick="doSend()" disabled>
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
-      <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>
-    </svg>
-  </button>
+  <div class="prev" id="pv"></div>
 </div>
-<div class="prev" id="pv"></div>
 <div id="ov">
   <video id="vid" autoplay playsinline muted></video>
   <div id="sln"></div>
@@ -4148,43 +4120,16 @@ body{background:transparent;padding:4px 2px 0}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 <script>
 var R=null,gr=false,sStr=null,sAct=false,sInt=null;
-function aR(e){e.style.height='auto';e.style.height=Math.min(e.scrollHeight,110)+'px'}
-function uS(){document.getElementById('sndbtn').disabled=!document.getElementById('inp').value.trim()}
-function gTa(){
-  var all=window.parent.document.querySelectorAll('textarea');
-  for(var i=0;i<all.length;i++){var p=all[i].placeholder||'';if(p.indexOf('Escrib')>=0)return all[i]}
-  for(var i=0;i<all.length;i++){if(!all[i].readOnly)return all[i]}
-  return null;
-}
-function sTa(v){
-  var ta=gTa();if(!ta)return false;
-  var ns=Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,'value').set;
-  ns.call(ta,v);ta.dispatchEvent(new window.parent.Event('input',{bubbles:true}));return true;
-}
-function clkSend(){
-  var doc=window.parent.document;
-  // Buscar por texto exacto en todos los botones, incluso ocultos
-  var all=doc.querySelectorAll('button');
-  for(var i=0;i<all.length;i++){
-    if((all[i].textContent||'').trim()==='Enviar'){
-      all[i].click();return;
-    }
-  }
-}
-function doSend(){
-  var v=document.getElementById('inp').value.trim();if(!v)return;
-  document.getElementById('inp').value='';
-  document.getElementById('inp').style.height='auto';uS();
+function sP(t){var p=document.getElementById('pv');p.textContent=t;p.className='prev on'}
+function hP(){document.getElementById('pv').className='prev'}
+function send(v){
   var url=new URL(window.parent.location.href);
   url.searchParams.set('lz_txt',v);
   window.parent.location.href=url.toString();
 }
-document.getElementById('inp').addEventListener('keydown',function(e){
-  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doSend();}
-});
 function tMic(){gr?stpMic():stMic()}
 function stMic(){
-  if(!window.SpeechRecognition&&!window.webkitSpeechRecognition){sP('⚠️ Sin soporte de voz');return}
+  if(!window.SpeechRecognition&&!window.webkitSpeechRecognition){sP('Sin soporte');return}
   R=new(window.SpeechRecognition||window.webkitSpeechRecognition)();
   R.lang='es-AR';R.continuous=false;R.interimResults=true;
   R.onstart=function(){gr=true;document.getElementById('mbtn').className='cb mic rec';sP('🔴 Grabando...')}
@@ -4193,21 +4138,13 @@ function stMic(){
     for(var i=e.resultIndex;i<e.results.length;i++){
       if(e.results[i].isFinal)f+=e.results[i][0].transcript;else it+=e.results[i][0].transcript;
     }
-    var tx=f||it;sP('🎙️ '+tx);
-    if(f){
-      var url=new URL(window.parent.location.href);
-      url.searchParams.set('lz_txt',f);
-      hP();
-      window.parent.location.href=url.toString();
-    }
+    if(f){stpMic();send(f);}else if(it){sP('🎙️ '+it);}
   }
-  R.onerror=function(e){sP('⚠️ '+e.error);stpMic()}
+  R.onerror=function(e){sP('Error: '+e.error);stpMic()}
   R.onend=function(){stpMic()}
   R.start();
 }
 function stpMic(){gr=false;document.getElementById('mbtn').className='cb mic';if(R){try{R.stop()}catch(e){}}}
-function sP(t){var p=document.getElementById('pv');p.textContent=t;p.className='prev on'}
-function hP(){document.getElementById('pv').className='prev'}
 function tScan(){sAct?cScan():oScan()}
 function oScan(){
   navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}})
@@ -4219,19 +4156,13 @@ function oScan(){
     var cv=document.createElement('canvas'),ctx=cv.getContext('2d'),vid=document.getElementById('vid');
     sInt=setInterval(function(){
       if(vid.readyState===vid.HAVE_ENOUGH_DATA){
-        cv.width=vid.videoWidth;cv.height=vid.videoHeight;
-        ctx.drawImage(vid,0,0);
+        cv.width=vid.videoWidth;cv.height=vid.videoHeight;ctx.drawImage(vid,0,0);
         var img=ctx.getImageData(0,0,cv.width,cv.height);
         var code=jsQR(img.data,img.width,img.height);
-        if(code&&code.data){
-          cScan();
-          var url=new URL(window.parent.location.href);
-          url.searchParams.set('lz_txt',code.data);
-          window.parent.location.href=url.toString();
-        }
+        if(code&&code.data){cScan();send(code.data);}
       }
     },200);
-  }).catch(function(e){sP('⚠️ Cámara: '+e.message)})
+  }).catch(function(e){sP('Cámara: '+e.message)})
 }
 function cScan(){
   sAct=false;clearInterval(sInt);
@@ -4240,8 +4171,12 @@ function cScan(){
   document.getElementById('sbtn').className='cb scan';
   document.getElementById('ov').className='';
 }
-</script></body></html>""", height=82)
+</script></body></html>""", height=58)
 
+    # Input nativo de Streamlit — siempre funciona
+    _chat_in = st.chat_input("Escribí tu mensaje...")
+    txt_in = _txt_qp.strip() or (_chat_in or "")
+    send   = bool(txt_in)
 
     _final = _quick or (_voz_qp.strip() if _voz_qp else None) or (txt_in if send else None)
 
