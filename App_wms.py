@@ -1414,39 +1414,93 @@ if _show("🚚 DESPACHO"):
             st.session_state.pedido.pop(pedido_a_eliminar); st.rerun()
 
         st.markdown("---")
+        # ── CANTIDAD PEDIDA — siempre visible y grande ─────────────────────
         st.markdown('<p class="sec-label">DESPACHAR ÍTEM</p>', unsafe_allow_html=True)
-        idx_desp = st.selectbox(
-            "Ítem a despachar:",
-            range(len(st.session_state.pedido)),
-            format_func=lambda i: (
-                f"{'✅' if sum(float(l.get('cantidad',0)) for l in idx_inv.get(st.session_state.pedido[i]['cod'],[])) >= st.session_state.pedido[i]['cant'] else '⚠️'}"
-                f"  {st.session_state.pedido[i]['nombre']}  —  {st.session_state.pedido[i]['cant']} uds"
-            ),
-            key="desp_sel", label_visibility="collapsed"
-        )
+
+        # Selector de ítem con cantidad siempre visible
+        if "desp_sel" not in st.session_state:
+            st.session_state["desp_sel"] = 0
+        idx_desp = st.session_state.get("desp_sel", 0)
+        if idx_desp >= len(st.session_state.pedido):
+            idx_desp = 0
+
+        # Botones de selección de ítem — uno por fila, grande
+        for _pi, _pitem in enumerate(st.session_state.pedido):
+            _pstock = sum(float(l.get('cantidad',0)) for l in idx_inv.get(_pitem['cod'], []))
+            _pok    = "✅" if _pstock >= _pitem['cant'] else "⚠️"
+            _psel   = "🔵 " if _pi == idx_desp else ""
+            _pbtn   = st.button(
+                f"{_psel}{_pok}  {_pitem['nombre'][:30]}",
+                key=f"sel_item_{_pi}",
+                use_container_width=True,
+                type="primary" if _pi == idx_desp else "secondary"
+            )
+            if _pbtn:
+                st.session_state["desp_sel"] = _pi
+                st.session_state["_pick_ok"] = None
+                st.rerun()
+
+        idx_desp = st.session_state.get("desp_sel", 0)
+        if idx_desp >= len(st.session_state.pedido):
+            idx_desp = 0
         item_sel = st.session_state.pedido[idx_desp]
         cod_d    = item_sel['cod']
         lotes_d  = [l for l in idx_inv.get(cod_d, []) if float(l.get('cantidad', 0)) > 0]
 
-        if lotes_d:
-            st.markdown('<p class="sec-label">LOTE A USAR</p>', unsafe_allow_html=True)
-            for l in lotes_d:
-                dias  = dias_para_vencer(l.get('fecha',''))
-                clase = (" vencido" if (dias is not None and dias < 0)
-                         else " por-vencer" if (dias is not None and dias <= DIAS_ALERTA) else "")
-                st.markdown(f"""
-                <div class="lote-card{clase}">
-                    <b style="font-size:18px;color:#06B6D4">{int(float(l.get('cantidad',0)))}</b>
-                    &nbsp;·&nbsp; 📍 {l.get('ubicacion','')}
-                    &nbsp;·&nbsp; {l.get('deposito','')}
-                    &nbsp;·&nbsp; 📅 {l.get('fecha','')}
-                </div>
-                """, unsafe_allow_html=True)
+        # ── CANTIDAD PEDIDA — enorme y siempre visible ───────────────────
+        _cant_ped = item_sel['cant']
+        _stk_ped  = sum(float(l.get('cantidad',0)) for l in lotes_d)
+        _cped_col = "#10B981" if _stk_ped >= _cant_ped else "#EF4444"
+        st.markdown(f"""
+        <div style="background:#0F172A;border-radius:16px;padding:16px;margin:10px 0;
+             border:2px solid {_cped_col};text-align:center">
+          <div style="font-size:13px;color:#94A3B8;font-weight:700;letter-spacing:1px">
+            CANTIDAD PEDIDA</div>
+          <div style="font-size:56px;font-weight:900;color:{_cped_col};line-height:1">
+            {int(_cant_ped)}</div>
+          <div style="font-size:12px;color:#64748B;margin-top:4px">
+            {item_sel['nombre'][:40]}</div>
+          <div style="font-size:13px;color:#94A3B8;margin-top:6px">
+            Stock disponible: <b style="color:{_cped_col}">{int(_stk_ped)}u</b></div>
+        </div>""", unsafe_allow_html=True)
 
-            lote_ops = [f"[{int(float(l.get('cantidad',0)))}u] {l.get('ubicacion','')} — {l.get('deposito','')} — {l.get('fecha','')}"
-                        for l in lotes_d]
-            idx_ld = st.selectbox("Lote a descontar:", range(len(lote_ops)),
-                                  format_func=lambda i: lote_ops[i], key="lote_desp")
+        if lotes_d:
+            st.markdown('<p class="sec-label">LOTE A USAR — elegí uno</p>', unsafe_allow_html=True)
+
+            # Botones de lote — grandes, con toda la info
+            if "lote_desp" not in st.session_state:
+                st.session_state["lote_desp"] = 0
+            idx_ld = st.session_state.get("lote_desp", 0)
+            if idx_ld >= len(lotes_d):
+                idx_ld = 0
+
+            for _li, _l in enumerate(lotes_d):
+                _lq   = int(float(_l.get('cantidad', 0) or 0))
+                _lu   = str(_l.get('ubicacion', '—')).upper()
+                _ld   = str(_l.get('deposito', '—'))
+                _lf   = str(_l.get('fecha', '') or '').strip() or '—'
+                _dias = dias_para_vencer(_l.get('fecha',''))
+                _lsel = _li == idx_ld
+                _venc_txt = ""
+                if _dias is not None:
+                    if _dias < 0:   _venc_txt = f" 🔴 VENCIDO"
+                    elif _dias <= 15: _venc_txt = f" 🟠 {_dias}d"
+                    elif _dias <= 45: _venc_txt = f" 🟡 {_dias}d"
+                    else:             _venc_txt = f" 🟢 {_dias}d"
+                _lbtn = st.button(
+                    f"{'▶ ' if _lsel else '   '}{_lq}u  ·  📍{_lu}  ·  {_ld}  ·  📅{_lf}{_venc_txt}",
+                    key=f"lote_btn_{idx_desp}_{_li}",
+                    use_container_width=True,
+                    type="primary" if _lsel else "secondary"
+                )
+                if _lbtn:
+                    st.session_state["lote_desp"] = _li
+                    st.session_state["_pick_ok"]  = None
+                    st.rerun()
+
+            idx_ld = st.session_state.get("lote_desp", 0)
+            if idx_ld >= len(lotes_d):
+                idx_ld = 0
             lote_d = lotes_d[idx_ld]
 
             # ── SCANNER DE CONFIRMACIÓN ─────────────────────────────────────────
@@ -1633,26 +1687,35 @@ function closeScan(){{
                     cant_p = float(item_sel['cant'])
                     cant_l = float(lote_d.get('cantidad', 0))
                     try:
-                        if cant_l <= cant_p:
+                        # ── Descontar SOLO del lote seleccionado ────────────────
+                        # Si el lote tiene más de lo pedido → descuenta exacto
+                        # Si el lote tiene menos → descuenta lo que hay y deja pendiente
+                        cant_a_descontar = min(cant_l, cant_p)
+
+                        if cant_a_descontar >= cant_l:
+                            # Vaciar lote completo
                             sb.table("inventario").delete().eq("id", lote_d['id']).execute()
-                            pendiente = cant_p - cant_l
-                            if pendiente > 0:
-                                st.session_state.pedido[idx_desp]['cant'] = int(pendiente)
-                                registrar_historial("SALIDA", cod_d, item_sel['nombre'],
-                                                   cant_l, lote_d.get('ubicacion',''), usuario)
-                                recalcular_maestra(cod_d, inventario)
-                                st.warning(f"Lote agotado. Quedan {int(pendiente)} uds pendientes.")
-                                refrescar(); st.rerun()
-                            else:
-                                st.session_state.pedido.pop(idx_desp)
                         else:
-                            nq = cant_l - cant_p
-                            sb.table("inventario").update({"cantidad": nq}).eq("id", lote_d['id']).execute()
-                            st.session_state.pedido.pop(idx_desp)
+                            # Quedan unidades en este lote
+                            sb.table("inventario").update(
+                                {"cantidad": cant_l - cant_a_descontar}
+                            ).eq("id", lote_d['id']).execute()
 
                         registrar_historial("SALIDA", cod_d, item_sel['nombre'],
-                                           cant_p, lote_d.get('ubicacion',''), usuario)
+                                           cant_a_descontar, lote_d.get('ubicacion',''), usuario)
                         recalcular_maestra(cod_d, inventario)
+
+                        pendiente = cant_p - cant_a_descontar
+                        if pendiente > 0:
+                            # Quedan unidades del pedido — actualizar cantidad y avisar
+                            st.session_state.pedido[idx_desp]['cant'] = int(pendiente)
+                            st.session_state["lote_desp"] = 0  # reset lote selector
+                        else:
+                            # Pedido completo para este ítem
+                            st.session_state.pedido.pop(idx_desp)
+                            st.session_state["desp_sel"] = 0
+                            st.session_state["lote_desp"] = 0
+
                         _ped_id = item_sel.get('ped_id')
                         if _ped_id:
                             try:
