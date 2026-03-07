@@ -874,13 +874,27 @@ _NAV_OPTIONS = ["📦 MOVIMIENTOS", "🚚 DESPACHO", "📋 HISTORIAL", "📊 PLA
 if "nav_tab" not in st.session_state:
     st.session_state.nav_tab = "📦 MOVIMIENTOS"
 
-# Leer cambio de tab desde query param seteado por el bottom nav JS
-_qp_nav = st.query_params.get("lz_nav", "")
-if _qp_nav and _qp_nav in _NAV_OPTIONS:
-    st.session_state.nav_tab = _qp_nav
-    try: del st.query_params["lz_nav"]
-    except: pass
-    st.rerun()
+# CSS: oculta los botones nav pero los deja clickeables por JS
+st.markdown("""<style>
+.nav-ghost-container {
+    position: fixed !important;
+    bottom: -9999px !important;
+    left: -9999px !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+}
+</style>""", unsafe_allow_html=True)
+
+# Botones fantasma — invisibles, clickeables por JS
+st.markdown('<div class="nav-ghost-container">', unsafe_allow_html=True)
+for _no in _NAV_OPTIONS:
+    _nk = "nav_" + _no.replace(" ","_").replace("📦","pkg").replace("🚚","trk").replace("📋","lst").replace("📊","bar").replace("🔐","lck").replace("🤖","bot")
+    if st.button(_no, key=_nk):
+        st.session_state.nav_tab = _no
+        st.rerun()
+st.markdown('</div>', unsafe_allow_html=True)
 
 # ── Bottom Navigation Bar Material Design ─────────────────────────────────────
 _NAV_MAIN = [
@@ -932,10 +946,21 @@ body{background:transparent}
 <script>
 function setNav(k){
   try{
-    var url=new URL(window.parent.location.href);
-    url.searchParams.set('lz_nav',k);
-    window.parent.location.href=url.toString();
-  }catch(e){console.log(e)}
+    var doc=window.parent.document;
+    var btns=doc.querySelectorAll('button');
+    for(var i=0;i<btns.length;i++){
+      if((btns[i].innerText||'').trim()===k){
+        btns[i].click();return;
+      }
+    }
+    // Fallback por primeros 3 chars (emoji)
+    for(var i=0;i<btns.length;i++){
+      var t=(btns[i].innerText||'').trim();
+      if(t.length>2&&k.length>2&&t.substring(0,3)===k.substring(0,3)){
+        btns[i].click();return;
+      }
+    }
+  }catch(e){console.log('nav err',e)}
 }
 </script>""", height=74, scrolling=False)
 
@@ -4052,13 +4077,17 @@ if _show("🤖 ASISTENTE"):
 
     import streamlit.components.v1 as _stc
 
-    # Ocultar textarea y botón enviar nativos de Streamlit
+    # Ocultar textarea y botón Enviar — Streamlit los necesita pero no deben verse
     st.markdown("""<style>
-    div[data-testid="stTextArea"]{display:none!important}
-    button[key="bot_send_btn"]{display:none!important}
+    div[data-testid="stTextArea"]{position:absolute!important;width:1px!important;
+      height:1px!important;overflow:hidden!important;opacity:0!important;
+      pointer-events:none!important;z-index:-1!important}
+    div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"]){
+      position:absolute!important;width:1px!important;height:1px!important;
+      overflow:hidden!important;opacity:0!important;pointer-events:none!important;
+      z-index:-1!important}
     </style>""", unsafe_allow_html=True)
 
-    # Textarea oculto que Streamlit necesita para leer el valor
     txt_in = st.text_area("msg", label_visibility="collapsed",
         placeholder="Escribí acá", key="bot_input",
         height=68, value=_input_val)
@@ -4084,15 +4113,15 @@ body{background:transparent;padding:4px 2px 0}
   cursor:pointer;transition:transform .15s;
   -webkit-tap-highlight-color:transparent;outline:none}
 .cb:active{transform:scale(.85)}
-.mic{background:linear-gradient(135deg,#2979FF,#00B0FF);
-  box-shadow:0 3px 12px rgba(41,121,255,.5)}
-.mic.rec{background:linear-gradient(135deg,#EF4444,#F59E0B);
-  animation:rp 1s infinite}
-@keyframes rp{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}
-              50%{box-shadow:0 0 0 10px rgba(239,68,68,0)}}
-.scan{background:linear-gradient(135deg,#00C853,#00E676);
-  box-shadow:0 3px 12px rgba(0,200,83,.4)}
-.scan.act{background:linear-gradient(135deg,#F59E0B,#EF4444)}
+.mic{background:#1E293B;border:1.5px solid #334155;
+  box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.mic.rec{background:#2D1B1B;border-color:#7F1D1D;
+  animation:rp 1.2s infinite}
+@keyframes rp{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3)}
+              50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
+.scan{background:#1A2234;border:1.5px solid #2D3F5A;
+  box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.scan.act{background:#1A2820;border-color:#1B4332}
 .snd{background:linear-gradient(135deg,#2979FF,#00E5FF);
   box-shadow:0 3px 14px rgba(41,121,255,.5)}
 .snd:disabled{background:#1A2234;box-shadow:none;opacity:.35;cursor:default}
@@ -4111,9 +4140,9 @@ body{background:transparent;padding:4px 2px 0}
   padding:11px 30px;font-size:15px;font-weight:700;cursor:pointer}
 </style></head><body>
 <div class="bar">
-  <button class="cb mic" id="mbtn" onclick="tMic()">🎙️</button>
+  <button class="cb mic" id="mbtn" onclick="tMic()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg></button>
   <button class="cb scan" id="sbtn" onclick="tScan()">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect x="2" y="2" width="5" height="5" rx="1"/><rect x="17" y="2" width="5" height="5" rx="1"/>
       <rect x="2" y="17" width="5" height="5" rx="1"/>
       <line x1="9" y1="3.5" x2="9" y2="3.5"/><line x1="11" y1="3.5" x2="15" y2="3.5"/>
@@ -4156,8 +4185,12 @@ function sTa(v){
   ns.call(ta,v);ta.dispatchEvent(new window.parent.Event('input',{bubbles:true}));return true;
 }
 function clkSend(){
-  var bs=window.parent.document.querySelectorAll('button');
-  for(var i=0;i<bs.length;i++){var t=bs[i].textContent||'';if(t.indexOf('Enviar')>=0){bs[i].click();return}}
+  var doc=window.parent.document;
+  var containers=doc.querySelectorAll('[data-testid="stButton"]');
+  for(var i=0;i<containers.length;i++){
+    var btn=containers[i].querySelector('button');
+    if(btn&&(btn.textContent||'').trim()==='Enviar'){btn.click();return;}
+  }
 }
 function doSend(){
   var v=document.getElementById('inp').value.trim();if(!v)return;
