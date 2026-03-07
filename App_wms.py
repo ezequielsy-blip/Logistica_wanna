@@ -4049,6 +4049,7 @@ if _show("🤖 ASISTENTE"):
     _quick = st.session_state.pop("_bot_quick", None)
 
     # ── INPUT CHAT ────────────────────────────────────────────────────────────
+    _voz_qp = ""  # voz enviada via mic (se llena via lz_txt)
     _txt_qp = st.query_params.get("lz_txt", "")
     if _txt_qp:
         try: del st.query_params["lz_txt"]
