@@ -874,27 +874,25 @@ _NAV_OPTIONS = ["📦 MOVIMIENTOS", "🚚 DESPACHO", "📋 HISTORIAL", "📊 PLA
 if "nav_tab" not in st.session_state:
     st.session_state.nav_tab = "📦 MOVIMIENTOS"
 
-# CSS: oculta los botones nav pero los deja clickeables por JS
+# Radio oculto — el JS lo cambia, Streamlit actualiza session_state
 st.markdown("""<style>
-.nav-ghost-container {
-    position: fixed !important;
-    bottom: -9999px !important;
-    left: -9999px !important;
-    width: 1px !important;
-    height: 1px !important;
-    overflow: hidden !important;
-    opacity: 0 !important;
+div[data-testid="stRadio"]#_nav_radio_wrap {
+    display:none!important;height:0!important;overflow:hidden!important;
+}
+/* Ocultar el radio nav — seleccionado por su posición justo antes del bottom nav */
+div[data-testid="stRadio"]:first-of-type {
+    position:absolute!important;width:0!important;height:0!important;
+    overflow:hidden!important;opacity:0!important;pointer-events:none!important;
 }
 </style>""", unsafe_allow_html=True)
 
-# Botones fantasma — invisibles, clickeables por JS
-st.markdown('<div class="nav-ghost-container">', unsafe_allow_html=True)
-for _no in _NAV_OPTIONS:
-    _nk = "nav_" + _no.replace(" ","_").replace("📦","pkg").replace("🚚","trk").replace("📋","lst").replace("📊","bar").replace("🔐","lck").replace("🤖","bot")
-    if st.button(_no, key=_nk):
-        st.session_state.nav_tab = _no
-        st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
+_nav_radio = st.radio("nav", _NAV_OPTIONS,
+    index=_NAV_OPTIONS.index(st.session_state.nav_tab),
+    key="_nav_radio", label_visibility="collapsed",
+    horizontal=False)
+if _nav_radio != st.session_state.nav_tab:
+    st.session_state.nav_tab = _nav_radio
+    st.rerun()
 
 # ── Bottom Navigation Bar Material Design ─────────────────────────────────────
 _NAV_MAIN = [
@@ -947,17 +945,20 @@ body{background:transparent}
 function setNav(k){
   try{
     var doc=window.parent.document;
-    var btns=doc.querySelectorAll('button');
-    for(var i=0;i<btns.length;i++){
-      if((btns[i].innerText||'').trim()===k){
-        btns[i].click();return;
+    // Buscar labels del radio que coincidan con k
+    var labels=doc.querySelectorAll('[data-testid="stRadio"] label');
+    for(var i=0;i<labels.length;i++){
+      if((labels[i].innerText||'').trim()===k){
+        labels[i].click();return;
       }
     }
-    // Fallback por primeros 3 chars (emoji)
-    for(var i=0;i<btns.length;i++){
-      var t=(btns[i].innerText||'').trim();
-      if(t.length>2&&k.length>2&&t.substring(0,3)===k.substring(0,3)){
-        btns[i].click();return;
+    // Fallback: buscar input radio con ese valor
+    var inputs=doc.querySelectorAll('[data-testid="stRadio"] input[type="radio"]');
+    for(var i=0;i<inputs.length;i++){
+      if(inputs[i].value===k){
+        inputs[i].click();
+        inputs[i].dispatchEvent(new doc.defaultView.Event('change',{bubbles:true}));
+        return;
       }
     }
   }catch(e){console.log('nav err',e)}
@@ -2440,16 +2441,6 @@ if _show("🤖 ASISTENTE"):
             c for c in s if _ud.category(c) != 'Mn').lower().strip())
 
     # Stopwords: nunca son nombre de producto
-    """
-    Motor de búsqueda v3 — blindado para nombres con variantes (tonos, tamaños).
-
-    PROBLEMAS RESUELTOS:
-      1. "8/00" vs "7/00" — penalty -800pts por número faltante
-      2. "400" en query no se confunde con tono "4/00" — dos normalizadores separados
-      3. Búsqueda por código de barras (EAN-13, UPC, QR, cualquier campo)
-      4. Búsqueda por código interno (paso previo al scoring)
-      5. Step 3 no confunde partes de tonos (8 de "8/00") con cod_int
-    """
     import re as _re, unicodedata as _ud
 
     _SW = {
@@ -4077,15 +4068,17 @@ if _show("🤖 ASISTENTE"):
 
     import streamlit.components.v1 as _stc
 
-    # Ocultar textarea y botón Enviar — Streamlit los necesita pero no deben verse
+    # Ocultar textarea y botón Enviar nativos
     st.markdown("""<style>
-    div[data-testid="stTextArea"]{position:absolute!important;width:1px!important;
-      height:1px!important;overflow:hidden!important;opacity:0!important;
-      pointer-events:none!important;z-index:-1!important}
-    div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"]){
-      position:absolute!important;width:1px!important;height:1px!important;
-      overflow:hidden!important;opacity:0!important;pointer-events:none!important;
-      z-index:-1!important}
+    div[data-testid="stTextArea"]{
+      height:0!important;min-height:0!important;overflow:hidden!important;
+      margin:0!important;padding:0!important;opacity:0!important}
+    div[data-testid="stTextArea"] *{display:none!important}
+    div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"]):last-of-type{
+      height:0!important;overflow:hidden!important;margin:0!important;
+      padding:0!important;opacity:0!important}
+    div[data-testid="stButton"]:has(button[data-testid="baseButton-secondary"]):last-of-type *{
+      display:none!important}
     </style>""", unsafe_allow_html=True)
 
     txt_in = st.text_area("msg", label_visibility="collapsed",
