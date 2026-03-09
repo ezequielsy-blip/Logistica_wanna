@@ -3773,19 +3773,21 @@ if _show("🤖 ASISTENTE"):
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:transparent;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 .bar{display:flex;gap:6px;align-items:center}
-.btn{border:none;border-radius:50%;width:48px;height:48px;font-size:22px;
+.btn{border:none;border-radius:50%;width:46px;height:46px;font-size:20px;
      cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;
      -webkit-tap-highlight-color:transparent;transition:all .15s}
-.btn-mic{background:linear-gradient(135deg,#3B82F6,#06B6D4);
-         box-shadow:0 3px 10px rgba(59,130,246,.4)}
-.btn-mic.rec{background:linear-gradient(135deg,#EF4444,#F59E0B);
+.btn-mic{background:#1E293B;border:1.5px solid #334155;
+         box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.btn-mic:hover{background:#263347;border-color:#3B82F6}
+.btn-mic.rec{background:#2D1B1B;border:1.5px solid #991B1B;
              animation:pulse 1s infinite}
-.btn-scan{background:linear-gradient(135deg,#10B981,#059669);
-          box-shadow:0 3px 10px rgba(16,185,129,.4)}
-.btn-scan.active{background:linear-gradient(135deg,#F59E0B,#EF4444)}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)}
-                 50%{box-shadow:0 0 0 10px rgba(239,68,68,0)}}
-.status{flex:1;font-size:11px;color:#94A3B8;font-weight:500;line-height:1.4;
+.btn-scan{background:#1E293B;border:1.5px solid #334155;
+          box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.btn-scan:hover{background:#263347;border-color:#10B981}
+.btn-scan.active{background:#1A2820;border:1.5px solid #065F46}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3)}
+                 50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
+.status{flex:1;font-size:11px;color:#64748B;font-weight:500;line-height:1.4;
         min-height:20px;display:flex;align-items:center}
 .status.ok{color:#10B981}.status.er{color:#EF4444}.status.scan{color:#F59E0B}
 .preview{font-size:11px;color:#93C5FD;margin-top:2px;word-break:break-all;display:none}
@@ -3807,10 +3809,32 @@ body{background:transparent;font-family:-apple-system,BlinkMacSystemFont,'Segoe 
            padding:10px 28px;font-size:14px;font-weight:700;cursor:pointer}
 </style></head><body>
 <div class="bar">
-  <button class="btn btn-mic" id="micbtn" onclick="togMic()">🎤</button>
-  <button class="btn btn-scan" id="scanbtn" onclick="togScan()">📷</button>
+  <button class="btn btn-mic" id="micbtn" onclick="togMic()" title="Grabar voz">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="2" width="6" height="12" rx="3"/>
+      <path d="M5 10a7 7 0 0014 0"/>
+      <line x1="12" y1="19" x2="12" y2="22"/>
+      <line x1="8" y1="22" x2="16" y2="22"/>
+    </svg>
+  </button>
+  <button class="btn btn-scan" id="scanbtn" onclick="togScan()" title="Escanear código">
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="2" width="5" height="5" rx="1"/>
+      <rect x="17" y="2" width="5" height="5" rx="1"/>
+      <rect x="2" y="17" width="5" height="5" rx="1"/>
+      <line x1="9" y1="4.5" x2="9.01" y2="4.5"/>
+      <line x1="4.5" y1="9" x2="4.5" y2="9.01"/>
+      <line x1="19.5" y1="9" x2="19.5" y2="9.01"/>
+      <line x1="9" y1="19.5" x2="9.01" y2="19.5"/>
+      <line x1="12" y1="12" x2="21" y2="12"/>
+      <line x1="12" y1="8" x2="14" y2="8"/>
+      <line x1="12" y1="16" x2="14" y2="16"/>
+      <line x1="18" y1="8" x2="21" y2="8"/>
+      <line x1="20" y1="16" x2="21" y2="20"/>
+    </svg>
+  </button>
   <div style="flex:1">
-    <div class="status" id="mst">🎤 Grabar · 📷 Escanear código</div>
+    <div class="status" id="mst">Grabá tu voz · Escaneá un código</div>
     <div class="preview" id="mpv"></div>
   </div>
 </div>
@@ -3824,7 +3848,14 @@ body{background:transparent;font-family:-apple-system,BlinkMacSystemFont,'Segoe 
 <script>
 var R=null,gr=false,tx="",scanStream=null,scanActive=false,scanInterval=null;
 function M(id){return document.getElementById(id)}
-function setMic(c,i){M("micbtn").className="btn btn-mic "+(c||"");M("micbtn").innerHTML=i||"🎤"}
+function setMic(c,i){
+  M("micbtn").className="btn btn-mic "+(c||"");
+  if(c==="rec"){
+    M("micbtn").innerHTML='<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>';
+  }else{
+    M("micbtn").innerHTML='<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>';
+  }
+}
 function setSt(c,t){M("mst").className="status "+(c||"");M("mst").textContent=t}
 function setPv(t){M("mpv").textContent=t;M("mpv").style.display=t?"block":"none"}
 function showSend(v){M("sbtn").style.display=v?"block":"none"}
@@ -3945,6 +3976,18 @@ var _ht=0;function tryH(){hookEnter();if(!getTa()&&_ht<25){_ht++;setTimeout(tryH
         border-color:#3B82F6 !important;
         box-shadow:0 0 0 3px rgba(59,130,246,.2) !important}
     .stTextArea textarea::placeholder{color:#475569 !important;font-size:14px !important}
+    div[data-testid="stButton"]:has(button[key="bot_send"]) button{
+        background:#1E293B !important;
+        border:1.5px solid #334155 !important;
+        border-radius:50% !important;
+        width:46px !important;height:46px !important;
+        padding:0 !important;font-size:0 !important;color:transparent !important;
+        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='%2394A3B8'%3E%3Cpath d='M2 21l21-9L2 3v7l15 2-15 2v7z'/%3E%3C/svg%3E") !important;
+        background-repeat:no-repeat !important;background-position:center !important;
+        min-height:46px !important;box-shadow:0 2px 8px rgba(0,0,0,.3) !important}
+    div[data-testid="stButton"]:has(button[key="bot_send"]) button:hover{
+        border-color:#3B82F6 !important;background-color:#263347 !important;
+        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='%233B82F6'%3E%3Cpath d='M2 21l21-9L2 3v7l15 2-15 2v7z'/%3E%3C/svg%3E") !important}
     </style>""", unsafe_allow_html=True)
 
     ic1, ic2 = st.columns([5, 1])
