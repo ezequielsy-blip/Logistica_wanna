@@ -3772,29 +3772,36 @@ if _show("🤖 ASISTENTE"):
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:transparent;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-.bar{display:flex;gap:6px;align-items:center}
-.btn{border:none;border-radius:50%;width:46px;height:46px;font-size:20px;
-     cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-     -webkit-tap-highlight-color:transparent;transition:all .15s}
-.btn-mic{background:#1E293B;border:1.5px solid #334155;
-         box-shadow:0 2px 8px rgba(0,0,0,.3)}
-.btn-mic:hover{background:#263347;border-color:#3B82F6}
-.btn-mic.rec{background:#2D1B1B;border:1.5px solid #991B1B;
-             animation:pulse 1s infinite}
-.btn-scan{background:#1E293B;border:1.5px solid #334155;
-          box-shadow:0 2px 8px rgba(0,0,0,.3)}
-.btn-scan:hover{background:#263347;border-color:#10B981}
-.btn-scan.active{background:#1A2820;border:1.5px solid #065F46}
+.bar{display:flex;gap:8px;align-items:flex-end;
+     background:#1E293B;border:1.5px solid #334155;border-radius:20px;
+     padding:8px 8px 8px 12px;box-shadow:0 2px 12px rgba(0,0,0,.4)}
+.btn{border:none;border-radius:50%;width:44px;height:44px;flex-shrink:0;
+     cursor:pointer;display:flex;align-items:center;justify-content:center;
+     -webkit-tap-highlight-color:transparent;transition:all .15s;
+     background:#263347;border:1.5px solid #334155}
+.btn:active{transform:scale(.88)}
+.btn-mic:hover{border-color:#3B82F6}
+.btn-mic.rec{background:#2D1B1B;border-color:#991B1B;animation:pulse 1s infinite}
+.btn-scan:hover{border-color:#10B981}
+.btn-scan.active{background:#1A2820;border-color:#065F46}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3)}
                  50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
-.status{flex:1;font-size:11px;color:#64748B;font-weight:500;line-height:1.4;
-        min-height:20px;display:flex;align-items:center}
-.status.ok{color:#10B981}.status.er{color:#EF4444}.status.scan{color:#F59E0B}
-.preview{font-size:11px;color:#93C5FD;margin-top:2px;word-break:break-all;display:none}
-.send-btn{width:100%;margin-top:6px;padding:11px;border:none;border-radius:14px;
-          background:linear-gradient(135deg,#10B981,#059669);color:#fff;
-          font-size:14px;font-weight:700;cursor:pointer;display:none;
-          -webkit-tap-highlight-color:transparent}
+.ta{flex:1;border:none;outline:none;background:transparent;
+    color:#F1F5F9;font-size:16px;resize:none;min-height:44px;max-height:120px;
+    line-height:1.5;padding:10px 4px;caret-color:#3B82F6;
+    font-family:-apple-system,sans-serif}
+.ta::placeholder{color:#475569;font-size:14px}
+.btn-send{border:none;border-radius:50%;width:44px;height:44px;flex-shrink:0;
+          cursor:pointer;display:flex;align-items:center;justify-content:center;
+          -webkit-tap-highlight-color:transparent;transition:all .15s;
+          background:#263347;border:1.5px solid #334155}
+.btn-send:active{transform:scale(.88)}
+.btn-send:hover{border-color:#3B82F6;background:#1E3A5F}
+.preview{font-size:11px;color:#93C5FD;padding:2px 8px 0;display:none;
+         position:absolute;bottom:100%;left:0;right:0;
+         background:#1E293B;border-radius:8px 8px 0 0;padding:4px 12px}
+.preview.on{display:block}
+.wrap{position:relative}
 #scanOverlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;
              background:rgba(0,0,0,.94);z-index:9999;flex-direction:column;
              align-items:center;justify-content:center;gap:14px}
@@ -3808,37 +3815,39 @@ body{background:transparent;font-family:-apple-system,BlinkMacSystemFont,'Segoe 
 #scanClose{background:#EF4444;color:#fff;border:none;border-radius:12px;
            padding:10px 28px;font-size:14px;font-weight:700;cursor:pointer}
 </style></head><body>
-<div class="bar">
-  <button class="btn btn-mic" id="micbtn" onclick="togMic()" title="Grabar voz">
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="9" y="2" width="6" height="12" rx="3"/>
-      <path d="M5 10a7 7 0 0014 0"/>
-      <line x1="12" y1="19" x2="12" y2="22"/>
-      <line x1="8" y1="22" x2="16" y2="22"/>
-    </svg>
-  </button>
-  <button class="btn btn-scan" id="scanbtn" onclick="togScan()" title="Escanear código">
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="2" y="2" width="5" height="5" rx="1"/>
-      <rect x="17" y="2" width="5" height="5" rx="1"/>
-      <rect x="2" y="17" width="5" height="5" rx="1"/>
-      <line x1="9" y1="4.5" x2="9.01" y2="4.5"/>
-      <line x1="4.5" y1="9" x2="4.5" y2="9.01"/>
-      <line x1="19.5" y1="9" x2="19.5" y2="9.01"/>
-      <line x1="9" y1="19.5" x2="9.01" y2="19.5"/>
-      <line x1="12" y1="12" x2="21" y2="12"/>
-      <line x1="12" y1="8" x2="14" y2="8"/>
-      <line x1="12" y1="16" x2="14" y2="16"/>
-      <line x1="18" y1="8" x2="21" y2="8"/>
-      <line x1="20" y1="16" x2="21" y2="20"/>
-    </svg>
-  </button>
-  <div style="flex:1">
-    <div class="status" id="mst">Grabá tu voz · Escaneá un código</div>
-    <div class="preview" id="mpv"></div>
+<div class="wrap">
+  <div class="preview" id="mpv"></div>
+  <div class="bar">
+    <button class="btn btn-mic" id="micbtn" onclick="togMic()" title="Grabar voz">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="mic-svg">
+        <rect x="9" y="2" width="6" height="12" rx="3"/>
+        <path d="M5 10a7 7 0 0014 0"/>
+        <line x1="12" y1="19" x2="12" y2="22"/>
+        <line x1="8" y1="22" x2="16" y2="22"/>
+      </svg>
+    </button>
+    <button class="btn btn-scan" id="scanbtn" onclick="togScan()" title="Escanear código">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="2" width="5" height="5" rx="1"/>
+        <rect x="17" y="2" width="5" height="5" rx="1"/>
+        <rect x="2" y="17" width="5" height="5" rx="1"/>
+        <line x1="17" y1="17" x2="19" y2="17"/><line x1="21" y1="17" x2="21" y2="17"/>
+        <line x1="6" y1="12" x2="21" y2="12"/>
+        <line x1="6" y1="9" x2="10" y2="9"/>
+        <line x1="6" y1="15" x2="9" y2="15"/>
+        <line x1="14" y1="9" x2="17" y2="9"/>
+        <line x1="19" y1="15" x2="21" y2="19"/>
+      </svg>
+    </button>
+    <textarea class="ta" id="ta" placeholder="Escribí acá..." rows="1"
+      oninput="autoResize(this)"></textarea>
+    <button class="btn-send" onclick="doSend()" title="Enviar">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="#94A3B8">
+        <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>
+      </svg>
+    </button>
   </div>
 </div>
-<button class="send-btn" id="sbtn" onclick="enviarVoz()">🟢 ENVIAR</button>
 <div id="scanOverlay">
   <video id="scanVideo" autoplay playsinline muted></video>
   <div id="scanLine"></div>
@@ -3848,17 +3857,10 @@ body{background:transparent;font-family:-apple-system,BlinkMacSystemFont,'Segoe 
 <script>
 var R=null,gr=false,tx="",scanStream=null,scanActive=false,scanInterval=null;
 function M(id){return document.getElementById(id)}
-function setMic(c,i){
-  M("micbtn").className="btn btn-mic "+(c||"");
-  if(c==="rec"){
-    M("micbtn").innerHTML='<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>';
-  }else{
-    M("micbtn").innerHTML='<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>';
-  }
-}
-function setSt(c,t){M("mst").className="status "+(c||"");M("mst").textContent=t}
-function setPv(t){M("mpv").textContent=t;M("mpv").style.display=t?"block":"none"}
-function showSend(v){M("sbtn").style.display=v?"block":"none"}
+function setPv(t){var p=M("mpv");p.textContent=t;p.className=t?"preview on":"preview"}
+function autoResize(el){el.style.height="auto";el.style.height=Math.min(el.scrollHeight,120)+"px"}
+
+// Inyectar en el textarea de Streamlit y hacer click en Enviar
 function getTa(){
   var all=window.parent.document.querySelectorAll("textarea");
   for(var i=0;i<all.length;i++){
@@ -3870,124 +3872,121 @@ function getTa(){
 }
 function enviarTexto(texto){
   var ta=getTa();
-  if(!ta){setSt("er","No se encontró el campo de texto");return false}
-  // Write value using React's internal setter
+  if(!ta){setPv("No se encontró el campo");return false}
   var nativeSet=Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set;
   try{nativeSet.call(ta,texto)}catch(e){ta.value=texto}
-  // Fire input+change so React/Streamlit sees the new value
   ta.dispatchEvent(new Event("input",{bubbles:true,composed:true}));
   ta.dispatchEvent(new Event("change",{bubbles:true,composed:true}));
   ta.focus();
-  // Press Enter — Streamlit textarea with on_change fires rerun on Enter
   setTimeout(function(){
-    ["keydown","keypress","keyup"].forEach(function(ev){
-      ta.dispatchEvent(new KeyboardEvent(ev,{
-        key:"Enter",code:"Enter",keyCode:13,which:13,
-        bubbles:true,cancelable:true,composed:true
-      }));
-    });
-    // Backup: click the ➤ Enviar button
-    setTimeout(function(){
-      var btns=window.parent.document.querySelectorAll("button");
-      for(var i=0;i<btns.length;i++){
-        var t=(btns[i].innerText||btns[i].textContent||"").trim();
-        if(t.indexOf("Enviar")>=0||t==="➤ Enviar"){btns[i].click();return}
-      }
-    },200);
+    var btns=window.parent.document.querySelectorAll("button");
+    for(var i=0;i<btns.length;i++){
+      var t=(btns[i].innerText||btns[i].textContent||"").trim();
+      if(t.indexOf("Enviar")>=0){btns[i].click();return}
+    }
   },100);
   return true;
 }
-function hookEnter(){
-  var ta=getTa();
-  if(ta&&!ta._lzHook){
-    ta._lzHook=true;
-    ta.addEventListener("keydown",function(ev){
-      if(ev.key==="Enter"&&!ev.shiftKey){
-        ev.preventDefault();ev.stopPropagation();
-        if(!ta.value.trim()) return;
-        var btns=window.parent.document.querySelectorAll("button");
-        for(var i=0;i<btns.length;i++){
-          var t=(btns[i].innerText||btns[i].textContent||"").trim();
-          if(t.indexOf("Enviar")>=0){btns[i].click();return}
-        }
-      }
-    },true);
+function doSend(){
+  var v=M("ta").value.trim();
+  if(!v) return;
+  M("ta").value="";
+  M("ta").style.height="auto";
+  enviarTexto(v);
+}
+// Enter envía, Shift+Enter nueva línea
+M("ta").addEventListener("keydown",function(e){
+  if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();doSend();}
+});
+
+// ── MIC ──
+function setMic(rec){
+  var btn=M("micbtn");
+  var svg=M("mic-svg");
+  if(rec){
+    btn.className="btn btn-mic rec";
+    svg.setAttribute("stroke","#EF4444");
+  }else{
+    btn.className="btn btn-mic";
+    svg.setAttribute("stroke","#94A3B8");
   }
 }
 function togMic(){
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){setSt("er","Necesitás Chrome o Edge para el micrófono");return}
+  if(!SR){setPv("Necesitás Chrome o Edge");return}
   if(gr){R.stop();return}
-  tx="";showSend(false);setPv("");
+  tx="";setPv("");
   R=new SR();R.lang="es-AR";R.continuous=false;R.interimResults=true;R.maxAlternatives=1;
-  R.onstart=function(){gr=true;setMic("rec","⏹");setSt("ok","🔴 Escuchando...")}
-  R.onresult=function(e){var t="";for(var i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript;tx=t;setPv("📝 "+tx);showSend(!!tx)}
-  R.onerror=function(e){var m={"not-allowed":"Permiso denegado","no-speech":"No se escuchó","network":"Error de red"};setSt("er","❌ "+(m[e.error]||e.error));gr=false;setMic("","🎤");showSend(false)}
-  R.onend=function(){gr=false;setMic("","🎤");if(tx){setSt("ok","✅ Grabado — enviando...");showSend(true);setTimeout(function(){var ok=enviarTexto(tx);if(ok){tx="";setPv("");showSend(false);setSt("","🎤 Grabar · 📷 Escanear código")}},300)}else{setSt("","🎤 Grabar · 📷 Escanear código");showSend(false)}}
+  R.onstart=function(){gr=true;setMic(true);setPv("🔴 Escuchando...")}
+  R.onresult=function(e){
+    var f="",it="";
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal) f+=e.results[i][0].transcript;
+      else it+=e.results[i][0].transcript;
+    }
+    if(it) setPv("🎙️ "+it);
+    if(f){tx=f;setPv("✅ "+f);}
+  }
+  R.onerror=function(e){
+    var m={"not-allowed":"Permiso denegado","no-speech":"No se escuchó","network":"Error de red"};
+    setPv("❌ "+(m[e.error]||e.error));setMic(false);gr=false;
+  }
+  R.onend=function(){
+    gr=false;setMic(false);
+    if(tx){
+      var v=tx;tx="";
+      setTimeout(function(){
+        M("ta").value="";
+        enviarTexto(v);
+        setTimeout(function(){setPv("")},1800);
+      },200);
+    }
+  }
   R.start();
 }
-function enviarVoz(){if(!tx){setSt("er","Grabá primero");return}setSt("ok","Enviando...");if(enviarTexto(tx)){tx="";setPv("");showSend(false);setSt("","🎤 Grabar · 📷 Escanear código")}}
-function togScan(){
-  if(scanActive){closeScan();return}
-  if(!window.BarcodeDetector){setSt("er","BarcodeDetector no soportado — usá Chrome Android");return}
-  openCamera();
-}
+
+// ── SCAN ──
+function togScan(){if(scanActive)closeScan();else openCamera()}
 function openCamera(){
   scanActive=true;M("scanbtn").className="btn btn-scan active";M("scanOverlay").className="show";
   navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1920}}})
     .then(function(stream){
       scanStream=stream;M("scanVideo").srcObject=stream;
-      var det=new BarcodeDetector({formats:["ean_13","ean_8","code_128","code_39","upc_a","upc_e","itf","qr_code"]});
-      setSt("scan","📷 Escaneando...");
+      var det=new BarcodeDetector({formats:["ean_13","ean_8","code_128","code_39","upc_a","upc_e","qr_code","data_matrix"]});
+      setPv("📷 Escaneando...");
       scanInterval=setInterval(function(){
         if(!scanActive) return;
         det.detect(M("scanVideo")).then(function(codes){
           if(codes.length>0){
             var code=codes[0].rawValue;
             closeScan();
-            setSt("ok","📦 Buscando "+code+"...");
+            setPv("📦 "+code);
             setTimeout(function(){
+              M("ta").value="";
               enviarTexto(code);
-              setTimeout(function(){setSt("","🎤 Grabar · 📷 Escanear código")},1800);
+              setTimeout(function(){setPv("")},1800);
             },200);
           }
         }).catch(function(){});
       },350);
     })
-    .catch(function(e){closeScan();setSt("er","❌ "+e.message)});
+    .catch(function(e){closeScan();setPv("❌ "+e.message)});
 }
 function closeScan(){
   scanActive=false;clearInterval(scanInterval);
   if(scanStream){scanStream.getTracks().forEach(function(t){t.stop()});scanStream=null}
   M("scanVideo").srcObject=null;M("scanbtn").className="btn btn-scan";M("scanOverlay").className="";
 }
-var _ht=0;function tryH(){hookEnter();if(!getTa()&&_ht<25){_ht++;setTimeout(tryH,400)}}tryH();
-</script></body></html>""", height=115)
+</script></body></html>""", height=76)
 
-    # CSS textarea
+    # CSS para ocultar textarea y botón nativos (siguen funcionando, solo invisibles)
     st.markdown("""<style>
-    .stTextArea textarea{
-        background:#1E293B !important;color:#F1F5F9 !important;
-        border:1.5px solid #334155 !important;border-radius:18px !important;
-        font-size:16px !important;resize:none !important;
-        padding:14px 18px !important;line-height:1.5 !important;
-        font-family:'DM Sans',sans-serif !important}
-    .stTextArea textarea:focus{
-        border-color:#3B82F6 !important;
-        box-shadow:0 0 0 3px rgba(59,130,246,.2) !important}
-    .stTextArea textarea::placeholder{color:#475569 !important;font-size:14px !important}
-    div[data-testid="stButton"]:has(button[key="bot_send"]) button{
-        background:#1E293B !important;
-        border:1.5px solid #334155 !important;
-        border-radius:50% !important;
-        width:46px !important;height:46px !important;
-        padding:0 !important;font-size:0 !important;color:transparent !important;
-        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='%2394A3B8'%3E%3Cpath d='M2 21l21-9L2 3v7l15 2-15 2v7z'/%3E%3C/svg%3E") !important;
-        background-repeat:no-repeat !important;background-position:center !important;
-        min-height:46px !important;box-shadow:0 2px 8px rgba(0,0,0,.3) !important}
-    div[data-testid="stButton"]:has(button[key="bot_send"]) button:hover{
-        border-color:#3B82F6 !important;background-color:#263347 !important;
-        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='%233B82F6'%3E%3Cpath d='M2 21l21-9L2 3v7l15 2-15 2v7z'/%3E%3C/svg%3E") !important}
+    div[data-testid="stTextArea"]{
+      position:fixed!important;top:-9999px!important;left:-9999px!important;
+      width:1px!important;height:1px!important;overflow:hidden!important}
+    div[data-testid="stButton"]:has(button[key="bot_send"]){
+      position:fixed!important;top:-9999px!important;left:-9999px!important;
+      width:1px!important;height:1px!important;overflow:hidden!important}
     </style>""", unsafe_allow_html=True)
 
     ic1, ic2 = st.columns([5, 1])
