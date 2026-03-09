@@ -3907,7 +3907,7 @@ function togMic(){
   R.onstart=function(){gr=true;setMic("rec","⏹");setSt("ok","🔴 Escuchando...")}
   R.onresult=function(e){var t="";for(var i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript;tx=t;setPv("📝 "+tx);showSend(!!tx)}
   R.onerror=function(e){var m={"not-allowed":"Permiso denegado","no-speech":"No se escuchó","network":"Error de red"};setSt("er","❌ "+(m[e.error]||e.error));gr=false;setMic("","🎤");showSend(false)}
-  R.onend=function(){gr=false;setMic("","🎤");if(tx){setSt("ok","✅ Grabado — enviando...");showSend(true);setTimeout(function(){var ok=enviarTexto(tx);if(ok){tx="";setPv("");showSend(false);setSt("","🎤 Grabar · 📷 Escanear código")}},300)}else{setSt("","🎤 Grabar · 📷 Escanear código");showSend(false)}}
+    R.onend=function(){gr=false;setMic("","🎤");if(tx){var _tx=tx;tx="";setSt("ok","✅ Grabado — enviando...");enviarTexto(_tx);setPv("");setSt("","🎤 Grabar · 📷 Escanear código")}}
   R.start();
 }
 function enviarVoz(){if(!tx){setSt("er","Grabá primero");return}setSt("ok","Enviando...");if(enviarTexto(tx)){tx="";setPv("");showSend(false);setSt("","🎤 Grabar · 📷 Escanear código")}}
@@ -3960,21 +3960,14 @@ var _ht=0;function tryH(){hookEnter();if(!getTa()&&_ht<25){_ht++;setTimeout(tryH
     .stTextArea textarea::placeholder{color:#475569 !important;font-size:14px !important}
     .stTextArea{background:none !important}
     /* Botón enviar: flecha ➤ circular */
+    /* Botón enviar → flecha circular */
     div[data-testid="stButton"]:has(button[key="bot_send"]) button{
-        background:#1E293B !important;
-        border:1.5px solid #334155 !important;
         border-radius:50% !important;
-        width:44px !important;min-height:44px !important;height:44px !important;
-        padding:0 !important;
-        color:transparent !important;font-size:0 !important;
-        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2394A3B8'%3E%3Cpath d='M2 21l21-9L2 3v7l15 2-15 2v7z'/%3E%3C/svg%3E") !important;
-        background-size:18px 18px !important;
-        background-repeat:no-repeat !important;
-        background-position:center !important}
-    div[data-testid="stButton"]:has(button[key="bot_send"]) button:hover{
-        border-color:#3B82F6 !important;
-        background-color:#263347 !important;
-        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233B82F6'%3E%3Cpath d='M2 21l21-9L2 3v7l15 2-15 2v7z'/%3E%3C/svg%3E") !important}
+        width:46px !important;height:46px !important;min-height:46px !important;
+        padding:0 !important;font-size:20px !important;
+        background:linear-gradient(135deg,#2979FF,#00B0FF) !important;
+        border:none !important;
+        box-shadow:0 3px 12px rgba(41,121,255,.5) !important}
     /* Fila única: iframe(mic+scan) + textarea + botón */
     div[data-testid="stHorizontalBlock"]:has(div[data-testid="stTextArea"]){
         background:#1E293B;
@@ -3996,7 +3989,7 @@ var _ht=0;function tryH(){hookEnter();if(!getTa()&&_ht<25){_ht++;setTimeout(tryH
         )
     with ic2:
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        send = st.button("➤ Enviar", use_container_width=True, type="primary", key="bot_send")
+        send = st.button("➤", use_container_width=True, type="primary", key="bot_send")
 
     _final = _quick or (_voz_qp.strip() if _voz_qp else None) or (txt_in.strip() if send and txt_in else None)
 
