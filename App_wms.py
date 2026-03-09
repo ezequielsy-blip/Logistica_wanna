@@ -2094,12 +2094,7 @@ if _show("🤖 ASISTENTE"):
           <div>
             <div class="od-title">OPERARIO DIGITAL</div>
             <div class="od-sub">✅ Sin límites · Sin costo · 100% propio</div>
-            <div class="od-caps">
-              <span class="od-cap">🎤 VOZ</span>
-              <span class="od-cap">📷 SCANNER</span>
-              <span class="od-cap">⌨️ TEXTO</span>
-              <span class="od-cap">⚡ ACCIONES</span>
-            </div>
+
           </div>
         </div>""", unsafe_allow_html=True)
     with hcol2:
