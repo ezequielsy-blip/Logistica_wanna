@@ -3596,25 +3596,21 @@ if _show("🤖 ASISTENTE"):
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:transparent;height:auto;font-family:'DM Sans',-apple-system,sans-serif}
-.wrap{display:flex;flex-direction:column;gap:6px;padding:2px 2px 4px}
-.topbar{display:flex;gap:6px;align-items:center}
-.ibtn{border:none;border-radius:50%;width:38px;height:38px;font-size:17px;
+.wrap{display:flex;align-items:flex-end;gap:0;
+      background:#1E293B;border:1.5px solid #334155;
+      border-radius:22px;padding:4px 4px 4px 8px;
+      transition:border-color .2s,box-shadow .2s}
+.wrap:focus-within{border-color:#3B82F6;box-shadow:0 0 0 3px rgba(59,130,246,.18)}
+.ibtn{border:none;background:transparent;width:34px;height:34px;font-size:16px;
       cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-      -webkit-tap-highlight-color:transparent;transition:all .15s}
-.ibtn-mic{background:linear-gradient(135deg,#3B82F6,#06B6D4);box-shadow:0 2px 8px rgba(59,130,246,.4)}
-.ibtn-mic.rec{background:linear-gradient(135deg,#EF4444,#F59E0B);animation:pulse .9s infinite}
-.ibtn-scan{background:linear-gradient(135deg,#10B981,#059669);box-shadow:0 2px 8px rgba(16,185,129,.4)}
-.ibtn-scan.act{background:linear-gradient(135deg,#F59E0B,#EF4444)}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
-.st{flex:1;font-size:11px;color:#64748B;font-weight:500;line-height:1.3}
-.st.ok{color:#10B981}.st.er{color:#EF4444}.st.sc{color:#F59E0B}
-.inputrow{
-  display:flex;align-items:flex-end;gap:6px;
-  background:#1E293B;border:1.5px solid #334155;
-  border-radius:22px;padding:6px 6px 6px 14px;
-  transition:border-color .2s,box-shadow .2s;
-}
-.inputrow:focus-within{border-color:#3B82F6;box-shadow:0 0 0 3px rgba(59,130,246,.18)}
+      -webkit-tap-highlight-color:transparent;transition:opacity .15s;
+      color:#64748B;border-radius:50%;opacity:.7}
+.ibtn:hover{opacity:1}
+.ibtn-mic.rec{color:#EF4444;animation:pulse .9s infinite;opacity:1}
+.ibtn-scan.act{color:#F59E0B;opacity:1}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.st{display:none}  /* status oculto — los botones cambian de color */
+.inputrow{display:contents}
 #txt{
   flex:1;background:transparent;border:none;outline:none;
   color:#F1F5F9;font-size:15px;line-height:1.5;
@@ -3647,15 +3643,12 @@ html,body{background:transparent;height:auto;font-family:'DM Sans',-apple-system
          padding:10px 28px;font-size:14px;font-weight:700;cursor:pointer}
 </style></head><body>
 <div class="wrap">
-  <div class="topbar">
-    <button class="ibtn ibtn-mic" id="micbtn" onclick="togMic()">🎤</button>
-    <button class="ibtn ibtn-scan" id="scbtn" onclick="togScan()">📷</button>
-    <div class="st" id="st">🎤 Grabar &nbsp;·&nbsp; 📷 Escanear</div>
-  </div>
+  <button class="ibtn ibtn-mic" id="micbtn" onclick="togMic()" title="Grabar voz">🎤</button>
+  <button class="ibtn ibtn-scan" id="scbtn" onclick="togScan()" title="Escanear código">📷</button>
   <div class="inputrow">
     <textarea id="txt" rows="1" placeholder="Escribí, hablá o escaneá..."></textarea>
-    <button class="sarr" id="sarr" onclick="enviar()">&#9658;</button>
   </div>
+  <button class="sarr" id="sarr" onclick="enviar()">&#9658;</button>
 </div>
 <div id="ov">
   <video id="vid" autoplay playsinline muted></video>
@@ -3666,7 +3659,7 @@ html,body{background:transparent;height:auto;font-family:'DM Sans',-apple-system
 <script>
 var R=null,gr=false,scanStream=null,scanActive=false,scanIv=null;
 function M(id){return document.getElementById(id)}
-function setSt(c,t){M("st").className="st "+(c||"");M("st").textContent=t}
+function setSt(c,t){var el=M("st");if(el){el.className="st "+(c||"");el.textContent=t}}
 function setSarr(on){M("sarr").className="sarr"+(on?" on":"")}
 
 // Auto-resize textarea
@@ -3678,8 +3671,7 @@ M("txt").addEventListener("keydown",function(ev){if(ev.key==="Enter"&&!ev.shiftK
 function enviar(){
   var v=M("txt").value.trim();
   if(!v) return;
-  setSarr(false);
-  setSt("ok","✅ Enviando...");
+  M("txt").value="";ar();setSarr(false);
   var base=window.parent.location.href.split("?")[0].split("#")[0];
   window.parent.location.replace(base+"?lz_msg="+encodeURIComponent(v));
 }
