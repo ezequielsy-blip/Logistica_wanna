@@ -3601,6 +3601,7 @@ if _show("🤖 ASISTENTE"):
       }
     });
     </script>""", height=0)
+    st.markdown('<style>[data-testid="stTextInput"]:has(input[placeholder="_lzhidden_"]){position:absolute;opacity:0;pointer-events:none;height:0;overflow:hidden}</style>', unsafe_allow_html=True)
     st.text_input("msg", key="_bot_hidden_input", placeholder="_lzhidden_",
                   label_visibility="collapsed", on_change=_on_hidden_change)
 
