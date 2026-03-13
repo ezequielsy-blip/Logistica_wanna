@@ -3584,30 +3584,27 @@ if _show("🤖 ASISTENTE"):
 
     import streamlit.components.v1 as _stc
 
-    # ── Capturar mensaje enviado desde el iframe via hidden text_input ────────
-    _lz_msg = st.session_state.get("_bot_hidden_input", "")
+    # ── Input oculto con on_change: postMessage → widget → _lz_pending ────────
+    def _on_hidden_change():
+        v = st.session_state.get("_bot_hidden_input","").strip()
+        if v:
+            st.session_state["_lz_pending"] = v
 
-    # ── Input oculto que recibe postMessage del iframe ────────────────────────
-    _hidden_js = """
-    <script>
-    window.addEventListener("message", function(e){
-      if(e.data && e.data.type==="lz_msg"){
-        var inp = window.parent.document.querySelector('input[data-testid="stTextInput"][aria-label="_lz_hidden"]');
-        if(!inp) inp = Array.from(window.parent.document.querySelectorAll('input[type="text"]')).find(function(el){return el.getAttribute('aria-label')==='_lz_hidden'});
-        if(inp){
-          var nativeSetter=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value').set;
-          nativeSetter.call(inp,e.data.text);
-          inp.dispatchEvent(new window.parent.Event('input',{bubbles:true}));
-          inp.dispatchEvent(new window.parent.KeyboardEvent('keydown',{key:'Enter',keyCode:13,bubbles:true}));
-          inp.dispatchEvent(new window.parent.Event('change',{bubbles:true}));
-        }
+    _stc.html("""<script>
+    window.addEventListener("message",function(e){
+      if(!e.data||e.data.type!=="lz_msg") return;
+      var inp=Array.from(window.parent.document.querySelectorAll('input[type="text"]')).find(function(el){return el.placeholder==="_lzhidden_";});
+      if(inp){
+        Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value').set.call(inp,e.data.text);
+        inp.dispatchEvent(new window.parent.Event('input',{bubbles:true}));
+        inp.dispatchEvent(new window.parent.Event('change',{bubbles:true}));
       }
     });
-    </script>
-    """
-    _stc.html(_hidden_js, height=0)
-    st.text_input("_lz_hidden", key="_bot_hidden_input", label_visibility="collapsed",
-                  placeholder="", on_change=None)
+    </script>""", height=0)
+    st.text_input("msg", key="_bot_hidden_input", placeholder="_lzhidden_",
+                  label_visibility="collapsed", on_change=_on_hidden_change)
+
+    _lz_msg = st.session_state.pop("_lz_pending", "")
 
     # ── Componente unificado: mic + scan + campo + flecha ────────────────────
     _stc.html("""<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -3750,8 +3747,7 @@ function closeScan(){
     _final = _quick or (_lz_msg.strip() if _lz_msg else None) or (_voz_qp.strip() if _voz_qp else None)
 
     if _final:
-        # Limpiar hidden input para que no se reenvíe
-        st.session_state["_bot_hidden_input"] = ""
+        st.session_state.pop("_lz_pending", None)
         st.session_state.bot_hist.append({"rol":"user","texto":_final})
         try:
             ok, respuesta = _procesar(_final)
