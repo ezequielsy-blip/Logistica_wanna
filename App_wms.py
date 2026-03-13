@@ -3586,9 +3586,7 @@ if _show("🤖 ASISTENTE"):
 
     # ── Capturar mensaje enviado desde el iframe via query_param ─────────────
     _lz_msg = st.query_params.get("lz_msg", "")
-    if _lz_msg:
-        try: del st.query_params["lz_msg"]
-        except: pass
+    # NO borrar aquí — se borra solo al procesar en _final
 
     # ── Componente unificado: mic + scan + campo + flecha ────────────────────
     _stc.html("""<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -3671,9 +3669,9 @@ M("txt").addEventListener("keydown",function(ev){if(ev.key==="Enter"&&!ev.shiftK
 function enviar(){
   var v=M("txt").value.trim();
   if(!v) return;
-  M("txt").value="";ar();setSarr(false);
+  M("txt").value="";ar();setSarr(false);  // limpiar visualmente
   var base=window.parent.location.href.split("?")[0].split("#")[0];
-  window.parent.location.replace(base+"?lz_msg="+encodeURIComponent(v));
+  window.parent.location.replace(base+"?lz_msg="+encodeURIComponent(v));  // v ya guardado arriba
 }
 
 // Micrófono
