@@ -15,65 +15,11 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 DIAS_ALERTA = 60
 
 st.set_page_config(
-    page_title="LOGIEZE — Gestión de Inventario",
+    page_title="LOGIEZE",
     page_icon="📦",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
-_LOGO_B64 = "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"
-_LOGO_SRC  = f"data:image/jpeg;base64,{_LOGO_B64}"
-# ── PWA / Favicon para acceso directo desde Chrome ──────────────────────
-import streamlit.components.v1 as _stc_pwa
-_stc_pwa.html(f"""
-<script>
-// Inject favicon and manifest into parent document
-(function(){{
-  var doc = window.parent.document;
-
-  // Favicon
-  var existing = doc.querySelector("link[rel*='icon']");
-  if(existing) existing.parentNode.removeChild(existing);
-  var link = doc.createElement('link');
-  link.rel = 'shortcut icon';
-  link.type = 'image/jpeg';
-  link.href = '{_LOGO_SRC}';
-  doc.head.appendChild(link);
-
-  // Apple touch icon (iOS/Android PWA)
-  var apple = doc.createElement('link');
-  apple.rel = 'apple-touch-icon';
-  apple.href = '{_LOGO_SRC}';
-  doc.head.appendChild(apple);
-
-  // Page title
-  doc.title = 'LOGIEZE';
-
-  // PWA Manifest
-  var manifest = {{
-    "name": "LOGIEZE",
-    "short_name": "LOGIEZE",
-    "description": "Sistema de gestión de inventario",
-    "start_url": window.parent.location.href,
-    "display": "standalone",
-    "background_color": "#0F172A",
-    "theme_color": "#3B82F6",
-    "orientation": "portrait",
-    "icons": [
-      {{"src": "{_LOGO_SRC}", "sizes": "192x192", "type": "image/jpeg"}},
-      {{"src": "{_LOGO_SRC}", "sizes": "512x512", "type": "image/jpeg"}}
-    ]
-  }};
-  var blob = new Blob([JSON.stringify(manifest)], {{type:'application/json'}});
-  var url  = URL.createObjectURL(blob);
-  var mlink = doc.querySelector("link[rel='manifest']");
-  if(mlink) mlink.parentNode.removeChild(mlink);
-  var ml = doc.createElement('link');
-  ml.rel = 'manifest'; ml.href = url;
-  doc.head.appendChild(ml);
-}})();
-</script>
-""", height=0)
-
 
 # ── ESTILOS MOBILE-FIRST — APK STYLE ─────────────────────────────────────────
 st.markdown("""
@@ -575,11 +521,10 @@ if not st.session_state.usuario and "lz_u" in _qp and "lz_r" in _qp:
 # LOGIN
 # ═══════════════════════════════════════════════════════════════════════════════
 if not st.session_state.usuario:
-    st.markdown(f"""
+    st.markdown("""
     <div style="max-width:380px;margin:60px auto 0;text-align:center;">
-        <img src="{_LOGO_SRC}" style="width:96px;height:96px;border-radius:24px;
-             object-fit:cover;box-shadow:0 8px 32px rgba(59,130,246,.45);margin-bottom:16px">
-        <h1 style="font-size:30px;font-weight:900;letter-spacing:4px;margin:0;color:#F1F5F9;">LOGIEZE</h1>
+        <div style="font-size:64px;margin-bottom:8px;">📦</div>
+        <h1 style="font-size:30px;font-weight:900;letter-spacing:4px;margin:0;">LOGIEZE</h1>
         <p style="color:#94A3B8;font-size:13px;margin-top:4px;">Sistema de gestión de inventario</p>
     </div>
     """, unsafe_allow_html=True)
@@ -625,15 +570,13 @@ ROL_ICON = {"admin":"👑","operario":"🔧","visita":"👁️","vendedor":"🛒
 # ── App topbar estilo Android ──────────────────────────────────────────────
 st.markdown(f"""
 <div class="app-topbar">
-  <div style="display:flex;align-items:center;gap:12px">
-    <img src="{_LOGO_SRC}" style="width:42px;height:42px;border-radius:12px;
-         object-fit:cover;box-shadow:0 2px 10px rgba(0,0,0,.4);flex-shrink:0">
-    <div>
-      <div class="app-topbar-title">LOGIEZE</div>
-      <div class="app-topbar-sub">{ROL_ICON} {usuario.upper()} · {rol.upper()}</div>
-    </div>
+  <div>
+    <div class="app-topbar-title">📦 LOGIEZE</div>
+    <div class="app-topbar-sub">{ROL_ICON} {usuario.upper()} · {rol.upper()}</div>
   </div>
-  <div class="app-badge">v3.0</div>
+  <div style="display:flex;gap:8px">
+    <div class="app-badge">v3.0</div>
+  </div>
 </div>""", unsafe_allow_html=True)
 col_h1, col_h2 = st.columns(2)
 with col_h1:
@@ -817,26 +760,11 @@ function closeScan(){
 
     productos_filtrados = []
     if busqueda:
-        t = busqueda.strip()
-        # Búsqueda exacta por código interno: .147 → cod_int == "147"
-        if t.startswith('.'):
-            cod_exacto = t[1:].strip()
-            productos_filtrados = [p for p in maestra
-                                   if str(p.get('cod_int','')).strip() == cod_exacto]
-        # Código de barras puro (7-14 dígitos)
-        elif t.isdigit() and 7 <= len(t) <= 14:
-            productos_filtrados = [p for p in maestra
-                                   if str(p.get('barras','')).strip() == t
-                                   or str(p.get('cod_barras','')).strip() == t]
-            if not productos_filtrados:
-                productos_filtrados = [p for p in maestra
-                                       if t in str(p.get('barras','')).upper()]
-        else:
-            T = t.upper()
-            productos_filtrados = [p for p in maestra
-                                   if T in str(p.get('nombre','')).upper()
-                                   or T in str(p.get('cod_int','')).upper()
-                                   or T in str(p.get('barras','')).upper()]
+        t = busqueda.upper().strip()
+        productos_filtrados = [p for p in maestra
+                               if t in str(p.get('nombre','')).upper()
+                               or t in str(p.get('cod_int','')).upper()
+                               or t in str(p.get('barras','')).upper()]
 
     if not productos_filtrados and busqueda:
         st.info("No se encontraron productos.")
@@ -854,27 +782,6 @@ function closeScan(){
         total_q    = sum(float(l.get('cantidad',0)) for l in lotes_prod)
         stk_color = "#10B981" if total_q > 10 else ("#F59E0B" if total_q > 0 else "#EF4444")
         st.markdown(f'''<div style="background:#1E293B;border-radius:14px;padding:14px 16px;margin:12px 0;border-left:4px solid {stk_color}"><div style="font-size:11px;font-weight:700;color:{stk_color};text-transform:uppercase">STOCK TOTAL</div><div style="font-size:32px;font-weight:900;color:#F1F5F9">{int(total_q)}u</div><div style="font-size:11px;color:#94A3B8">{prod_sel['nombre']}</div></div>''', unsafe_allow_html=True)
-
-        # ── Lotes detallados ──────────────────────────────────────────────
-        if lotes_prod:
-            st.markdown('<div style="font-size:11px;font-weight:700;color:#3B82F6;letter-spacing:1.5px;margin:8px 0 4px">📦 LOTES EN STOCK</div>', unsafe_allow_html=True)
-            for _lt in sorted(lotes_prod, key=lambda x: float(x.get('cantidad',0) or 0), reverse=True):
-                _lq  = int(float(_lt.get('cantidad', 0) or 0))
-                _lu  = str(_lt.get('ubicacion','—')).upper()
-                _ld  = str(_lt.get('deposito','—'))
-                _lf  = str(_lt.get('fecha','') or '').strip()
-                _lf_disp = _lf if _lf else '—'
-                _lc  = "#10B981" if _lq > 5 else ("#F59E0B" if _lq > 0 else "#EF4444")
-                st.markdown(f'''<div style="background:#0F172A;border-radius:10px;padding:10px 14px;margin:4px 0;
-                    display:flex;justify-content:space-between;align-items:center;border:1px solid #1E293B">
-                  <div style="display:flex;gap:14px;align-items:center">
-                    <div style="font-size:22px;font-weight:900;color:{_lc};min-width:36px">{_lq}u</div>
-                    <div>
-                      <div style="font-size:13px;font-weight:700;color:#F1F5F9">📍 {_lu}</div>
-                      <div style="font-size:11px;color:#64748B">{_ld} · 📅 {_lf_disp}</div>
-                    </div>
-                  </div>
-                </div>''', unsafe_allow_html=True)
 
         st.markdown("---")
         st.markdown('<p class="sec-label">📝 REGISTRAR OPERACIÓN</p>', unsafe_allow_html=True)
@@ -898,26 +805,6 @@ function closeScan(){
     var doc=window.parent.document;
     var inputs=doc.querySelectorAll('input[type="text"],input:not([type])');
     var inp=null;
-    // Hook ubicacion inputs — auto-insert "-" after 2 digits
-    for(var i=0;i<inputs.length;i++){
-      var ph2=inputs[i].placeholder||'';
-      if((ph2.indexOf('05-3B')>=0||ph2.indexOf('12-2C')>=0) && !inputs[i]._lzUbiHook){
-        inputs[i]._lzUbiHook=true;
-        (function(el){
-          el.addEventListener('input',function(){
-            var v=el.value.replace(/[^0-9a-zA-Z-]/g,'').toUpperCase();
-            // After 2 digits, auto-insert "-" if not already there
-            if(v.length===2 && /^[0-9]{2}$/.test(v)){
-              el.value=v+'-';
-              el.dispatchEvent(new Event('input',{bubbles:true}));
-            } else if(v.length>2 && v[2]!=='-' && /^[0-9]{2}/.test(v)){
-              el.value=v.substring(0,2)+'-'+v.substring(2);
-              el.dispatchEvent(new Event('input',{bubbles:true}));
-            }
-          });
-        })(inputs[i]);
-      }
-    }
     for(var i=0;i<inputs.length;i++){
       var lbl=doc.querySelector('label[for="'+inputs[i].id+'"]');
       var ph=inputs[i].placeholder||'';
@@ -929,7 +816,7 @@ function closeScan(){
     if(inp._lzFvHook) return;
     inp._lzFvHook=true;
     inp.addEventListener('input',function(e){
-      var v=inp.value.replace(/[^0-9]/g,'');  // solo dígitos
+      var v=inp.value.replace(/[^\d]/g,'');  // solo dígitos
       if(v.length>=2){
         var mm=v.substring(0,2);
         var aa=v.substring(2,4);
@@ -1414,93 +1301,39 @@ if _show("🚚 DESPACHO"):
             st.session_state.pedido.pop(pedido_a_eliminar); st.rerun()
 
         st.markdown("---")
-        # ── CANTIDAD PEDIDA — siempre visible y grande ─────────────────────
         st.markdown('<p class="sec-label">DESPACHAR ÍTEM</p>', unsafe_allow_html=True)
-
-        # Selector de ítem con cantidad siempre visible
-        if "desp_sel" not in st.session_state:
-            st.session_state["desp_sel"] = 0
-        idx_desp = st.session_state.get("desp_sel", 0)
-        if idx_desp >= len(st.session_state.pedido):
-            idx_desp = 0
-
-        # Botones de selección de ítem — uno por fila, grande
-        for _pi, _pitem in enumerate(st.session_state.pedido):
-            _pstock = sum(float(l.get('cantidad',0)) for l in idx_inv.get(_pitem['cod'], []))
-            _pok    = "✅" if _pstock >= _pitem['cant'] else "⚠️"
-            _psel   = "🔵 " if _pi == idx_desp else ""
-            _pbtn   = st.button(
-                f"{_psel}{_pok}  {_pitem['nombre'][:30]}",
-                key=f"sel_item_{_pi}",
-                use_container_width=True,
-                type="primary" if _pi == idx_desp else "secondary"
-            )
-            if _pbtn:
-                st.session_state["desp_sel"] = _pi
-                st.session_state["_pick_ok"] = None
-                st.rerun()
-
-        idx_desp = st.session_state.get("desp_sel", 0)
-        if idx_desp >= len(st.session_state.pedido):
-            idx_desp = 0
+        idx_desp = st.selectbox(
+            "Ítem a despachar:",
+            range(len(st.session_state.pedido)),
+            format_func=lambda i: (
+                f"{'✅' if sum(float(l.get('cantidad',0)) for l in idx_inv.get(st.session_state.pedido[i]['cod'],[])) >= st.session_state.pedido[i]['cant'] else '⚠️'}"
+                f"  {st.session_state.pedido[i]['nombre']}  —  {st.session_state.pedido[i]['cant']} uds"
+            ),
+            key="desp_sel", label_visibility="collapsed"
+        )
         item_sel = st.session_state.pedido[idx_desp]
         cod_d    = item_sel['cod']
         lotes_d  = [l for l in idx_inv.get(cod_d, []) if float(l.get('cantidad', 0)) > 0]
 
-        # ── CANTIDAD PEDIDA — enorme y siempre visible ───────────────────
-        _cant_ped = item_sel['cant']
-        _stk_ped  = sum(float(l.get('cantidad',0)) for l in lotes_d)
-        _cped_col = "#10B981" if _stk_ped >= _cant_ped else "#EF4444"
-        st.markdown(f"""
-        <div style="background:#0F172A;border-radius:16px;padding:16px;margin:10px 0;
-             border:2px solid {_cped_col};text-align:center">
-          <div style="font-size:13px;color:#94A3B8;font-weight:700;letter-spacing:1px">
-            CANTIDAD PEDIDA</div>
-          <div style="font-size:56px;font-weight:900;color:{_cped_col};line-height:1">
-            {int(_cant_ped)}</div>
-          <div style="font-size:12px;color:#64748B;margin-top:4px">
-            {item_sel['nombre'][:40]}</div>
-          <div style="font-size:13px;color:#94A3B8;margin-top:6px">
-            Stock disponible: <b style="color:{_cped_col}">{int(_stk_ped)}u</b></div>
-        </div>""", unsafe_allow_html=True)
-
         if lotes_d:
-            st.markdown('<p class="sec-label">LOTE A USAR — elegí uno</p>', unsafe_allow_html=True)
+            st.markdown('<p class="sec-label">LOTE A USAR</p>', unsafe_allow_html=True)
+            for l in lotes_d:
+                dias  = dias_para_vencer(l.get('fecha',''))
+                clase = (" vencido" if (dias is not None and dias < 0)
+                         else " por-vencer" if (dias is not None and dias <= DIAS_ALERTA) else "")
+                st.markdown(f"""
+                <div class="lote-card{clase}">
+                    <b style="font-size:18px;color:#06B6D4">{int(float(l.get('cantidad',0)))}</b>
+                    &nbsp;·&nbsp; 📍 {l.get('ubicacion','')}
+                    &nbsp;·&nbsp; {l.get('deposito','')}
+                    &nbsp;·&nbsp; 📅 {l.get('fecha','')}
+                </div>
+                """, unsafe_allow_html=True)
 
-            # Botones de lote — grandes, con toda la info
-            if "lote_desp" not in st.session_state:
-                st.session_state["lote_desp"] = 0
-            idx_ld = st.session_state.get("lote_desp", 0)
-            if idx_ld >= len(lotes_d):
-                idx_ld = 0
-
-            for _li, _l in enumerate(lotes_d):
-                _lq   = int(float(_l.get('cantidad', 0) or 0))
-                _lu   = str(_l.get('ubicacion', '—')).upper()
-                _ld   = str(_l.get('deposito', '—'))
-                _lf   = str(_l.get('fecha', '') or '').strip() or '—'
-                _dias = dias_para_vencer(_l.get('fecha',''))
-                _lsel = _li == idx_ld
-                _venc_txt = ""
-                if _dias is not None:
-                    if _dias < 0:   _venc_txt = f" 🔴 VENCIDO"
-                    elif _dias <= 15: _venc_txt = f" 🟠 {_dias}d"
-                    elif _dias <= 45: _venc_txt = f" 🟡 {_dias}d"
-                    else:             _venc_txt = f" 🟢 {_dias}d"
-                _lbtn = st.button(
-                    f"{'▶ ' if _lsel else '   '}{_lq}u  ·  📍{_lu}  ·  {_ld}  ·  📅{_lf}{_venc_txt}",
-                    key=f"lote_btn_{idx_desp}_{_li}",
-                    use_container_width=True,
-                    type="primary" if _lsel else "secondary"
-                )
-                if _lbtn:
-                    st.session_state["lote_desp"] = _li
-                    st.session_state["_pick_ok"]  = None
-                    st.rerun()
-
-            idx_ld = st.session_state.get("lote_desp", 0)
-            if idx_ld >= len(lotes_d):
-                idx_ld = 0
+            lote_ops = [f"[{int(float(l.get('cantidad',0)))}u] {l.get('ubicacion','')} — {l.get('deposito','')} — {l.get('fecha','')}"
+                        for l in lotes_d]
+            idx_ld = st.selectbox("Lote a descontar:", range(len(lote_ops)),
+                                  format_func=lambda i: lote_ops[i], key="lote_desp")
             lote_d = lotes_d[idx_ld]
 
             # ── SCANNER DE CONFIRMACIÓN ─────────────────────────────────────────
@@ -1687,35 +1520,26 @@ function closeScan(){{
                     cant_p = float(item_sel['cant'])
                     cant_l = float(lote_d.get('cantidad', 0))
                     try:
-                        # ── Descontar SOLO del lote seleccionado ────────────────
-                        # Si el lote tiene más de lo pedido → descuenta exacto
-                        # Si el lote tiene menos → descuenta lo que hay y deja pendiente
-                        cant_a_descontar = min(cant_l, cant_p)
-
-                        if cant_a_descontar >= cant_l:
-                            # Vaciar lote completo
+                        if cant_l <= cant_p:
                             sb.table("inventario").delete().eq("id", lote_d['id']).execute()
+                            pendiente = cant_p - cant_l
+                            if pendiente > 0:
+                                st.session_state.pedido[idx_desp]['cant'] = int(pendiente)
+                                registrar_historial("SALIDA", cod_d, item_sel['nombre'],
+                                                   cant_l, lote_d.get('ubicacion',''), usuario)
+                                recalcular_maestra(cod_d, inventario)
+                                st.warning(f"Lote agotado. Quedan {int(pendiente)} uds pendientes.")
+                                refrescar(); st.rerun()
+                            else:
+                                st.session_state.pedido.pop(idx_desp)
                         else:
-                            # Quedan unidades en este lote
-                            sb.table("inventario").update(
-                                {"cantidad": cant_l - cant_a_descontar}
-                            ).eq("id", lote_d['id']).execute()
+                            nq = cant_l - cant_p
+                            sb.table("inventario").update({"cantidad": nq}).eq("id", lote_d['id']).execute()
+                            st.session_state.pedido.pop(idx_desp)
 
                         registrar_historial("SALIDA", cod_d, item_sel['nombre'],
-                                           cant_a_descontar, lote_d.get('ubicacion',''), usuario)
+                                           cant_p, lote_d.get('ubicacion',''), usuario)
                         recalcular_maestra(cod_d, inventario)
-
-                        pendiente = cant_p - cant_a_descontar
-                        if pendiente > 0:
-                            # Quedan unidades del pedido — actualizar cantidad y avisar
-                            st.session_state.pedido[idx_desp]['cant'] = int(pendiente)
-                            st.session_state["lote_desp"] = 0  # reset lote selector
-                        else:
-                            # Pedido completo para este ítem
-                            st.session_state.pedido.pop(idx_desp)
-                            st.session_state["desp_sel"] = 0
-                            st.session_state["lote_desp"] = 0
-
                         _ped_id = item_sel.get('ped_id')
                         if _ped_id:
                             try:
@@ -2087,10 +1911,9 @@ if _show("🤖 ASISTENTE"):
     # Header compacto con avatar animado
     hcol1, hcol2 = st.columns([5, 1])
     with hcol1:
-        st.markdown(f"""
+        st.markdown("""
         <div class="od-header">
-          <img src="{_LOGO_SRC}" style="width:52px;height:52px;border-radius:14px;
-               object-fit:cover;box-shadow:0 4px 16px rgba(59,130,246,.4);flex-shrink:0">
+          <div class="od-avatar">📦</div>
           <div>
             <div class="od-title">OPERARIO DIGITAL</div>
             <div class="od-sub">✅ Sin límites · Sin costo · 100% propio</div>
@@ -2464,41 +2287,41 @@ if _show("🤖 ASISTENTE"):
         if _re.search(r'\b(historial|movimientos|movimiento|ultimos|ultimo|'
                        r'registro|que\s+paso|que\s+hicieron|que\s+hubo|'
                        r'bitacora|actividad|novedades|que\s+se\s+(hizo|movio))\b', n):
-            return 'hist'
+            return 'historial'
         # VENCIMIENTOS
-        if _re.search(r'\b(venc[eo]|vencen|vencidos|vencimiento|vencimientos|urgente[s]?|pronto[sa]?|'
+        if _re.search(r'\b(venc[eo]|vencen|vencidos|vencimiento|vencimientos|'
                        r'por\s+vencer|proximos\s+a\s+vencer|'
                        r'caducidad|caduca|caducan|expiran|expira|se\s+vencen)\b', n):
-            return 'venc'
+            return 'vencimientos'
         # BAJO STOCK
         if _re.search(r'\b(bajo\s+stock|poco\s+stock|poca\s+cantidad|'
                        r'se\s+acab[ao]|se\s+acabaron|quedan?\s+poco[sa]?|'
                        r'critico|sin\s+stock|agotado[sa]?|escaso[sa]?|minimo|'
                        r'(que|lo)\s+(nos\s+|me\s+)?falt[ao]|falta\s+reponer|'
                        r'necesitamos\s+reponer|hay\s+poco[sa]?|nos\s+quedamos\s+sin)\b', n):
-            return 'bajo'
+            return 'bajo_stock'
         # RESUMEN
         if _re.search(r'\b(resumen|todo\s+el\s+(inventario|stock)|panorama|balance|'
                        r'estado\s+del\s+inventario|como\s+estamos|inventario\s+completo)\b', n):
             return 'resumen'
         # TOP
         if _re.search(r'\b(top|ranking|mas\s+stock|mayor\s+stock|mas\s+cantidad|los\s+que\s+mas)\b', n):
-            return 'top'
+            return 'top_stock'
         # UBICACIONES
         if _re.search(r'\b(donde\s+est[ae]|donde\s+hay|donde\s+queda|donde\s+quedan|'
                        r'ubicacion|ubicaciones|en\s+que\s+lugar|en\s+que\s+estante|guardado|donde)\b', n):
-            return 'ubic'
+            return 'ubicaciones'
         # CONSULTA STOCK
         if _re.search(r'\b(cuanto[sa]?\s+(hay|queda[sn]?|tene[ms]?|tiene[ns]?)|'
                        r'cuanto\s+stock|stock\s+de|hay\s+de|quedan?\s+de|tenemos\s+de|'
                        r'hay\s+stock|existe|existencia|disponible|cuanto\s+(tenemos|tiene|hay))\b', n):
-            return 'consulta'
+            return 'consulta_stock'
         # PEDIDOS
         if _re.search(r'\b(pedido[s]?|orden(es)?|nube|pendiente[s]?)\b', n):
             return 'pedidos'
         # CÓDIGO DE BARRAS SOLO (EAN-13, UPC, QR largo) → consulta stock directa
         if _re.fullmatch(r'\d{7,13}', n.strip()):
-            return 'consulta'
+            return 'consulta_stock'
         return 'buscar'
 
     def _exec_salida(txt):
@@ -2830,14 +2653,6 @@ if _show("🤖 ASISTENTE"):
         n = _nn(query)
         tiene_med = bool(_re.search(r'\d+\s*(?:ml|cc|l|lt|g|gr|kg|kilo|mg|oz)', n))
         if not tiene_med:
-            # Código de barras (7-14 dígitos) → buscar en campo barras
-            mb = _re.search(r'\b(\d{7,14})\b', n)
-            if mb:
-                bc = mb.group(1)
-                p = next((x for x in maestra if str(x.get('barras','') or '').strip()==bc
-                          or str(x.get('cod_barras','') or '').strip()==bc), None)
-                if p: return p
-            # Código interno (3-6 dígitos)
             m = _re.search(r'\b(\d{3,6})\b', n)
             if m:
                 p = next((x for x in maestra if str(x.get('cod_int',''))==m.group(1)), None)
@@ -3630,7 +3445,7 @@ if _show("🤖 ASISTENTE"):
         if _re.search(r'\b(hola|buenas|buen.?dia|como.estas|hey|que.tal|que.onda|buenos.dias)\b', n): return 'saludo'
         if _re.search(r'\b(gracias|gracia|genial|perfecto|excelente|barbaro|de.nada|copado|listo)\b', n): return 'gracias'
         if _re.search(r'\b(ayuda|que.podes|que.sabes|como.funciona|comandos|que.puedo|manual)\b', n): return 'ayuda'
-        if _re.search(r'\b(venc[eioa]|vencen|vencidos|vencimiento|vencimientos|urgente[s]?|por.vencer|proxim[oa]|pronto|expiran|fecha.vto|caducidad|caduca)\b', n): return 'venc'
+        if _re.search(r'\b(venc[eio]|vencen|vencidos|vencimiento|por.vencer|expiran|fecha.vto|caducidad|caduca)\b', n): return 'venc'
         if _re.search(r'\b(ubicacion.libre|posicion.libre|vacia|vacias|libre|disponible|donde.pongo|donde.ubico|sugerencia)\b', n): return 'ubic_libre'
         if _re.search(r'\b(donde.est[ae]|donde.hay|donde.queda|ubicacion|posicion|en.que.lugar|guardado|mapa|en.que.ubi)\b', n): return 'ubic'
         if _re.search(r'\b(bajo.stock|poco.stock|sin.stock|agotado|critico|falta.reponer|hay.poco|escaso|minimo|reponer)\b', n): return 'bajo'
@@ -3644,8 +3459,6 @@ if _show("🤖 ASISTENTE"):
         if _re.search(r'\b(agreg[ao]r?|ingres[ao]r?|recib[io]r?|llegaron?|llego|carg[ao]r?|entrada|incorpor[ao]r?|sum[ao]r?|pus[eo]|nuevo.stock|meter|mete|poner|pon[ei])\b', n): return 'entrada'
         if _re.search(r'\b(mov[eo]|movi|mand[ao]|traslad[ao]|pas[ao]\s+(a|al)|llev[ao]\s+(a|al)|cambi[ao].+ubic|reubicar)\b', n): return 'mover'
         if _re.search(r'\b(correg[io]|ajust[ao]|fij[ao]|actualiz[ao]|en.realidad.hay|inventario.fisico|recuento|conteo)\b', n): return 'corregir'
-        # Código de barras puro (7-14 dígitos) → búsqueda directa
-        if _re.fullmatch(r'\d{7,14}', n.strip()): return 'consulta'
         return 'consulta'
 
     # ──────────────────────────────── PROCESADOR PRINCIPAL ─────────────────────
@@ -3703,7 +3516,6 @@ if _show("🤖 ASISTENTE"):
         if intent=='resumen':    return None, _resp_resumen()
         if intent=='hist':       return None, _resp_historial(txt_c, n)
         if intent=='pedidos':    return None, _resp_pedidos()
-        if intent=='consulta':  pass  # falls through to buscar_prod below
         if intent=='lista':
             r=_lista_cat(txt_c)
             if r: return None, r
@@ -3772,168 +3584,146 @@ if _show("🤖 ASISTENTE"):
 
     import streamlit.components.v1 as _stc
 
+    # ── Capturar mensaje enviado desde el iframe via query_param ─────────────
+    _lz_msg = st.query_params.get("lz_msg", "")
+    if _lz_msg:
+        try: del st.query_params["lz_msg"]
+        except: pass
+
+    # ── Componente unificado: mic + scan + campo + flecha ────────────────────
     _stc.html("""<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:transparent;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-.bar{display:flex;gap:6px;align-items:center}
-.btn{border:none;border-radius:50%;width:44px;height:44px;
-     cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;
-     -webkit-tap-highlight-color:transparent;transition:all .15s}
-.btn-mic{background:#1E293B;border:1.5px solid #334155}
-.btn-mic.rec{background:#2D1B1B;border-color:#991B1B;animation:pulse 1s infinite}
-.btn-scan{background:#1E293B;border:1.5px solid #334155}
-.btn-scan.active{background:#1A2820;border-color:#065F46}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3)}
-                 50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
-.status{flex:1;font-size:11px;color:#64748B;font-weight:500;line-height:1.4;
-        min-height:20px;display:flex;align-items:center}
-.status.ok{color:#10B981}.status.er{color:#EF4444}.status.scan{color:#F59E0B}
-.preview{font-size:11px;color:#93C5FD;margin-top:2px;word-break:break-all;display:none}
-.send-btn{display:none}
-#scanOverlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;
-             background:rgba(0,0,0,.94);z-index:9999;flex-direction:column;
-             align-items:center;justify-content:center;gap:14px}
-#scanOverlay.show{display:flex}
-#scanVideo{width:90%;max-width:320px;border-radius:16px;border:3px solid #10B981}
-#scanLine{width:90%;max-width:320px;height:3px;
-          background:linear-gradient(90deg,transparent,#10B981,transparent);
-          animation:sc 1.4s ease-in-out infinite}
-@keyframes sc{0%,100%{opacity:.2}50%{opacity:1}}
-#scanStatus{color:#F1F5F9;font-size:14px;font-weight:700;text-align:center;padding:0 20px}
-#scanClose{background:#EF4444;color:#fff;border:none;border-radius:12px;
-           padding:10px 28px;font-size:14px;font-weight:700;cursor:pointer}
+html,body{background:transparent;height:auto;font-family:'DM Sans',-apple-system,sans-serif}
+.wrap{display:flex;flex-direction:column;gap:6px;padding:2px 2px 4px}
+.topbar{display:flex;gap:6px;align-items:center}
+.ibtn{border:none;border-radius:50%;width:38px;height:38px;font-size:17px;
+      cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+      -webkit-tap-highlight-color:transparent;transition:all .15s}
+.ibtn-mic{background:linear-gradient(135deg,#3B82F6,#06B6D4);box-shadow:0 2px 8px rgba(59,130,246,.4)}
+.ibtn-mic.rec{background:linear-gradient(135deg,#EF4444,#F59E0B);animation:pulse .9s infinite}
+.ibtn-scan{background:linear-gradient(135deg,#10B981,#059669);box-shadow:0 2px 8px rgba(16,185,129,.4)}
+.ibtn-scan.act{background:linear-gradient(135deg,#F59E0B,#EF4444)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)}50%{box-shadow:0 0 0 8px rgba(239,68,68,0)}}
+.st{flex:1;font-size:11px;color:#64748B;font-weight:500;line-height:1.3}
+.st.ok{color:#10B981}.st.er{color:#EF4444}.st.sc{color:#F59E0B}
+.inputrow{
+  display:flex;align-items:flex-end;gap:6px;
+  background:#1E293B;border:1.5px solid #334155;
+  border-radius:22px;padding:6px 6px 6px 14px;
+  transition:border-color .2s,box-shadow .2s;
+}
+.inputrow:focus-within{border-color:#3B82F6;box-shadow:0 0 0 3px rgba(59,130,246,.18)}
+#txt{
+  flex:1;background:transparent;border:none;outline:none;
+  color:#F1F5F9;font-size:15px;line-height:1.5;
+  font-family:'DM Sans',-apple-system,sans-serif;
+  resize:none;min-height:26px;max-height:88px;overflow-y:auto;padding:1px 0;
+}
+#txt::placeholder{color:#475569;font-size:14px}
+.sarr{
+  width:36px;height:36px;border-radius:50%;border:none;
+  background:linear-gradient(135deg,#1D4ED8,#06B6D4);
+  color:#fff;font-size:15px;cursor:pointer;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 10px rgba(29,78,216,.4);
+  transition:all .15s;-webkit-tap-highlight-color:transparent;
+  opacity:.4;pointer-events:none;
+}
+.sarr.on{opacity:1;pointer-events:auto}
+.sarr:active{transform:scale(.9)}
+#ov{display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+    background:rgba(0,0,0,.95);z-index:9999;flex-direction:column;
+    align-items:center;justify-content:center;gap:14px}
+#ov.show{display:flex}
+#vid{width:90%;max-width:320px;border-radius:16px;border:3px solid #10B981}
+#sl{width:90%;max-width:320px;height:3px;
+    background:linear-gradient(90deg,transparent,#10B981,transparent);
+    animation:sl 1.4s ease-in-out infinite}
+@keyframes sl{0%,100%{opacity:.2}50%{opacity:1}}
+#scst{color:#F1F5F9;font-size:14px;font-weight:700;text-align:center;padding:0 20px}
+#scclose{background:#EF4444;color:#fff;border:none;border-radius:12px;
+         padding:10px 28px;font-size:14px;font-weight:700;cursor:pointer}
 </style></head><body>
-<div class="bar">
-  <button class="btn btn-mic" id="micbtn" onclick="togMic()">
-    <svg id="mic-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/>
-      <line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/>
-    </svg>
-  </button>
-  <button class="btn btn-scan" id="scanbtn" onclick="togScan()">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="2" y="2" width="5" height="5" rx="1"/><rect x="17" y="2" width="5" height="5" rx="1"/>
-      <rect x="2" y="17" width="5" height="5" rx="1"/>
-      <line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="9" x2="15" y2="9"/>
-      <line x1="9" y1="15" x2="12" y2="15"/><line x1="18" y1="9" x2="21" y2="9"/>
-    </svg>
-  </button>
-  <div style="flex:1">
-    <div class="status" id="mst">🎤 Grabar · 📷 Escanear código</div>
-    <div class="preview" id="mpv"></div>
+<div class="wrap">
+  <div class="topbar">
+    <button class="ibtn ibtn-mic" id="micbtn" onclick="togMic()">🎤</button>
+    <button class="ibtn ibtn-scan" id="scbtn" onclick="togScan()">📷</button>
+    <div class="st" id="st">🎤 Grabar &nbsp;·&nbsp; 📷 Escanear</div>
+  </div>
+  <div class="inputrow">
+    <textarea id="txt" rows="1" placeholder="Escribí, hablá o escaneá..."></textarea>
+    <button class="sarr" id="sarr" onclick="enviar()">&#9658;</button>
   </div>
 </div>
-<button class="send-btn" id="sbtn" onclick="enviarVoz()">🟢 ENVIAR</button>
-<div id="scanOverlay">
-  <video id="scanVideo" autoplay playsinline muted></video>
-  <div id="scanLine"></div>
-  <div id="scanStatus">Apuntá el código a la cámara</div>
-  <button id="scanClose" onclick="closeScan()">✕ Cerrar</button>
+<div id="ov">
+  <video id="vid" autoplay playsinline muted></video>
+  <div id="sl"></div>
+  <div id="scst">Apuntá el código a la cámara</div>
+  <button id="scclose" onclick="closeScan()">✕ Cerrar</button>
 </div>
 <script>
-var R=null,gr=false,tx="",scanStream=null,scanActive=false,scanInterval=null;
+var R=null,gr=false,scanStream=null,scanActive=false,scanIv=null;
 function M(id){return document.getElementById(id)}
-function setMic(c,i){
-  M("micbtn").className="btn btn-mic "+(c||"");
-  var s=M("mic-svg");if(!s)return;
-  s.setAttribute("stroke",c==="rec"?"#EF4444":"#94A3B8");
+function setSt(c,t){M("st").className="st "+(c||"");M("st").textContent=t}
+function setSarr(on){M("sarr").className="sarr"+(on?" on":"")}
+
+// Auto-resize textarea
+function ar(){var ta=M("txt");ta.style.height="auto";ta.style.height=Math.min(ta.scrollHeight,88)+"px"}
+M("txt").addEventListener("input",function(){ar();setSarr(!!this.value.trim())});
+M("txt").addEventListener("keydown",function(ev){if(ev.key==="Enter"&&!ev.shiftKey){ev.preventDefault();enviar()}});
+
+// Enviar via query_param — único método confiable con Streamlit
+function enviar(){
+  var v=M("txt").value.trim();
+  if(!v) return;
+  setSarr(false);
+  setSt("ok","✅ Enviando...");
+  var base=window.parent.location.href.split("?")[0].split("#")[0];
+  window.parent.location.replace(base+"?lz_msg="+encodeURIComponent(v));
 }
-function setSt(c,t){M("mst").className="status "+(c||"");M("mst").textContent=t}
-function setPv(t){M("mpv").textContent=t;M("mpv").style.display=t?"block":"none"}
-function showSend(v){M("sbtn").style.display=v?"block":"none"}
-function getTa(){
-  var all=window.parent.document.querySelectorAll("textarea");
-  for(var i=0;i<all.length;i++){
-    var p=all[i].placeholder||"";
-    if(p.indexOf("Escrib")>=0||p.indexOf("Enter")>=0) return all[i];
-  }
-  for(var i=0;i<all.length;i++){if(!all[i].readOnly) return all[i]}
-  return null;
-}
-function enviarTexto(texto){
-  var ta=getTa();
-  if(!ta){setSt("er","No se encontró el campo de texto");return false}
-  // Write value using React's internal setter
-  var nativeSet=Object.getOwnPropertyDescriptor(window.parent.HTMLTextAreaElement.prototype,"value").set;
-  try{nativeSet.call(ta,texto)}catch(e){ta.value=texto}
-  // Fire input+change so React/Streamlit sees the new value
-  ta.dispatchEvent(new Event("input",{bubbles:true,composed:true}));
-  ta.dispatchEvent(new Event("change",{bubbles:true,composed:true}));
-  ta.focus();
-  // Press Enter — Streamlit textarea with on_change fires rerun on Enter
-  setTimeout(function(){
-    ["keydown","keypress","keyup"].forEach(function(ev){
-      ta.dispatchEvent(new KeyboardEvent(ev,{
-        key:"Enter",code:"Enter",keyCode:13,which:13,
-        bubbles:true,cancelable:true,composed:true
-      }));
-    });
-    // Backup: click the ➤ Enviar button
-    setTimeout(function(){
-      var btns=window.parent.document.querySelectorAll("button");
-      for(var i=0;i<btns.length;i++){
-        var t=(btns[i].innerText||btns[i].textContent||"").trim();
-        if(t.indexOf("Enviar")>=0||t==="➤ Enviar"){btns[i].click();return}
-      }
-    },200);
-  },100);
-  return true;
-}
-function hookEnter(){
-  var ta=getTa();
-  if(ta&&!ta._lzHook){
-    ta._lzHook=true;
-    ta.addEventListener("keydown",function(ev){
-      if(ev.key==="Enter"&&!ev.shiftKey){
-        ev.preventDefault();ev.stopPropagation();
-        if(!ta.value.trim()) return;
-        var btns=window.parent.document.querySelectorAll("button");
-        for(var i=0;i<btns.length;i++){
-          var t=(btns[i].innerText||btns[i].textContent||"").trim();
-          if(t.indexOf("Enviar")>=0){btns[i].click();return}
-        }
-      }
-    },true);
-  }
-}
+
+// Micrófono
 function togMic(){
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){setSt("er","Necesitás Chrome o Edge para el micrófono");return}
+  if(!SR){setSt("er","Necesitás Chrome o Edge");return}
   if(gr){R.stop();return}
-  tx="";showSend(false);setPv("");
+  M("txt").value="";ar();setSarr(false);
   R=new SR();R.lang="es-AR";R.continuous=false;R.interimResults=true;R.maxAlternatives=1;
-  R.onstart=function(){gr=true;setMic("rec","⏹");setSt("ok","🔴 Escuchando...")}
-  R.onresult=function(e){var t="";for(var i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript;tx=t;setPv("📝 "+tx);showSend(!!tx)}
-  R.onerror=function(e){var m={"not-allowed":"Permiso denegado","no-speech":"No se escuchó","network":"Error de red"};setSt("er","❌ "+(m[e.error]||e.error));gr=false;setMic("","🎤");showSend(false)}
-    R.onend=function(){gr=false;setMic("","🎤");if(tx){var _tx=tx;tx="";setSt("ok","✅ Grabado — enviando...");enviarTexto(_tx);setPv("");setSt("","🎤 Grabar · 📷 Escanear código")}}
+  R.onstart=function(){gr=true;M("micbtn").className="ibtn ibtn-mic rec";M("micbtn").innerHTML="&#9646;";setSt("ok","🔴 Escuchando...")}
+  R.onresult=function(e){var t="";for(var i=e.resultIndex;i<e.results.length;i++) t+=e.results[i][0].transcript;M("txt").value=t;ar();setSarr(true)}
+  R.onerror=function(e){var m={"not-allowed":"Permiso denegado","no-speech":"No se escuchó","network":"Error de red"};setSt("er","❌ "+(m[e.error]||e.error));gr=false;M("micbtn").className="ibtn ibtn-mic";M("micbtn").innerHTML="🎤"}
+  R.onend=function(){
+    gr=false;M("micbtn").className="ibtn ibtn-mic";M("micbtn").innerHTML="🎤";
+    var v=M("txt").value.trim();
+    if(v){setSt("ok","✅ Enviando...");setTimeout(function(){enviar()},250);}
+    else setSt("","🎤 Grabar · 📷 Escanear");
+  }
   R.start();
 }
-function enviarVoz(){if(!tx){setSt("er","Grabá primero");return}setSt("ok","Enviando...");if(enviarTexto(tx)){tx="";setPv("");showSend(false);setSt("","🎤 Grabar · 📷 Escanear código")}}
+
+// Scanner
 function togScan(){
   if(scanActive){closeScan();return}
   if(!window.BarcodeDetector){setSt("er","BarcodeDetector no soportado — usá Chrome Android");return}
   openCamera();
 }
 function openCamera(){
-  scanActive=true;M("scanbtn").className="btn btn-scan active";M("scanOverlay").className="show";
+  scanActive=true;M("scbtn").className="ibtn ibtn-scan act";M("ov").className="show";
   navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1920}}})
     .then(function(stream){
-      scanStream=stream;M("scanVideo").srcObject=stream;
+      scanStream=stream;M("vid").srcObject=stream;
       var det=new BarcodeDetector({formats:["ean_13","ean_8","code_128","code_39","upc_a","upc_e","itf","qr_code"]});
-      setSt("scan","📷 Escaneando...");
-      scanInterval=setInterval(function(){
+      setSt("sc","📷 Escaneando...");
+      scanIv=setInterval(function(){
         if(!scanActive) return;
-        det.detect(M("scanVideo")).then(function(codes){
+        det.detect(M("vid")).then(function(codes){
           if(codes.length>0){
-            var code=codes[0].rawValue;
-            closeScan();
-            setSt("ok","📦 Buscando "+code+"...");
-            setTimeout(function(){
-              enviarTexto(code);
-              setTimeout(function(){setSt("","🎤 Grabar · 📷 Escanear código")},1800);
-            },200);
+            var code=codes[0].rawValue;closeScan();
+            M("txt").value=code;ar();setSarr(true);
+            setSt("ok","📦 "+code+" — enviando...");
+            setTimeout(function(){enviar()},350);
           }
         }).catch(function(){});
       },350);
@@ -3941,60 +3731,20 @@ function openCamera(){
     .catch(function(e){closeScan();setSt("er","❌ "+e.message)});
 }
 function closeScan(){
-  scanActive=false;clearInterval(scanInterval);
+  scanActive=false;clearInterval(scanIv);
   if(scanStream){scanStream.getTracks().forEach(function(t){t.stop()});scanStream=null}
-  M("scanVideo").srcObject=null;M("scanbtn").className="btn btn-scan";M("scanOverlay").className="";
+  M("vid").srcObject=null;M("scbtn").className="ibtn ibtn-scan";M("ov").className="";
 }
-var _ht=0;function tryH(){hookEnter();if(!getTa()&&_ht<25){_ht++;setTimeout(tryH,400)}}tryH();
-</script></body></html>""", height=58)
+</script></body></html>""", height=128)
 
-    st.markdown("""<style>
-    /* Textarea */
-    .stTextArea textarea{
-        background:transparent !important;color:#F1F5F9 !important;
-        border:none !important;outline:none !important;
-        font-size:16px !important;resize:none !important;
-        padding:10px 4px !important;line-height:1.5 !important;
-        font-family:'DM Sans',sans-serif !important;
-        box-shadow:none !important}
-    .stTextArea textarea::placeholder{color:#475569 !important;font-size:14px !important}
-    .stTextArea{background:none !important}
-    /* Botón enviar: flecha ➤ circular */
-    /* Botón enviar → flecha circular */
-    div[data-testid="stButton"]:has(button[key="bot_send"]) button{
-        border-radius:50% !important;
-        width:46px !important;height:46px !important;min-height:46px !important;
-        padding:0 !important;font-size:20px !important;
-        background:linear-gradient(135deg,#2979FF,#00B0FF) !important;
-        border:none !important;
-        box-shadow:0 3px 12px rgba(41,121,255,.5) !important}
-    /* Fila única: iframe(mic+scan) + textarea + botón */
-    div[data-testid="stHorizontalBlock"]:has(div[data-testid="stTextArea"]){
-        background:#1E293B;
-        border:1.5px solid #334155;
-        border-radius:20px;
-        padding:4px 6px !important;
-        align-items:flex-end !important;
-        gap:4px !important}
-    </style>""", unsafe_allow_html=True)
-
-    ic1, ic2 = st.columns([5, 1])
-    with ic1:
-        txt_in = st.text_area(
-            "msg", label_visibility="collapsed",
-            placeholder="Escribí acá · Enter envía · Shift+Enter nueva línea",
-            key="bot_input",
-            height=68,
-            value=_input_val,
-        )
-    with ic2:
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        send = st.button("➤", use_container_width=True, type="primary", key="bot_send")
-
-    _final = _quick or (_voz_qp.strip() if _voz_qp else None) or (txt_in.strip() if send and txt_in else None)
+    _final = _quick or (_lz_msg.strip() if _lz_msg else None) or (_voz_qp.strip() if _voz_qp else None)
 
     if _final:
-        st.session_state["_limpiar"] = True
+        # Limpiar query_params ANTES del rerun para que no se reenvíe
+        try:
+            if "lz_msg" in st.query_params: del st.query_params["lz_msg"]
+            if "lz_voz" in st.query_params: del st.query_params["lz_voz"]
+        except: pass
         st.session_state.bot_hist.append({"rol":"user","texto":_final})
         try:
             ok, respuesta = _procesar(_final)
