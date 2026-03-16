@@ -1267,12 +1267,29 @@ if _show("🚚 DESPACHO"):
                     try: items_raw = _json.loads(items_raw)
                     except: items_raw = []
                 if items_raw:
+                    items_con_ubi = []
+                    for it in items_raw:
+                        cod_it = str(it.get('cod_int', it.get('codigo','')))
+                        lotes_it = idx_inv.get(cod_it, [])
+                        # Tomar la primer ubicación disponible (con stock) para ordenar
+                        primera_ubi = min(
+                            (str(l.get('ubicacion','ZZ-ZZ')).upper()
+                             for l in lotes_it if float(l.get('cantidad', 0) or 0) > 0),
+                            default='ZZ-ZZ'
+                        )
+                        items_con_ubi.append({
+                            "cod":      cod_it,
+                            "cant":     int(float(str(it.get('cantidad', it.get('cant', 0))))),
+                            "nombre":   it.get('nombre',''),
+                            "ped_id":   ped['id'],
+                            "_ubi_sort": primera_ubi
+                        })
+                    # Ordenar de menor a mayor por ubicación (orden de recorrido del depósito)
+                    items_con_ubi.sort(key=lambda x: x['_ubi_sort'])
+                    # Quitar campo auxiliar antes de guardar
                     st.session_state.pedido = [
-                        {"cod":  str(it.get('cod_int', it.get('codigo',''))),
-                         "cant": int(float(str(it.get('cantidad', it.get('cant', 0))))),
-                         "nombre": it.get('nombre',''),
-                         "ped_id": ped['id']}
-                        for it in items_raw
+                        {k: v for k, v in it.items() if k != '_ubi_sort'}
+                        for it in items_con_ubi
                     ]
                     try:
                         sb.table("pedidos").update({"estado":"en_proceso"}).eq("id", ped['id']).execute()
@@ -1463,6 +1480,26 @@ if _show("🚚 DESPACHO"):
           <div style="font-size:13px;color:#94A3B8;margin-top:6px">
             Stock disponible: <b style="color:{_cped_col}">{int(_stk_ped)}u</b></div>
         </div>""", unsafe_allow_html=True)
+
+        # ── MODIFICAR CANTIDAD A SACAR ────────────────────────────────────
+        col_cant_edit, col_cant_btn = st.columns([3, 2])
+        with col_cant_edit:
+            nueva_cant = st.number_input(
+                "✏️ Modificar cantidad a sacar:",
+                min_value=1,
+                max_value=max(1, int(_cant_ped) * 3),
+                value=int(_cant_ped),
+                step=1,
+                key=f"cant_edit_{idx_desp}"
+            )
+        with col_cant_btn:
+            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+            if st.button("💾 Actualizar", use_container_width=True, key=f"btn_cant_upd_{idx_desp}"):
+                st.session_state.pedido[idx_desp]['cant'] = nueva_cant
+                st.success(f"✅ Cantidad actualizada a {nueva_cant}u")
+                st.rerun()
+        # Usar la cantidad editada para el despacho (si fue modificada en este render)
+        _cant_ped = nueva_cant
 
         if lotes_d:
             st.markdown('<p class="sec-label">LOTE A USAR — elegí uno</p>', unsafe_allow_html=True)
