@@ -888,78 +888,20 @@ function closeScan(){
             cantidad_op = st.number_input("CANTIDAD", min_value=0.1, step=1.0,
                                            format="%.0f", key="cant_op")
         with col_b:
-            fecha_op = st.text_input("VENCIMIENTO (MM/AA)", placeholder="ej: 06/26", key="fecha_op")
-            # Autoformato: inserta "/" sola después de tipear los 2 dígitos del mes
-            import streamlit.components.v1 as _stc_fv
-            _stc_fv.html("""<script>
-(function(){
-  var tries=0;
-  function hook(){
-    var doc=window.parent.document;
-    var inputs=doc.querySelectorAll('input[type="text"],input:not([type])');
-    var inp=null;
-    // Hook ubicacion inputs — auto-insert "-" after 2 digits
-    for(var i=0;i<inputs.length;i++){
-      var ph2=inputs[i].placeholder||'';
-      if((ph2.indexOf('05-3B')>=0||ph2.indexOf('12-2C')>=0) && !inputs[i]._lzUbiHook){
-        inputs[i]._lzUbiHook=true;
-        (function(el){
-          el.addEventListener('input',function(){
-            var v=el.value.replace(/[^0-9a-zA-Z-]/g,'').toUpperCase();
-            // After 2 digits, auto-insert "-" if not already there
-            if(v.length===2 && /^[0-9]{2}$/.test(v)){
-              el.value=v+'-';
-              el.dispatchEvent(new Event('input',{bubbles:true}));
-            } else if(v.length>2 && v[2]!=='-' && /^[0-9]{2}/.test(v)){
-              el.value=v.substring(0,2)+'-'+v.substring(2);
-              el.dispatchEvent(new Event('input',{bubbles:true}));
-            }
-          });
-        })(inputs[i]);
-      }
-    }
-    for(var i=0;i<inputs.length;i++){
-      var lbl=doc.querySelector('label[for="'+inputs[i].id+'"]');
-      var ph=inputs[i].placeholder||'';
-      if(ph==='ej: 06/26'||(lbl&&lbl.textContent&&lbl.textContent.indexOf('MM')>=0)){
-        inp=inputs[i];break;
-      }
-    }
-    if(!inp){if(tries++<30) setTimeout(hook,300);return;}
-    if(inp._lzFvHook) return;
-    inp._lzFvHook=true;
-    inp.addEventListener('input',function(e){
-      var v=inp.value.replace(/[^0-9]/g,'');  // solo dígitos
-      if(v.length>=2){
-        var mm=v.substring(0,2);
-        var aa=v.substring(2,4);
-        inp.value=aa.length>0 ? mm+'/'+aa : mm;
-      } else {
-        inp.value=v;
-      }
-      // Notificar a React del cambio
-      var ns=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value');
-      if(ns&&ns.set) ns.set.call(inp,inp.value);
-      inp.dispatchEvent(new Event('input',{bubbles:true}));
-      inp.dispatchEvent(new Event('change',{bubbles:true}));
-    });
-    // Evitar que borre la barra al pulsar backspace sobre ella
-    inp.addEventListener('keydown',function(e){
-      if(e.key==='Backspace'){
-        var v=inp.value;
-        if(v.length===3&&v[2]==='/'){
-          e.preventDefault();
-          inp.value=v.substring(0,2);
-          var ns=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value');
-          if(ns&&ns.set) ns.set.call(inp,inp.value);
-          inp.dispatchEvent(new Event('input',{bubbles:true}));
-        }
-      }
-    });
-  }
-  setTimeout(hook,400);
-})();
-</script>""", height=0)
+            st.markdown('<div style="font-size:11px;font-weight:700;color:#3B82F6;letter-spacing:1px;text-transform:uppercase;margin-bottom:2px">VENCIMIENTO</div>', unsafe_allow_html=True)
+            _anio_actual = datetime.now().year
+            _meses = ["","01","02","03","04","05","06","07","08","09","10","11","12"]
+            _anios = [""] + [str(a)[2:] for a in range(_anio_actual, _anio_actual + 8)]
+            _col_mm, _col_aa = st.columns(2)
+            with _col_mm:
+                _mes_sel = st.selectbox("Mes", _meses, key="fecha_op_mes",
+                                        label_visibility="collapsed",
+                                        format_func=lambda x: "MM" if x == "" else x)
+            with _col_aa:
+                _anio_sel = st.selectbox("Año", _anios, key="fecha_op_anio",
+                                         label_visibility="collapsed",
+                                         format_func=lambda x: "AA" if x == "" else "20"+x)
+            fecha_op = f"{_mes_sel}/{_anio_sel}" if _mes_sel and _anio_sel else ""
 
         ubi_prod    = list({str(l.get('ubicacion','')).upper() for l in lotes_prod})
         vacias      = calcular_vacias_rapido(ubis_ocupadas)
@@ -1267,29 +1209,12 @@ if _show("🚚 DESPACHO"):
                     try: items_raw = _json.loads(items_raw)
                     except: items_raw = []
                 if items_raw:
-                    items_con_ubi = []
-                    for it in items_raw:
-                        cod_it = str(it.get('cod_int', it.get('codigo','')))
-                        lotes_it = idx_inv.get(cod_it, [])
-                        # Tomar la primer ubicación disponible (con stock) para ordenar
-                        primera_ubi = min(
-                            (str(l.get('ubicacion','ZZ-ZZ')).upper()
-                             for l in lotes_it if float(l.get('cantidad', 0) or 0) > 0),
-                            default='ZZ-ZZ'
-                        )
-                        items_con_ubi.append({
-                            "cod":      cod_it,
-                            "cant":     int(float(str(it.get('cantidad', it.get('cant', 0))))),
-                            "nombre":   it.get('nombre',''),
-                            "ped_id":   ped['id'],
-                            "_ubi_sort": primera_ubi
-                        })
-                    # Ordenar de menor a mayor por ubicación (orden de recorrido del depósito)
-                    items_con_ubi.sort(key=lambda x: x['_ubi_sort'])
-                    # Quitar campo auxiliar antes de guardar
                     st.session_state.pedido = [
-                        {k: v for k, v in it.items() if k != '_ubi_sort'}
-                        for it in items_con_ubi
+                        {"cod":  str(it.get('cod_int', it.get('codigo',''))),
+                         "cant": int(float(str(it.get('cantidad', it.get('cant', 0))))),
+                         "nombre": it.get('nombre',''),
+                         "ped_id": ped['id']}
+                        for it in items_raw
                     ]
                     try:
                         sb.table("pedidos").update({"estado":"en_proceso"}).eq("id", ped['id']).execute()
@@ -1480,26 +1405,6 @@ if _show("🚚 DESPACHO"):
           <div style="font-size:13px;color:#94A3B8;margin-top:6px">
             Stock disponible: <b style="color:{_cped_col}">{int(_stk_ped)}u</b></div>
         </div>""", unsafe_allow_html=True)
-
-        # ── MODIFICAR CANTIDAD A SACAR ────────────────────────────────────
-        col_cant_edit, col_cant_btn = st.columns([3, 2])
-        with col_cant_edit:
-            nueva_cant = st.number_input(
-                "✏️ Modificar cantidad a sacar:",
-                min_value=1,
-                max_value=max(1, int(_cant_ped) * 3),
-                value=int(_cant_ped),
-                step=1,
-                key=f"cant_edit_{idx_desp}"
-            )
-        with col_cant_btn:
-            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-            if st.button("💾 Actualizar", use_container_width=True, key=f"btn_cant_upd_{idx_desp}"):
-                st.session_state.pedido[idx_desp]['cant'] = nueva_cant
-                st.success(f"✅ Cantidad actualizada a {nueva_cant}u")
-                st.rerun()
-        # Usar la cantidad editada para el despacho (si fue modificada en este render)
-        _cant_ped = nueva_cant
 
         if lotes_d:
             st.markdown('<p class="sec-label">LOTE A USAR — elegí uno</p>', unsafe_allow_html=True)
