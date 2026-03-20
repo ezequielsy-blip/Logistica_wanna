@@ -633,7 +633,7 @@ for lote in inventario:
 # metrics removed
 
 # ── Navegación desplegable estilo app ──────────────────────────────────────
-_NAV_OPTIONS = ["📦 MOVIMIENTOS", "🚚 DESPACHO", "📋 HISTORIAL", "📊 PLANILLA", "🔐 ADMIN", "🤖 ASISTENTE"]
+_NAV_OPTIONS = ["📦 MOVIMIENTOS", "🚚 DESPACHO", "📋 HISTORIAL", "📊 PLANILLA", "⚙️ CONFIG", "🔐 ADMIN", "🤖 ASISTENTE"]
 if "nav_tab" not in st.session_state:
     st.session_state.nav_tab = "📦 MOVIMIENTOS"
 
