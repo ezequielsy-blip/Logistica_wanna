@@ -1649,6 +1649,155 @@ if _show("📊 PLANILLA"):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB CONFIG
+# ═══════════════════════════════════════════════════════════════════════════════
+if _show("⚙️ CONFIG"):
+    if rol != "admin":
+        st.warning("🔒 Solo disponible para administradores.")
+    else:
+        @st.cache_data(ttl=30, show_spinner=False)
+        def _cargar_cfg_admin():
+            try:
+                import json as _j
+                r = sb.table("app_config").select("config").eq("usuario","admin").execute()
+                if r.data: return _j.loads(r.data[0]["config"])
+            except: pass
+            return {}
+
+        _cfg_admin = _cargar_cfg_admin()
+
+        def _guardar_cfg_admin(nueva_cfg):
+            import json as _j
+            try:
+                sb.table("app_config").upsert({"usuario":"admin","config":_j.dumps(nueva_cfg,ensure_ascii=False)}).execute()
+                _cargar_cfg_admin.clear()
+                return True
+            except Exception as e:
+                st.error(f"Error guardando: {e}")
+                return False
+
+        _cfg_tab = st.radio("", ["🗄️ Estanterías","⚙️ General","🎨 Apariencia"],
+                            horizontal=True, key="cfg_subtab", label_visibility="collapsed")
+
+        # ── ESTANTERÍAS ──────────────────────────────────────────────────────
+        if _cfg_tab == "🗄️ Estanterías":
+            _est_cfg = _cfg_admin.get("estantes", [])
+            if not _est_cfg:
+                for _e in range(1, 28):
+                    if _e in [3,4]:            _nv,_ls = 4,"ABCDE"
+                    elif _e in [8,9,10,11,12]: _nv,_ls = 6,"ABCDEFG"
+                    else:                       _nv,_ls = 5,"ABCDE"
+                    _est_cfg.append({"num":_e,"niveles":_nv,"disponible":True,
+                                      "letras_por_nivel":{str(_n):_ls for _n in range(1,_nv+1)}})
+            _nueva_est = list(_est_cfg)
+            st.markdown('<div style="font-size:11px;color:#64748B;margin-bottom:8px">Configurá número, niveles, letras y disponibilidad de cada estante</div>', unsafe_allow_html=True)
+            _hcols = st.columns([1,2,2,2,1])
+            for _hc, _ht in zip(_hcols, ["N°","Niveles","Letras","Activo","×"]):
+                _hc.markdown(f'<div style="font-size:10px;font-weight:800;color:#475569;letter-spacing:1px">{_ht}</div>', unsafe_allow_html=True)
+            for _i, _e in enumerate(_nueva_est):
+                _ec = st.columns([1,2,2,2,1])
+                with _ec[0]: st.markdown(f'<div style="padding:9px 0;font-weight:700;font-size:13px">{str(_e["num"]).zfill(2)}</div>', unsafe_allow_html=True)
+                with _ec[1]:
+                    _nv_new = st.number_input("", min_value=1, max_value=12, value=int(_e.get("niveles",5)), key=f"eniv_{_e['num']}", label_visibility="collapsed")
+                    if _nv_new != _e.get("niveles"): _nueva_est[_i]["niveles"] = _nv_new
+                with _ec[2]:
+                    _lv = list(_e.get("letras_por_nivel",{}).values())
+                    _lv = _lv[0] if _lv else "ABCDE"
+                    _ln = st.text_input("", value=_lv, key=f"elet_{_e['num']}", label_visibility="collapsed")
+                    if _ln.strip().upper() != _lv:
+                        _nv_c = _nueva_est[_i].get("niveles",5)
+                        _nueva_est[_i]["letras_por_nivel"] = {str(_n):_ln.strip().upper() for _n in range(1,_nv_c+1)}
+                with _ec[3]:
+                    _d = st.checkbox("", value=bool(_e.get("disponible",True)), key=f"edisp_{_e['num']}", label_visibility="collapsed")
+                    if _d != _e.get("disponible"): _nueva_est[_i]["disponible"] = _d
+                with _ec[4]:
+                    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+                    if st.button("🗑", key=f"edel_{_e['num']}"):
+                        _nueva_est = [x for x in _nueva_est if x["num"] != _e["num"]]
+                        _nc = dict(_cfg_admin); _nc["estantes"] = _nueva_est
+                        if _guardar_cfg_admin(_nc): st.success("✅ Eliminado."); st.rerun()
+            with st.expander("➕ Agregar estante"):
+                _an1,_an2,_an3 = st.columns(3)
+                _new_num = _an1.number_input("Número", min_value=1, max_value=999, value=max([x["num"] for x in _nueva_est],default=0)+1, key="enew_num")
+                _new_nv  = _an2.number_input("Niveles", min_value=1, max_value=12, value=5, key="enew_nv")
+                _new_let = _an3.text_input("Letras", value="ABCDE", key="enew_let")
+                if st.button("➕ Agregar", use_container_width=True, key="eadd"):
+                    if any(x["num"]==_new_num for x in _nueva_est):
+                        st.warning(f"El estante {_new_num} ya existe.")
+                    else:
+                        _nueva_est.append({"num":_new_num,"niveles":_new_nv,"disponible":True,
+                                            "letras_por_nivel":{str(_n):_new_let.strip().upper() for _n in range(1,_new_nv+1)}})
+                        _nueva_est.sort(key=lambda x:x["num"])
+                        _nc = dict(_cfg_admin); _nc["estantes"] = _nueva_est
+                        if _guardar_cfg_admin(_nc): st.success(f"✅ Estante {_new_num} agregado."); st.rerun()
+            if st.button("💾 Guardar estanterías", use_container_width=True, type="primary", key="egardar"):
+                _nc = dict(_cfg_admin); _nc["estantes"] = _nueva_est
+                if _guardar_cfg_admin(_nc): st.success(f"✅ {len(_nueva_est)} estantes guardados."); st.rerun()
+
+        # ── GENERAL ──────────────────────────────────────────────────────────
+        elif _cfg_tab == "⚙️ General":
+            _gc1, _gc2 = st.columns(2)
+            with _gc1:
+                _dias_new = st.number_input("⏰ Días alerta vencimiento", min_value=1, max_value=365, value=int(_cfg_admin.get("dias_alerta",60)), key="cfg_dias")
+            with _gc2:
+                _hist_new = st.number_input("📋 Límite historial", min_value=50, max_value=5000, step=50, value=int(_cfg_admin.get("hist_limit",500)), key="cfg_hist")
+            _gc3, _gc4 = st.columns(2)
+            with _gc3:
+                _deps = ["depo 1","depo 2","depo 3"]
+                _dep_val = _cfg_admin.get("depo_default","depo 1")
+                _dep_new = st.selectbox("🏭 Depósito por defecto", _deps, index=_deps.index(_dep_val) if _dep_val in _deps else 0, key="cfg_dep")
+            with _gc4:
+                _res_new = st.number_input("🔍 Máx. resultados búsqueda", min_value=10, max_value=500, step=10, value=int(_cfg_admin.get("max_resultados",100)), key="cfg_res")
+            if st.button("💾 Guardar configuración", use_container_width=True, type="primary", key="cfg_gen_save"):
+                _nc = dict(_cfg_admin)
+                _nc.update({"dias_alerta":_dias_new,"hist_limit":_hist_new,"depo_default":_dep_new,"max_resultados":_res_new})
+                if _guardar_cfg_admin(_nc): st.success("✅ Guardado."); st.rerun()
+
+        # ── APARIENCIA ───────────────────────────────────────────────────────
+        elif _cfg_tab == "🎨 Apariencia":
+            _PALETAS = {
+                "🌌 Midnight Pro":  {"bg":"#04080F","surface":"#0A1628","surface2":"#0F1E35","primary":"#4D7CFE","primary_dark":"#2D5BE3","accent":"#7EB8F7","success":"#56CFE1","warning":"#FFD166","danger":"#EF476F","text":"#E8F4FD","text_dim":"#4A6FA5","border":"#152340"},
+                "🪨 Slate Premium": {"bg":"#0B0E14","surface":"#13171F","surface2":"#1A1F2B","primary":"#8B9CF4","primary_dark":"#6B7EE8","accent":"#A5B4FC","success":"#6EE7B7","warning":"#FDE68A","danger":"#FDA4AF","text":"#F1F5FF","text_dim":"#4B5683","border":"#1E2438"},
+                "💎 Emerald Dark":  {"bg":"#050F0A","surface":"#0A1F14","surface2":"#0F2B1A","primary":"#10B981","primary_dark":"#059669","accent":"#34D399","success":"#6EE7B7","warning":"#FCD34D","danger":"#F87171","text":"#ECFDF5","text_dim":"#3D7A60","border":"#0F3322"},
+                "🔮 Violet Night":  {"bg":"#08050F","surface":"#120D1E","surface2":"#1A1229","primary":"#A855F7","primary_dark":"#8B22E8","accent":"#C084FC","success":"#4ADE80","warning":"#FCD34D","danger":"#F87171","text":"#F5F0FF","text_dim":"#6B4D8A","border":"#221540"},
+                "🥉 Copper Edge":   {"bg":"#0A0804","surface":"#16100A","surface2":"#1E1710","primary":"#D97706","primary_dark":"#B45309","accent":"#F59E0B","success":"#86EFAC","warning":"#FDE68A","danger":"#FCA5A5","text":"#FEF3E2","text_dim":"#78563A","border":"#2A1F0F"},
+                "❄️ Arctic Blue":   {"bg":"#050810","surface":"#0A0F1E","surface2":"#0E152B","primary":"#38BDF8","primary_dark":"#0EA5E9","accent":"#7DD3FC","success":"#6EE7B7","warning":"#FCD34D","danger":"#FCA5A5","text":"#F0F9FF","text_dim":"#3B6A8A","border":"#0F2040"},
+                "🌸 Sakura Dark":   {"bg":"#0F080E","surface":"#1A0F17","surface2":"#24141F","primary":"#F472B6","primary_dark":"#EC4899","accent":"#F9A8D4","success":"#6EE7B7","warning":"#FCD34D","danger":"#FCA5A5","text":"#FFF0F5","text_dim":"#7A4060","border":"#2E1428"},
+                "✨ Gold Standard": {"bg":"#09070A","surface":"#130F0A","surface2":"#1C1710","primary":"#EAB308","primary_dark":"#CA8A04","accent":"#FDE047","success":"#4ADE80","warning":"#FCD34D","danger":"#F87171","text":"#FEFCE8","text_dim":"#6B5A20","border":"#2A2010"},
+                "⚡ Neon Cyber":    {"bg":"#030608","surface":"#070D12","surface2":"#0C1519","primary":"#00F5FF","primary_dark":"#00C8D8","accent":"#FF00FF","success":"#39FF14","warning":"#FFD300","danger":"#FF0055","text":"#E0FFFF","text_dim":"#2A6070","border":"#0A2030"},
+                "⬛ Graphite Pro":  {"bg":"#060608","surface":"#0E0E12","surface2":"#16161C","primary":"#9B9BA8","primary_dark":"#7A7A8A","accent":"#C8C8D8","success":"#6EE7B7","warning":"#FCD34D","danger":"#FCA5A5","text":"#EEEEF4","text_dim":"#4A4A5A","border":"#202028"},
+            }
+            _colores_actuales = _cfg_admin.get("colores", {"bg":"#0F172A","surface":"#1E293B","surface2":"#263347","primary":"#3B82F6","primary_dark":"#1D4ED8","accent":"#06B6D4","success":"#10B981","warning":"#F59E0B","danger":"#EF4444","text":"#F1F5F9","text_dim":"#94A3B8","border":"#334155"})
+            st.markdown("**🎨 Paletas rápidas:**")
+            _pcols = st.columns(5)
+            for _pi, (_pnom, _pcols_d) in enumerate(_PALETAS.items()):
+                _col = _pcols[_pi % 5]
+                _col.markdown(f'<div style="background:{_pcols_d["surface"]};border:2px solid {_pcols_d["primary"]};border-radius:10px;padding:6px;text-align:center;font-size:10px;font-weight:700;color:{_pcols_d["text"]};margin-bottom:4px">{_pnom}</div>', unsafe_allow_html=True)
+                if _col.button("Aplicar", key=f"pal_{_pi}", use_container_width=True):
+                    _nc = dict(_cfg_admin); _nc["colores"] = _pcols_d
+                    if _guardar_cfg_admin(_nc): st.success(f"✅ {_pnom} aplicada. Recargá la página."); st.rerun()
+            st.markdown("---")
+            st.markdown("**🖌️ Colores personalizados:**")
+            _COLOR_DEFS = [
+                ("bg","Fondo","🖥️"),("surface","Cards","📦"),("surface2","Superficie 2","🔲"),
+                ("border","Bordes","📐"),("primary","Primario","🔵"),("accent","Acento","💠"),
+                ("success","Éxito","✅"),("warning","Advertencia","⚠️"),("danger","Error","❌"),
+                ("text","Texto","📝"),("text_dim","Texto dim","🔅"),
+            ]
+            _cols_nuevos = dict(_colores_actuales)
+            for _ck, _cl, _ico in _COLOR_DEFS:
+                _cv = _colores_actuales.get(_ck,"#000000")
+                _cc1,_cc2,_cc3 = st.columns([1,3,2])
+                _cc1.markdown(f'<div style="background:{_cv};width:28px;height:28px;border-radius:6px;border:2px solid #334155;margin-top:6px"></div>', unsafe_allow_html=True)
+                _cc2.markdown(f'<div style="padding:8px 0;font-size:13px;font-weight:600">{_ico} {_cl}</div>', unsafe_allow_html=True)
+                _nv = _cc3.text_input("", value=_cv, key=f"color_{_ck}", label_visibility="collapsed")
+                if _nv.strip() and _nv.strip() != _cv and len(_nv.strip())==7 and _nv.strip().startswith("#"):
+                    _cols_nuevos[_ck] = _nv.strip()
+            if st.button("💾 Guardar colores", use_container_width=True, type="primary", key="colores_save"):
+                _nc = dict(_cfg_admin); _nc["colores"] = _cols_nuevos
+                if _guardar_cfg_admin(_nc): st.success("✅ Colores guardados. Recargá la página."); st.rerun()
+
 # TAB ADMIN
 # ═══════════════════════════════════════════════════════════════════════════════
 if _show("🔐 ADMIN"):
