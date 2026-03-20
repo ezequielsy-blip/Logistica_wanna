@@ -381,6 +381,35 @@ label[data-testid="stWidgetLabel"] p {
 </style>
 """, unsafe_allow_html=True)
 
+# ── Override de colores dinámico desde Supabase ───────────────────────────────
+@st.cache_data(ttl=60, show_spinner=False)
+def _cargar_colores_css():
+    try:
+        import json as _jc
+        r = sb.table("app_config").select("config").eq("usuario","admin").execute()
+        if r.data:
+            cfg = _jc.loads(r.data[0]["config"])
+            return cfg.get("colores", {})
+    except: pass
+    return {}
+
+_C = _cargar_colores_css()
+if _C:
+    _root_override = "<style>:root{" + "".join([
+        f"--bg:{_C['bg']};" if 'bg' in _C else "",
+        f"--surface:{_C['surface']};" if 'surface' in _C else "",
+        f"--surface2:{_C['surface2']};" if 'surface2' in _C else "",
+        f"--primary:{_C['primary']};" if 'primary' in _C else "",
+        f"--accent:{_C['accent']};" if 'accent' in _C else "",
+        f"--success:{_C['success']};" if 'success' in _C else "",
+        f"--warning:{_C['warning']};" if 'warning' in _C else "",
+        f"--danger:{_C['danger']};" if 'danger' in _C else "",
+        f"--text:{_C['text']};" if 'text' in _C else "",
+        f"--dim:{_C.get('text_dim','#94A3B8')};" if 'text_dim' in _C else "",
+        f"--border:{_C['border']};" if 'border' in _C else "",
+    ]) + "}</style>"
+    st.markdown(_root_override, unsafe_allow_html=True)
+
 
 
 # ── SUPABASE ──────────────────────────────────────────────────────────────────
@@ -1680,7 +1709,7 @@ if _show("⚙️ CONFIG"):
         _cfg_tab = st.radio("", ["🗄️ Estanterías","⚙️ General","🎨 Apariencia"],
                             horizontal=True, key="cfg_subtab", label_visibility="collapsed")
 
-        # ── ESTANTERÍAS ──────────────────────────────────────────────────────
+        # ── ESTANTERÍAS (igual que desktop: lista izq + editor niveles der) ─
         if _cfg_tab == "🗄️ Estanterías":
             _est_cfg = _cfg_admin.get("estantes", [])
             if not _est_cfg:
@@ -1690,50 +1719,101 @@ if _show("⚙️ CONFIG"):
                     else:                       _nv,_ls = 5,"ABCDE"
                     _est_cfg.append({"num":_e,"niveles":_nv,"disponible":True,
                                       "letras_por_nivel":{str(_n):_ls for _n in range(1,_nv+1)}})
-            _nueva_est = list(_est_cfg)
-            st.markdown('<div style="font-size:11px;color:#64748B;margin-bottom:8px">Configurá número, niveles, letras y disponibilidad de cada estante</div>', unsafe_allow_html=True)
-            _hcols = st.columns([1,2,2,2,1])
-            for _hc, _ht in zip(_hcols, ["N°","Niveles","Letras","Activo","×"]):
-                _hc.markdown(f'<div style="font-size:10px;font-weight:800;color:#475569;letter-spacing:1px">{_ht}</div>', unsafe_allow_html=True)
-            for _i, _e in enumerate(_nueva_est):
-                _ec = st.columns([1,2,2,2,1])
-                with _ec[0]: st.markdown(f'<div style="padding:9px 0;font-weight:700;font-size:13px">{str(_e["num"]).zfill(2)}</div>', unsafe_allow_html=True)
-                with _ec[1]:
-                    _nv_new = st.number_input("", min_value=1, max_value=12, value=int(_e.get("niveles",5)), key=f"eniv_{_e['num']}", label_visibility="collapsed")
-                    if _nv_new != _e.get("niveles"): _nueva_est[_i]["niveles"] = _nv_new
-                with _ec[2]:
-                    _lv = list(_e.get("letras_por_nivel",{}).values())
-                    _lv = _lv[0] if _lv else "ABCDE"
-                    _ln = st.text_input("", value=_lv, key=f"elet_{_e['num']}", label_visibility="collapsed")
-                    if _ln.strip().upper() != _lv:
-                        _nv_c = _nueva_est[_i].get("niveles",5)
-                        _nueva_est[_i]["letras_por_nivel"] = {str(_n):_ln.strip().upper() for _n in range(1,_nv_c+1)}
-                with _ec[3]:
-                    _d = st.checkbox("", value=bool(_e.get("disponible",True)), key=f"edisp_{_e['num']}", label_visibility="collapsed")
-                    if _d != _e.get("disponible"): _nueva_est[_i]["disponible"] = _d
-                with _ec[4]:
-                    st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
-                    if st.button("🗑", key=f"edel_{_e['num']}"):
-                        _nueva_est = [x for x in _nueva_est if x["num"] != _e["num"]]
-                        _nc = dict(_cfg_admin); _nc["estantes"] = _nueva_est
-                        if _guardar_cfg_admin(_nc): st.success("✅ Eliminado."); st.rerun()
-            with st.expander("➕ Agregar estante"):
-                _an1,_an2,_an3 = st.columns(3)
-                _new_num = _an1.number_input("Número", min_value=1, max_value=999, value=max([x["num"] for x in _nueva_est],default=0)+1, key="enew_num")
-                _new_nv  = _an2.number_input("Niveles", min_value=1, max_value=12, value=5, key="enew_nv")
-                _new_let = _an3.text_input("Letras", value="ABCDE", key="enew_let")
-                if st.button("➕ Agregar", use_container_width=True, key="eadd"):
-                    if any(x["num"]==_new_num for x in _nueva_est):
-                        st.warning(f"El estante {_new_num} ya existe.")
-                    else:
-                        _nueva_est.append({"num":_new_num,"niveles":_new_nv,"disponible":True,
-                                            "letras_por_nivel":{str(_n):_new_let.strip().upper() for _n in range(1,_new_nv+1)}})
-                        _nueva_est.sort(key=lambda x:x["num"])
-                        _nc = dict(_cfg_admin); _nc["estantes"] = _nueva_est
-                        if _guardar_cfg_admin(_nc): st.success(f"✅ Estante {_new_num} agregado."); st.rerun()
-            if st.button("💾 Guardar estanterías", use_container_width=True, type="primary", key="egardar"):
-                _nc = dict(_cfg_admin); _nc["estantes"] = _nueva_est
-                if _guardar_cfg_admin(_nc): st.success(f"✅ {len(_nueva_est)} estantes guardados."); st.rerun()
+
+            if "est_sel_num" not in st.session_state:
+                st.session_state.est_sel_num = _est_cfg[0]["num"] if _est_cfg else 1
+
+            # Layout: col izquierda (lista) | col derecha (editor niveles)
+            _col_lista, _col_editor = st.columns([2, 3])
+
+            with _col_lista:
+                st.markdown('<div style="font-size:10px;font-weight:800;color:#475569;letter-spacing:1.5px;margin-bottom:6px">ESTANTES</div>', unsafe_allow_html=True)
+                # Agregar nuevo estante
+                with st.expander("➕ Agregar estante"):
+                    _an1,_an2 = st.columns(2)
+                    _new_num = _an1.number_input("N°", min_value=1, max_value=999, value=max([x["num"] for x in _est_cfg],default=0)+1, key="enew_num")
+                    _new_nv  = _an2.number_input("Niveles", min_value=1, max_value=12, value=5, key="enew_nv")
+                    _new_let = st.text_input("Letras (ej: ABCDE)", value="ABCDE", key="enew_let")
+                    if st.button("➕ Agregar", use_container_width=True, key="eadd"):
+                        if any(x["num"]==_new_num for x in _est_cfg):
+                            st.warning(f"El estante {_new_num} ya existe.")
+                        else:
+                            _est_cfg.append({"num":_new_num,"niveles":_new_nv,"disponible":True,
+                                              "letras_por_nivel":{str(_n):_new_let.strip().upper() for _n in range(1,_new_nv+1)}})
+                            _est_cfg.sort(key=lambda x:x["num"])
+                            _nc = dict(_cfg_admin); _nc["estantes"] = _est_cfg
+                            if _guardar_cfg_admin(_nc):
+                                st.session_state.est_sel_num = _new_num
+                                st.rerun()
+
+                # Lista de estantes
+                for _e in _est_cfg:
+                    _sel = _e["num"] == st.session_state.est_sel_num
+                    _disp = _e.get("disponible", True)
+                    _bg = "rgba(59,130,246,0.15)" if _sel else "transparent"
+                    _border = "#3B82F6" if _sel else "#334155"
+                    _ico = "✅" if _disp else "⛔"
+                    _bcol1, _bcol2 = st.columns([5,1])
+                    with _bcol1:
+                        if st.button(
+                            f"{_ico}  Estante {str(_e['num']).zfill(2)}  ·  {_e.get('niveles',5)} niveles",
+                            key=f"esel_{_e['num']}", use_container_width=True,
+                            type="primary" if _sel else "secondary"
+                        ):
+                            st.session_state.est_sel_num = _e["num"]
+                            st.rerun()
+                    with _bcol2:
+                        if st.button("🗑", key=f"edel_{_e['num']}"):
+                            _est_cfg = [x for x in _est_cfg if x["num"] != _e["num"]]
+                            _nc = dict(_cfg_admin); _nc["estantes"] = _est_cfg
+                            if _guardar_cfg_admin(_nc):
+                                if _est_cfg: st.session_state.est_sel_num = _est_cfg[0]["num"]
+                                st.rerun()
+
+            with _col_editor:
+                _est_act = next((e for e in _est_cfg if e["num"] == st.session_state.est_sel_num), None)
+                if _est_act:
+                    _nnum = _est_act["num"]; _nniv = _est_act.get("niveles",5)
+                    _lp   = _est_act.get("letras_por_nivel",{})
+                    st.markdown(f'<div style="background:#1E293B;border:1px solid #334155;border-radius:10px 10px 0 0;padding:10px 14px;font-size:12px;font-weight:800;color:#F1F5F9">Estante {str(_nnum).zfill(2)}  ·  {_nniv} niveles  ·  Letras por nivel</div>', unsafe_allow_html=True)
+
+                    # Activo / Niveles
+                    _ea1, _ea2 = st.columns(2)
+                    with _ea1:
+                        _disp_new = st.checkbox("Activo", value=bool(_est_act.get("disponible",True)), key=f"edisp_{_nnum}")
+                    with _ea2:
+                        _niv_new = st.number_input("Niveles", min_value=1, max_value=12, value=_nniv, key=f"eniv_{_nnum}")
+                    st.markdown('<div style="font-size:10px;font-weight:800;color:#475569;letter-spacing:1px;margin:8px 0 4px">NIVEL · LETRAS · EJEMPLO</div>', unsafe_allow_html=True)
+
+                    _niveles_nuevos = {}
+                    for _nv in range(1, _niv_new+1):
+                        _ns = str(_nv)
+                        _lv = _lp.get(_ns, _lp.get("1","ABCDE"))
+                        _nc1, _nc2, _nc3 = st.columns([2,3,2])
+                        _nc1.markdown(f'<div style="padding:8px 0;font-weight:800;font-size:13px;color:#F1F5F9">Nivel {_nv:02d}</div>', unsafe_allow_html=True)
+                        _ln = _nc2.text_input("", value=_lv, key=f"elet_{_nnum}_{_nv}", label_visibility="collapsed", placeholder="ej: ABCDE")
+                        _ln = _ln.strip().upper() if _ln.strip() else _lv
+                        _nc3.markdown(f'<div style="padding:8px 0;font-size:12px;color:#64748B;font-family:monospace">→ {str(_nnum).zfill(2)}-{_nv}-{_ln[0] if _ln else "?"}</div>', unsafe_allow_html=True)
+                        _niveles_nuevos[_ns] = _ln
+
+                    # Botones rápidos
+                    _qb1, _qb2, _qb3 = st.columns(3)
+                    if _qb1.button("↕ Copiar nivel 1 a todos", use_container_width=True, key=f"ecopy_{_nnum}"):
+                        _base = _niveles_nuevos.get("1","ABCDE")
+                        _niveles_nuevos = {str(_n):_base for _n in range(1,_niv_new+1)}
+                    if _qb2.button("A→Z Rellenar todas", use_container_width=True, key=f"eaz_{_nnum}"):
+                        _niveles_nuevos = {str(_n):"ABCDEFGHIJKLMNOPQRSTUVWXYZ" for _n in range(1,_niv_new+1)}
+                    if _qb3.button("Limpiar", use_container_width=True, key=f"eclr_{_nnum}"):
+                        _niveles_nuevos = {str(_n):"A" for _n in range(1,_niv_new+1)}
+
+                    if st.button("💾 Guardar este estante", use_container_width=True, type="primary", key=f"esave_{_nnum}"):
+                        _est_act["disponible"] = _disp_new
+                        _est_act["niveles"] = _niv_new
+                        _est_act["letras_por_nivel"] = _niveles_nuevos
+                        _nc = dict(_cfg_admin); _nc["estantes"] = _est_cfg
+                        if _guardar_cfg_admin(_nc): st.success(f"✅ Estante {str(_nnum).zfill(2)} guardado."); st.rerun()
+                else:
+                    st.info("← Seleccioná un estante para editarlo")
 
         # ── GENERAL ──────────────────────────────────────────────────────────
         elif _cfg_tab == "⚙️ General":
