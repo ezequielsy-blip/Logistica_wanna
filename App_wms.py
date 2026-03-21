@@ -1699,7 +1699,14 @@ if _show("⚙️ CONFIG"):
         def _guardar_cfg_admin(nueva_cfg):
             import json as _j
             try:
-                sb.table("app_config").upsert({"usuario":"admin","config":_j.dumps(nueva_cfg,ensure_ascii=False)}).execute()
+                # Estanterías SIEMPRE en "admin" (global, solo admin puede tocar)
+                _r_adm = sb.table("app_config").select("config").eq("usuario","admin").execute()
+                _cfg_adm = _j.loads(_r_adm.data[0]["config"]) if _r_adm.data else {}
+                _cfg_adm["estantes"] = nueva_cfg.get("estantes", _cfg_adm.get("estantes", []))
+                # Resto de config (general, colores) también en admin
+                for _k in ["dias_alerta","hist_limit","depo_default","max_resultados","colores"]:
+                    if _k in nueva_cfg: _cfg_adm[_k] = nueva_cfg[_k]
+                sb.table("app_config").upsert({"usuario":"admin","config":_j.dumps(_cfg_adm,ensure_ascii=False)}).execute()
                 _cargar_cfg_admin.clear()
                 return True
             except Exception as e:
