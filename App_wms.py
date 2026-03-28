@@ -432,6 +432,34 @@ label[data-testid="stWidgetLabel"] p {
     color: white; letter-spacing: 2px;
 }
 .main-header span { font-size: 12px; color: var(--dim); font-weight: 400; }
+
+/* ── SECTION LABEL ── */
+.sec-label {
+    font-size: 10px; font-weight: 800;
+    color: var(--primary); letter-spacing: 1.5px;
+    text-transform: uppercase; margin: 16px 0 6px;
+    font-family: 'DM Sans', sans-serif;
+}
+
+/* ── SUGERENCIA DE UBICACIÓN ── */
+.sug-box {
+    background: rgba(59,130,246,0.08);
+    border: 1px solid rgba(59,130,246,0.25);
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 12px; font-weight: 700;
+    color: var(--primary);
+    margin: 6px 0;
+}
+
+/* ── LOTE CARD ── */
+.lote-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin: 4px 0;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -950,18 +978,32 @@ function closeScan(){
     // Hook ubicacion inputs — auto-insert "-" after 2 digits
     for(var i=0;i<inputs.length;i++){
       var ph2=inputs[i].placeholder||'';
-      if((ph2.indexOf('05-3B')>=0||ph2.indexOf('12-2C')>=0) && !inputs[i]._lzUbiHook){
+      if((ph2.indexOf('05-3B')>=0||ph2.indexOf('12-2C')>=0||ph2.indexOf('ej: 05-3B')>=0) && !inputs[i]._lzUbiHook){
         inputs[i]._lzUbiHook=true;
         (function(el){
           el.addEventListener('input',function(){
-            var v=el.value.replace(/[^0-9a-zA-Z-]/g,'').toUpperCase();
-            // After 2 digits, auto-insert "-" if not already there
-            if(v.length===2 && /^[0-9]{2}$/.test(v)){
-              el.value=v+'-';
+            var raw=el.value.replace(/[^0-9a-zA-Z]/g,'').toUpperCase();
+            var out='';
+            if(raw.length===0){ out=''; }
+            else if(raw.length<=2){ out=raw; }
+            else { out=raw.substring(0,2)+'-'+raw.substring(2,6); }
+            if(out!==el.value){
+              var ns=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value');
+              if(ns&&ns.set) ns.set.call(el,out); else el.value=out;
               el.dispatchEvent(new Event('input',{bubbles:true}));
-            } else if(v.length>2 && v[2]!=='-' && /^[0-9]{2}/.test(v)){
-              el.value=v.substring(0,2)+'-'+v.substring(2);
-              el.dispatchEvent(new Event('input',{bubbles:true}));
+              el.dispatchEvent(new Event('change',{bubbles:true}));
+            }
+          });
+          el.addEventListener('keydown',function(e){
+            if(e.key==='Backspace'){
+              var v=el.value;
+              if(v.length===3&&v[2]==='-'){
+                e.preventDefault();
+                var ns=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,'value');
+                if(ns&&ns.set) ns.set.call(el,v.substring(0,2)); else el.value=v.substring(0,2);
+                el.dispatchEvent(new Event('input',{bubbles:true}));
+                el.dispatchEvent(new Event('change',{bubbles:true}));
+              }
             }
           });
         })(inputs[i]);
@@ -1185,36 +1227,42 @@ function closeScan(){{
                 _do_register = True
 
         if _do_register:
-            if cantidad_op <= 0:
+            # FIX: capturar todos los valores AHORA antes de cualquier rerun
+            _fecha_reg = fecha_op.strip() if fecha_op else ""
+            _ubi_reg   = ubi_final
+            _depo_reg  = depo_op
+            _cant_reg  = cantidad_op
+
+            if _cant_reg <= 0:
                 st.error("Cantidad debe ser mayor a 0.")
-            elif es_ingreso and not fecha_op.strip():
+            elif es_ingreso and not _fecha_reg:
                 st.error("Ingresá la fecha de vencimiento.")
             else:
                 try:
                     if es_ingreso:
                         existente = next((l for l in lotes_prod
-                                         if str(l.get('ubicacion','')).upper() == ubi_final
-                                         and str(l.get('fecha','')) == fecha_op.strip()
-                                         and str(l.get('deposito','')) == depo_op), None)
+                                         if str(l.get('ubicacion','')).upper() == _ubi_reg
+                                         and str(l.get('fecha','')) == _fecha_reg
+                                         and str(l.get('deposito','')) == _depo_reg), None)
                         if existente:
-                            nq = float(existente['cantidad']) + cantidad_op
+                            nq = float(existente['cantidad']) + _cant_reg
                             sb.table("inventario").update({"cantidad": nq}).eq("id", existente['id']).execute()
                         else:
                             sb.table("inventario").insert({
                                 "cod_int": cod_sel, "nombre": prod_sel['nombre'],
-                                "cantidad": cantidad_op, "ubicacion": ubi_final,
-                                "deposito": depo_op, "fecha": fecha_op.strip()
+                                "cantidad": _cant_reg, "ubicacion": _ubi_reg,
+                                "deposito": _depo_reg, "fecha": _fecha_reg
                             }).execute()
                     else:
                         if not lote_sel:
                             st.error("No hay lotes disponibles."); st.stop()
                         cant_actual = float(lote_sel['cantidad'])
-                        if cant_actual - cantidad_op <= 0:
+                        if cant_actual - _cant_reg <= 0:
                             sb.table("inventario").delete().eq("id", lote_sel['id']).execute()
                         else:
-                            sb.table("inventario").update({"cantidad": cant_actual - cantidad_op}).eq("id", lote_sel['id']).execute()
+                            sb.table("inventario").update({"cantidad": cant_actual - _cant_reg}).eq("id", lote_sel['id']).execute()
                     registrar_historial("INGRESO" if es_ingreso else "SALIDA",
-                                       cod_sel, prod_sel['nombre'], cantidad_op, ubi_final, usuario)
+                                       cod_sel, prod_sel['nombre'], _cant_reg, _ubi_reg, usuario)
                     recalcular_maestra(cod_sel, inventario)
                     st.success("✅ Operación registrada correctamente.")
                     st.session_state.pop("_barras_ok", None)
@@ -3217,7 +3265,7 @@ if _show("🤖 ASISTENTE"):
         cands.sort(key=lambda x:(-x[0], x[1].get('nombre','')))
 
         # ── Si es un solo resultado SIN pedido de lista → detalle completo ──
-        if len(cands)==1 and not pide_lista: return _detalle_prod(cands[0][1])
+        if len(cands)==1: return _detalle_prod(cands[0][1])
 
         # ── Lista detallada ───────────────────────────────────────────────
         total_stk = sum(int(float(p.get('cantidad_total',0) or 0)) for _,p in cands)
