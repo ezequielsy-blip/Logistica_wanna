@@ -1490,36 +1490,7 @@ if _show("🚚 DESPACHO"):
                     st.rerun()
 
     if st.session_state.pedido:
-        st.markdown('<p class="sec-label">📋 ÍTEMS DEL PEDIDO ACTIVO</p>', unsafe_allow_html=True)
-        pedido_a_eliminar = None
-        for i, item in enumerate(st.session_state.pedido):
-            col_pi, col_pb = st.columns([5, 1])
-            with col_pi:
-                stock_disp  = sum(float(l.get('cantidad',0)) for l in idx_inv.get(item['cod'],[]))
-                color_stock = "#10B981" if stock_disp >= item['cant'] else "#EF4444"
-                st.markdown(f"""
-                <div class="lote-card">
-                    <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <div>
-                            <b style="font-size:14px;">{item['nombre']}</b><br>
-                            <span style="color:#94A3B8;font-size:12px;">Cod: {item['cod']}</span>
-                        </div>
-                        <div style="text-align:right;">
-                            <span style="font-size:22px;font-weight:900;color:#10B981;">{item['cant']}</span>
-                            <br><span style="font-size:11px;color:{color_stock};">stock: {int(stock_disp)}</span>
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            with col_pb:
-                st.markdown("<br><br>", unsafe_allow_html=True)
-                if rol not in ("visita",) and st.button("✕", key=f"del_ped_{i}"):
-                    pedido_a_eliminar = i
-        if pedido_a_eliminar is not None:
-            st.session_state.pedido.pop(pedido_a_eliminar); st.rerun()
-
-        st.markdown("---")
-        # ── CANTIDAD PEDIDA — siempre visible y grande ─────────────────────
+        # ── DESPACHAR ÍTEM — va primero ────────────────────────────────────
         st.markdown('<p class="sec-label">DESPACHAR ÍTEM</p>', unsafe_allow_html=True)
 
         # Selector de ítem con cantidad siempre visible
@@ -1758,23 +1729,34 @@ function closeScan(){{
                 )
                 _do_pick = False
 
-                # Lector físico → ejecutar directo
+                # Lector físico → verificar y marcar para ejecutar UNA sola vez
+                # Usamos un flag en session_state para evitar doble ejecución en rerun
+                _scan_key = f"_scan_fired_{idx_desp}_{idx_ld}"
                 if _scan_in.strip():
                     v = _scan_in.strip()
-                    if not _cod_d_barras or v == _cod_d_barras:
-                        _do_pick = True
-                    else:
-                        st.error(f"❌ Código incorrecto: {v}")
+                    # Solo ejecutar si NO fue ya disparado con este mismo código
+                    if st.session_state.get(_scan_key) != v:
+                        if not _cod_d_barras or v == _cod_d_barras:
+                            st.session_state[_scan_key] = v  # marcar como consumido
+                            _do_pick = True
+                        else:
+                            st.error(f"❌ Código incorrecto: {v}")
+                else:
+                    # Campo vacío → limpiar el flag para permitir próximo scan
+                    st.session_state.pop(_scan_key, None)
 
-                # Cámara / manual → viene por query_param sin presionar nada
+                # Cámara → viene por query_param, se consume una sola vez
                 _lz_pick = st.query_params.get("lz_pick", "")
                 if _lz_pick:
                     try: del st.query_params["lz_pick"]
                     except: pass
-                    if _lz_pick == "__MANUAL__" or not _cod_d_barras or _lz_pick == _cod_d_barras:
-                        _do_pick = True
-                    else:
-                        st.error(f"❌ Código incorrecto: {_lz_pick}")
+                    _qp_key = f"_qp_fired_{idx_desp}_{idx_ld}"
+                    if st.session_state.get(_qp_key) != _lz_pick:
+                        st.session_state[_qp_key] = _lz_pick
+                        if _lz_pick == "__MANUAL__" or not _cod_d_barras or _lz_pick == _cod_d_barras:
+                            _do_pick = True
+                        else:
+                            st.error(f"❌ Código incorrecto: {_lz_pick}")
 
                 # Botones fallback siempre visibles
                 col_b1, col_b2 = st.columns(2)
@@ -1789,6 +1771,9 @@ function closeScan(){{
 
                 if _do_pick:
                     st.session_state.pop("_pick_ok", None)
+                    # Limpiar flags de scan para que no se dispare de nuevo
+                    st.session_state.pop(f"_scan_fired_{idx_desp}_{idx_ld}", None)
+                    st.session_state.pop(f"_qp_fired_{idx_desp}_{idx_ld}", None)
                     cant_p = float(item_sel['cant'])
                     cant_l = float(lote_d.get('cantidad', 0))
                     try:
@@ -1843,6 +1828,35 @@ function closeScan(){{
 
         else:
             st.warning(f"⚠️ Sin stock disponible para {item_sel['nombre']}.")
+
+        st.markdown("---")
+        st.markdown('<p class="sec-label">📋 ÍTEMS DEL PEDIDO ACTIVO</p>', unsafe_allow_html=True)
+        pedido_a_eliminar = None
+        for i, item in enumerate(st.session_state.pedido):
+            col_pi, col_pb = st.columns([5, 1])
+            with col_pi:
+                stock_disp  = sum(float(l.get('cantidad',0)) for l in idx_inv.get(item['cod'],[]))
+                color_stock = "#10B981" if stock_disp >= item['cant'] else "#EF4444"
+                st.markdown(f"""
+                <div class="lote-card">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div>
+                            <b style="font-size:14px;">{item['nombre']}</b><br>
+                            <span style="color:#94A3B8;font-size:12px;">Cod: {item['cod']}</span>
+                        </div>
+                        <div style="text-align:right;">
+                            <span style="font-size:22px;font-weight:900;color:#10B981;">{item['cant']}</span>
+                            <br><span style="font-size:11px;color:{color_stock};">stock: {int(stock_disp)}</span>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_pb:
+                st.markdown("<br><br>", unsafe_allow_html=True)
+                if rol not in ("visita",) and st.button("✕", key=f"del_ped_{i}"):
+                    pedido_a_eliminar = i
+        if pedido_a_eliminar is not None:
+            st.session_state.pedido.pop(pedido_a_eliminar); st.rerun()
 
         st.markdown("<br>", unsafe_allow_html=True)
         col_lp1, col_lp2 = st.columns(2)
