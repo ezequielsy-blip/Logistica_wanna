@@ -314,7 +314,6 @@ if not st.session_state.usuario and "lz_u" in _qp and "lz_r" in _qp:
 # LOGIN + SELECTOR DE SUCURSAL
 # ═══════════════════════════════════════════════════════════════════════════════
 if not st.session_state.usuario:
-    # ── Logo / Header ──────────────────────────────────────────────────────
     st.markdown("""
     <div style="max-width:380px;margin:40px auto 0;text-align:center;">
         <div style="font-size:56px;margin-bottom:8px">📦</div>
@@ -327,10 +326,8 @@ if not st.session_state.usuario:
     with col_c:
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # ── PASO 1: Selector de sucursal ───────────────────────────────────
         st.markdown('<div class="sec-label">🏢 SUCURSAL</div>', unsafe_allow_html=True)
 
-        # Cargar lista de sucursales (usa la URL/KEY default para la primera carga)
         try:
             sb_tmp = create_client(DEFAULT_URL, DEFAULT_KEY)
             r_sucs = sb_tmp.table("app_config").select("config").eq("usuario","sucursales").execute()
@@ -355,13 +352,11 @@ if not st.session_state.usuario:
         )
         _suc_elegida = next((s for s in _sucursales_login if s["nombre"] == _suc_idx), _sucursales_login[0])
 
-        # Actualizar URL/KEY en session_state según selección
         if st.session_state.suc_url != _suc_elegida["url"]:
             st.session_state.suc_url    = _suc_elegida["url"]
             st.session_state.suc_key    = _suc_elegida["key"]
             st.session_state.suc_nombre = _suc_elegida["nombre"]
 
-        # ── PASO 2: Credenciales ───────────────────────────────────────────
         st.markdown('<div class="sec-label" style="margin-top:14px">🔐 CREDENCIALES</div>', unsafe_allow_html=True)
         usuario_inp = st.text_input("USUARIO", placeholder="Usuario", label_visibility="collapsed", key="l_usr")
         clave_inp   = st.text_input("CLAVE",   placeholder="••••••••", label_visibility="collapsed", type="password", key="l_pwd")
@@ -378,7 +373,6 @@ if not st.session_state.usuario:
             else:
                 try:
                     _sb_login = create_client(_url, _key)
-                    # Admin hardcodeado
                     if _usr == "admin" and _pwd == "70797474":
                         st.session_state.usuario    = "admin"
                         st.session_state.rol        = "admin"
@@ -425,7 +419,6 @@ rol         = st.session_state.rol
 suc_nombre  = st.session_state.suc_nombre
 ROL_ICON    = {"admin":"👑","operario":"🔧","visita":"👁️","vendedor":"🛒"}.get(rol,"👤")
 
-# ── Topbar ────────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <div class="app-topbar">
   <div style="display:flex;align-items:center;gap:12px">
@@ -453,7 +446,6 @@ with col_h2:
         _invalidar_cache()
         st.rerun()
 
-# ── Cargar datos (cacheados por URL de sucursal) ──────────────────────────────
 with st.spinner("Cargando datos..."):
     try:
         maestra    = cargar_maestra(st.session_state.suc_url, st.session_state.suc_key)
@@ -475,7 +467,6 @@ for lote in inventario:
     idx_inv[cod].append(lote)
     ubis_ocupadas.add(str(lote.get('ubicacion','')).upper())
 
-# ── Navegación ────────────────────────────────────────────────────────────────
 _NAV_OPTIONS = ["📦 MOVIMIENTOS","🚚 DESPACHO","📋 HISTORIAL","📊 PLANILLA","⚙️ CONFIG","🔐 ADMIN","🤖 ASISTENTE"]
 
 _nav_sel = st.selectbox("", _NAV_OPTIONS,
@@ -547,6 +538,154 @@ function closeScan(){a=false;clearInterval(iv);if(s){s.getTracks().forEach(funct
                 _lc = "#10B981" if _lq > 5 else ("#F59E0B" if _lq > 0 else "#EF4444")
                 st.markdown(f'<div style="background:#0F172A;border-radius:10px;padding:10px 14px;margin:4px 0;display:flex;justify-content:space-between;align-items:center;border:1px solid #1E293B"><div style="display:flex;gap:14px;align-items:center"><div style="font-size:22px;font-weight:900;color:{_lc};min-width:36px">{_lq}u</div><div><div style="font-size:13px;font-weight:700;color:#F1F5F9">📍 {_lu}</div><div style="font-size:11px;color:#64748B">{_ld} · 📅 {_lf}</div></div></div></div>', unsafe_allow_html=True)
 
+        # ── MOVER LOTE ────────────────────────────────────────────────────────
+        if lotes_prod and rol in ("admin", "operario"):
+            with st.expander("🔀  Mover lote a otra ubicación", expanded=False):
+                st.markdown(
+                    '<div style="font-size:11px;color:#94A3B8;margin-bottom:10px">'
+                    'Seleccioná el lote origen y la ubicación destino. '
+                    'La fecha de vencimiento se mantiene.</div>',
+                    unsafe_allow_html=True)
+
+                # Selector de lote origen
+                _opts_mv = [
+                    f"[{int(float(l.get('cantidad',0)))}u]  📍 {str(l.get('ubicacion','?')).upper()}"
+                    f"  ·  Vto:{l.get('fecha','—')}  ·  {l.get('deposito','')}"
+                    for l in lotes_prod
+                ]
+                _mv_idx = st.selectbox(
+                    "Lote origen:",
+                    range(len(_opts_mv)),
+                    format_func=lambda i: _opts_mv[i],
+                    key="mv_lote_idx")
+                _lote_mv = lotes_prod[_mv_idx]
+                _cant_disp_mv = float(_lote_mv.get('cantidad', 0) or 0)
+
+                _mv_col1, _mv_col2 = st.columns(2)
+                with _mv_col1:
+                    _es_total_mv = st.checkbox(
+                        "Mover lote completo",
+                        value=True, key="mv_completo")
+                with _mv_col2:
+                    _cant_mv = st.number_input(
+                        "Cantidad a mover:",
+                        min_value=0.1,
+                        max_value=_cant_disp_mv,
+                        value=_cant_disp_mv if _es_total_mv else 1.0,
+                        step=1.0, format="%.0f",
+                        key="mv_cant",
+                        disabled=_es_total_mv)
+                if _es_total_mv:
+                    _cant_mv = _cant_disp_mv
+
+                # Destino: lista de vacías + manual
+                _vacias_mv  = calcular_vacias_rapido(ubis_ocupadas)
+                _sug99_mv   = calcular_sug99(ubis_ocupadas)
+                _otras_ubis = [
+                    str(l.get('ubicacion','')).upper()
+                    for l in lotes_prod
+                    if str(l.get('ubicacion','')).upper() != str(_lote_mv.get('ubicacion','')).upper()
+                ]
+                _dest_opciones = (
+                    [f"VACIA: {v}" for v in _vacias_mv] +
+                    ([f"SUG 99: {_sug99_mv}"] if _sug99_mv not in _vacias_mv else []) +
+                    _otras_ubis
+                )
+
+                _dest_sel = None
+                if _dest_opciones:
+                    _dest_sel = st.selectbox(
+                        "Ubicación destino (sugeridas):",
+                        _dest_opciones,
+                        key="mv_ubi_sel")
+
+                _dest_manual = st.text_input(
+                    "o escribir manualmente:",
+                    placeholder="ej: 05-3B",
+                    key="mv_ubi_manual")
+
+                _ubi_destino = ""
+                if _dest_manual.strip():
+                    _ubi_destino = _dest_manual.strip().upper()
+                elif _dest_sel:
+                    _ubi_destino = (
+                        _dest_sel
+                        .replace("VACIA: ", "")
+                        .replace("SUG 99: ", "")
+                        .upper().strip()
+                    )
+
+                if _ubi_destino:
+                    st.markdown(
+                        f'<div class="sug-box">'
+                        f'📦 {int(_cant_mv)}u &nbsp;·&nbsp; '
+                        f'📍 {str(_lote_mv.get("ubicacion","?")).upper()} → <b>{_ubi_destino}</b>'
+                        f' &nbsp;·&nbsp; Vto: {_lote_mv.get("fecha","—")}'
+                        f'</div>',
+                        unsafe_allow_html=True)
+
+                if st.button("🔀  Confirmar movimiento", use_container_width=True,
+                             key="btn_mv_confirmar", type="primary"):
+                    if not _ubi_destino:
+                        st.error("Seleccioná o escribí la ubicación destino.")
+                    elif _ubi_destino == str(_lote_mv.get('ubicacion','')).upper():
+                        st.error("La ubicación destino es igual al origen.")
+                    elif _cant_mv <= 0 or _cant_mv > _cant_disp_mv:
+                        st.error(f"Cantidad inválida. Disponible: {int(_cant_disp_mv)}u")
+                    else:
+                        try:
+                            sb = get_supabase()
+                            _fv_orig  = _lote_mv.get('fecha', '')
+                            _dep_orig = _lote_mv.get('deposito', 'depo 1')
+
+                            # 1. Reducir / eliminar lote origen
+                            if _cant_mv >= _cant_disp_mv:
+                                sb.table("inventario").delete().eq("id", _lote_mv['id']).execute()
+                            else:
+                                sb.table("inventario").update({
+                                    "cantidad": _cant_disp_mv - _cant_mv
+                                }).eq("id", _lote_mv['id']).execute()
+
+                            # 2. ¿ya existe lote con esa ubi+fecha+deposito en destino?
+                            _exist_dest = next((
+                                l for l in lotes_prod
+                                if str(l.get('ubicacion','')).upper() == _ubi_destino
+                                and str(l.get('fecha',''))   == _fv_orig
+                                and str(l.get('deposito','')) == _dep_orig
+                                and str(l.get('id',''))       != str(_lote_mv.get('id',''))
+                            ), None)
+
+                            if _exist_dest:
+                                # Sumar al lote existente
+                                _nq = float(_exist_dest.get('cantidad', 0)) + _cant_mv
+                                sb.table("inventario").update({
+                                    "cantidad": _nq
+                                }).eq("id", _exist_dest['id']).execute()
+                            else:
+                                # Crear nuevo lote en destino
+                                sb.table("inventario").insert({
+                                    "cod_int":   cod_sel,
+                                    "nombre":    prod_sel['nombre'],
+                                    "cantidad":  _cant_mv,
+                                    "ubicacion": _ubi_destino,
+                                    "deposito":  _dep_orig,
+                                    "fecha":     _fv_orig,
+                                }).execute()
+
+                            # 3. Historial
+                            registrar_historial(
+                                "MOVIMIENTO", cod_sel, prod_sel['nombre'],
+                                _cant_mv,
+                                f"{str(_lote_mv.get('ubicacion','?')).upper()} → {_ubi_destino}",
+                                usuario)
+
+                            st.success(
+                                f"✅ {int(_cant_mv)}u de **{prod_sel['nombre']}** "
+                                f"movidas a **{_ubi_destino}** · Vto: {_fv_orig}")
+                            refrescar()
+                        except Exception as e:
+                            st.error(f"Error al mover: {e}")
+
         st.markdown("---")
         st.markdown('<div class="sec-label">📝 REGISTRAR OPERACIÓN</div>', unsafe_allow_html=True)
         tipo_op    = st.radio("Tipo", ["⬆ INGRESO", "⬇ SALIDA"], horizontal=True, label_visibility="collapsed", key="tipo_op")
@@ -556,7 +695,59 @@ function closeScan(){a=false;clearInterval(iv);if(s){s.getTracks().forEach(funct
         with col_a:
             cantidad_op = st.number_input("CANTIDAD", min_value=0.1, step=1.0, format="%.0f", key="cant_op")
         with col_b:
-            fecha_op = st.text_input("VENCIMIENTO (MM/AA)", placeholder="ej: 06/26", key="fecha_op")
+            # ── FECHA CON AUTO-SLASH ──────────────────────────────────────
+            import streamlit.components.v1 as _stc_fecha
+            _stc_fecha.html("""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,sans-serif}
+body{background:transparent}
+label{display:block;font-size:11px;font-weight:700;color:#94A3B8;
+      letter-spacing:1px;text-transform:uppercase;margin-bottom:6px}
+input{width:100%;background:#1E293B;color:#F1F5F9;
+      border:1.5px solid #334155;border-radius:12px;
+      padding:12px 14px;font-size:16px;outline:none;font-family:inherit}
+input:focus{border-color:#3B82F6;box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+</style></head><body>
+<label>VENCIMIENTO (MM/AA)</label>
+<input type="text" id="fv" maxlength="5" placeholder="06/26" inputmode="numeric"
+       autocomplete="off">
+<script>
+var inp = document.getElementById('fv');
+var prev = '';
+inp.addEventListener('input', function() {
+  var raw = inp.value.replace(/\D/g, '');
+  var fmt = raw;
+  if (raw.length > 2) fmt = raw.slice(0,2) + '/' + raw.slice(2,4);
+  // avoid fighting with deletion
+  if (inp.value === prev.slice(0,-1) && prev.endsWith('/')) {
+    inp.value = raw.slice(0,2);
+  } else {
+    inp.value = fmt;
+  }
+  prev = inp.value;
+  // sync al campo oculto de Streamlit
+  try {
+    var pdoc = window.parent.document;
+    var inputs = pdoc.querySelectorAll('input');
+    for (var i = 0; i < inputs.length; i++) {
+      var ph = (inputs[i].placeholder || '').toLowerCase();
+      if (ph === '06/26' || ph.indexOf('mm/aa') >= 0 || ph.indexOf('venc') >= 0) {
+        var ns = Object.getOwnPropertyDescriptor(
+          window.parent.HTMLInputElement.prototype, 'value');
+        if (ns && ns.set) ns.set.call(inputs[i], inp.value);
+        inputs[i].dispatchEvent(new Event('input',   {bubbles:true}));
+        inputs[i].dispatchEvent(new Event('change',  {bubbles:true}));
+        break;
+      }
+    }
+  } catch(e) {}
+});
+</script></body></html>""", height=76)
+            fecha_op = st.text_input(
+                "VENCIMIENTO",
+                placeholder="06/26",
+                key="fecha_op",
+                label_visibility="collapsed")
 
         opciones_ubi_list = list({str(l.get('ubicacion','')).upper() for l in lotes_prod})
         vacias      = calcular_vacias_rapido(ubis_ocupadas)
@@ -707,7 +898,6 @@ if _show("⚙️ CONFIG"):
             except:
                 _sucs_act = SUCURSALES_DEFAULT
 
-            # Mostrar sucursales actuales
             for i, s in enumerate(_sucs_act):
                 es_actual = s['url'].strip() == st.session_state.suc_url.strip()
                 st.markdown(f"""
@@ -766,7 +956,18 @@ if _show("⚙️ CONFIG"):
 
         # ── ESTANTERÍAS ──────────────────────────────────────────────────────
         elif _cfg_tab == "🗄️ Estanterías":
-            _est_cfg = _cfg_admin.get("estantes", [])
+            # ── Leer siempre frescos desde Supabase sin cache ────────────
+            # Esto garantiza que los cambios hechos desde la app de escritorio
+            # sean visibles aquí inmediatamente sin necesidad de refrescar.
+            try:
+                import json as _jfresh
+                _sb_fresh = get_supabase()
+                _r_fresh  = _sb_fresh.table("app_config").select("config").eq("usuario","admin").execute()
+                _cfg_fresh = _jfresh.loads(_r_fresh.data[0]["config"]) if _r_fresh.data else {}
+                _est_cfg  = _cfg_fresh.get("estantes", [])
+            except:
+                _est_cfg  = _cfg_admin.get("estantes", [])
+
             if not _est_cfg:
                 for _e in range(1, 28):
                     if _e in [3,4]:            _nv,_ls = 4,"ABCDE"
@@ -944,7 +1145,6 @@ if _show("🚚 DESPACHO"):
 
     st.markdown("---")
 
-    # Pegar desde Excel
     texto_pegado = st.text_area("📋 Pegar desde Excel:", placeholder="Pegá las filas acá (Ctrl+V)", height=80, key="txt_pegar_excel")
     if st.button("📥 Cargar desde Excel", use_container_width=True, key="btn_cargar_excel"):
         if texto_pegado.strip():
@@ -1178,16 +1378,13 @@ if _show("🤖 ASISTENTE"):
             except:
                 return "❌ Error cargando historial."
 
-        # Acciones que modifican datos
         if int_ in ('salida','entrada','mover'):
             prod = _buscar_prod_simple(txt)
             if not prod:
-                # ¿tiene contexto de producto?
                 if ctx.get('cod'):
                     prod = next((p for p in maestra if str(p.get('cod_int','')) == ctx['cod']), None)
             if not prod:
                 return "❓ No identifiqué el producto. Indicá nombre o código."
-            # Extraer cantidad
             cant = 0.0
             for m in _re.finditer(r'\b(\d+)\b', txt):
                 if m.group(1) != str(prod.get('cod_int','')): cant = float(m.group(1)); break
@@ -1195,7 +1392,6 @@ if _show("🤖 ASISTENTE"):
                 st.session_state["_ctx"] = {"intent": int_, "cod": str(prod['cod_int']), "nom": prod['nombre']}
                 return f"❓ ¿Cuántas unidades de **{prod['nombre']}**?"
 
-            # Ubicación
             ubi_m = _re.search(r'\b(\d{2}[-_]\d{1,2}[A-Za-z]{0,2})\b', txt.upper())
             ubi   = ubi_m.group(1) if ubi_m else ""
             lts   = idx_inv.get(str(prod['cod_int']), [])
@@ -1240,7 +1436,6 @@ if _show("🤖 ASISTENTE"):
                 except Exception as e:
                     return f"❌ Error: {e}"
 
-        # Consulta de stock
         prod = _buscar_prod_simple(txt)
         if prod:
             return _detalle_simple(prod)
@@ -1249,7 +1444,6 @@ if _show("🤖 ASISTENTE"):
         return (f"No entendí bien. Tenemos **{len(maestra)} productos** · **{int(total):,}u** totales.\n"
                 "Ejemplo: «stock de shampoo», «sacar 10 de gel», «vencimientos»")
 
-    # Header del asistente
     st.markdown(f"""
     <div style="background:linear-gradient(135deg,#0F172A,#1E293B);border:1px solid rgba(99,130,180,.2);border-radius:18px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:14px">
       <div style="width:50px;height:50px;background:linear-gradient(135deg,#1D4ED8,#06B6D4);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px">🤖</div>
@@ -1264,7 +1458,6 @@ if _show("🤖 ASISTENTE"):
         if st.button("🗑️", use_container_width=True, key="clear_bot", help="Limpiar chat"):
             st.session_state.bot_hist = []; st.session_state.pop("_ctx", None); st.rerun()
 
-    # Historial del chat
     for msg in st.session_state.bot_hist:
         if msg["rol"] == "user":
             st.markdown(f'<div class="chat-lbl" style="text-align:right">{usuario} 👤</div>', unsafe_allow_html=True)
@@ -1285,7 +1478,6 @@ if _show("🤖 ASISTENTE"):
           </div>
         </div>""", unsafe_allow_html=True)
 
-    # Input del asistente
     st.markdown("""<style>.stTextArea textarea{background:#1E293B!important;color:#F1F5F9!important;border:1.5px solid #334155!important;border-radius:14px!important;font-size:16px!important;resize:none!important;padding:12px 16px!important}</style>""", unsafe_allow_html=True)
 
     _input_val = "" if st.session_state.pop("_limpiar_bot", False) else st.session_state.get("bot_input_txt", "")
