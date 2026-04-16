@@ -1215,29 +1215,98 @@ if _show("🚚 DESPACHO"):
             lote_d = lotes_d[idx_ld]
 
             if rol in ("admin","operario"):
+                import streamlit.components.v1 as _stc_desp
+                _cod_barras_item = str(next((p.get('barras','') for p in maestra if str(p.get('cod_int','')) == cod_d), '') or '').strip()
+                _exp_hint = ("Codigo esperado: " + _cod_barras_item) if _cod_barras_item else "Sin codigo - cualquier scan confirma"
+                _scanner_html = (
+                    '<!DOCTYPE html><html><head><meta charset="utf-8">'
+                    '<style>*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,sans-serif}body{background:transparent}'
+                    '.btn{width:100%;background:linear-gradient(135deg,#3B82F6,#06B6D4);color:#fff;border:none;border-radius:14px;padding:12px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}'
+                    '.btn.act{background:linear-gradient(135deg,#EF4444,#F59E0B)}'
+                    '.msg{font-size:12px;color:#94A3B8;text-align:center;margin-top:5px;min-height:16px}.msg.ok{color:#10B981}.msg.er{color:#EF4444}'
+                    '#ov{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.96);z-index:9999;flex-direction:column;align-items:center;justify-content:center;gap:16px}#ov.show{display:flex}'
+                    'video{width:90%;max-width:340px;border-radius:18px;border:3px solid #3B82F6}'
+                    '.ln{width:90%;max-width:340px;height:3px;background:linear-gradient(90deg,transparent,#3B82F6,transparent);animation:sc 1.4s ease-in-out infinite}'
+                    '@keyframes sc{0%,100%{opacity:.2}50%{opacity:1}}'
+                    '.cl{background:#EF4444;color:#fff;border:none;border-radius:14px;padding:11px 32px;font-size:14px;font-weight:700;cursor:pointer}'
+                    '</style></head><body>'
+                    '<button class="btn" id="sb" onclick="doScan()"><span>&#128247;</span><span>Escanear para confirmar</span></button>'
+                    '<div class="msg" id="msg"></div>'
+                    '<div id="ov"><video id="vid" autoplay playsinline muted></video><div class="ln"></div>'
+                    '<div style="color:#F1F5F9;font-size:14px;font-weight:700;text-align:center;padding:0 20px">'
+                    + _exp_hint +
+                    '</div><button class="cl" onclick="closeScan()">&#10005; Cerrar</button></div>'
+                    '<script>'
+                    'var s=null,a=false,iv=null,EXP="' + _cod_barras_item + '";'
+                    'function setMsg(c,t){var el=document.getElementById("msg");el.className="msg "+(c||"");el.textContent=t}'
+                    'function sendToInput(val){'
+                    'var doc=window.parent.document,inputs=doc.querySelectorAll("input"),inp=null;'
+                    'for(var i=0;i<inputs.length;i++){var ph=(inputs[i].placeholder||"").toLowerCase();if(ph.indexOf("lector")>=0||ph.indexOf("escan")>=0){inp=inputs[i];break}}'
+                    'if(!inp)inp=inputs[inputs.length-1];if(!inp)return;'
+                    'var ns=Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype,"value");'
+                    'if(ns&&ns.set)ns.set.call(inp,val);else inp.value=val;'
+                    'inp.dispatchEvent(new Event("input",{bubbles:true}));inp.dispatchEvent(new Event("change",{bubbles:true}));inp.focus();'
+                    'setTimeout(function(){inp.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",keyCode:13,bubbles:true}));'
+                    'inp.dispatchEvent(new KeyboardEvent("keyup",{key:"Enter",keyCode:13,bubbles:true}));},80);}'
+                    'function doScan(){if(a){closeScan();return}if(!window.BarcodeDetector){setMsg("er","BarcodeDetector no soportado");return}'
+                    'a=true;document.getElementById("sb").className="btn act";document.getElementById("sb").innerHTML="<span>&#9209;</span><span>Detener</span>";'
+                    'document.getElementById("ov").className="show";setMsg("ok","Iniciando camara...");'
+                    'navigator.mediaDevices.getUserMedia({video:{facingMode:"environment",width:{ideal:1920}}})'
+                    '.then(function(st2){s=st2;document.getElementById("vid").srcObject=st2;'
+                    'var det=new BarcodeDetector({formats:["ean_13","ean_8","code_128","code_39","upc_a","upc_e","itf","qr_code"]});'
+                    'setMsg("ok","Escaneando...");'
+                    'iv=setInterval(function(){if(!a)return;det.detect(document.getElementById("vid")).then(function(codes){'
+                    'if(codes.length>0){var code=codes[0].rawValue;closeScan();'
+                    'if(EXP&&code!==EXP){setMsg("er","Incorrecto: "+code);return}'
+                    'setMsg("ok","OK: "+code);setTimeout(function(){sendToInput(code)},120)}}).catch(function(){})},350)})'
+                    '.catch(function(e){closeScan();setMsg("er","Error: "+e.message)})'
+                    '}'
+                    'function closeScan(){a=false;clearInterval(iv);if(s){s.getTracks().forEach(function(t){t.stop()});s=null}'
+                    'document.getElementById("vid").srcObject=null;document.getElementById("sb").className="btn";'
+                    'document.getElementById("sb").innerHTML="<span>&#128247;</span><span>Escanear para confirmar</span>";'
+                    'document.getElementById("ov").className=""}'
+                    '</script></body></html>'
+                )
+                _stc_desp.html(_scanner_html, height=80)
+                _scan_key  = f"pick_scan_{idx_desp}_{idx_ld}"
+                _fired_key = f"_scan_fired_{idx_desp}_{idx_ld}"
+                _scan_in = st.text_input("", placeholder="Lector fisico... (Enter ejecuta)", key=_scan_key, label_visibility="collapsed")
+                _do_pick = False
+                if _scan_in.strip():
+                    _cod_scaneado = _scan_in.strip()
+                    if st.session_state.get(_fired_key) != _cod_scaneado:
+                        if not _cod_barras_item or _cod_scaneado == _cod_barras_item:
+                            st.session_state[_fired_key] = _cod_scaneado
+                            _do_pick = True
+                        else:
+                            st.error(f"Codigo incorrecto: {_cod_scaneado}. Esperado: {_cod_barras_item or 'sin codigo'}")
+                else:
+                    st.session_state.pop(_fired_key, None)
                 col_b1, col_b2 = st.columns(2)
                 with col_b1:
-                    if st.button("✅ DESCONTAR", use_container_width=True, key=f"btn_pick_{idx_desp}_{idx_ld}", type="primary"):
-                        try:
-                            cant_p = float(item_sel['cant']); cant_l = float(lote_d.get('cantidad',0))
-                            cant_a = min(cant_l, cant_p); sb = get_supabase()
-                            if cant_a >= cant_l: sb.table("inventario").delete().eq("id", lote_d['id']).execute()
-                            else: sb.table("inventario").update({"cantidad": cant_l - cant_a}).eq("id", lote_d['id']).execute()
-                            registrar_historial("SALIDA", cod_d, item_sel['nombre'], cant_a, lote_d.get('ubicacion',''), usuario)
-                            recalcular_maestra(cod_d, inventario)
-                            pendiente = cant_p - cant_a
-                            if pendiente > 0: st.session_state.pedido[idx_desp]['cant'] = int(pendiente)
-                            else: st.session_state.pedido.pop(idx_desp); st.session_state["desp_sel"] = 0
-                            st.session_state["lote_desp"] = 0
-                            st.success(f"✅ {item_sel['nombre']} — {int(cant_a)} uds descontadas.")
-                            refrescar()
-                        except Exception as e:
-                            st.error(f"Error: {e}")
+                    if st.button("Descontar", use_container_width=True, key=f"btn_pick_{idx_desp}_{idx_ld}", type="primary"):
+                        _do_pick = True
                 with col_b2:
-                    _scan_in = st.text_input("", placeholder="Lector físico...", key=f"pick_scan_{idx_desp}_{idx_ld}", label_visibility="collapsed")
-                    if _scan_in.strip():
-                        st.info(f"Código escaneado: {_scan_in.strip()} — presioná DESCONTAR.")
-        else:
+                    if st.button("Sin codigo", use_container_width=True, key=f"btn_pick_manual_{idx_desp}_{idx_ld}"):
+                        _do_pick = True
+                if _do_pick:
+                    st.session_state.pop(_fired_key, None)
+                    try:
+                        cant_p = float(item_sel['cant']); cant_l = float(lote_d.get('cantidad',0))
+                        cant_a = min(cant_l, cant_p); sb = get_supabase()
+                        if cant_a >= cant_l: sb.table("inventario").delete().eq("id", lote_d['id']).execute()
+                        else: sb.table("inventario").update({"cantidad": cant_l - cant_a}).eq("id", lote_d['id']).execute()
+                        registrar_historial("SALIDA", cod_d, item_sel['nombre'], cant_a, lote_d.get('ubicacion',''), usuario)
+                        recalcular_maestra(cod_d, inventario)
+                        pendiente = cant_p - cant_a
+                        if pendiente > 0: st.session_state.pedido[idx_desp]['cant'] = int(pendiente)
+                        else: st.session_state.pedido.pop(idx_desp); st.session_state["desp_sel"] = 0
+                        st.session_state["lote_desp"] = 0
+                        st.success(f"Descontado: {item_sel['nombre']} - {int(cant_a)} uds")
+                        refrescar()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+
             st.warning(f"⚠️ Sin stock para {item_sel['nombre']}.")
 
         st.markdown("---")
